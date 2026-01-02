@@ -32,7 +32,7 @@ class StreamManager {
     });
   }
 
-  // Start a stream for a channel
+   // Start a stream for a channel
   async startStream(channelId) {
     try {
       const channel = Channel.findById(channelId);
@@ -40,10 +40,35 @@ class StreamManager {
         throw new Error('Channel not found');
       }
 
+      // --- ADD THIS BLOCK TO RESOLVE YOUTUBE URLS ---
+      let resolvedInputUrl = channel.input_url;
+      
+      if (resolvedInputUrl.includes('youtube.com') || resolvedInputUrl.includes('youtu.be')) {
+        logger.info(`Resolving YouTube URL for channel ${channelId}`);
+        
+        const { execSync } = await import('child_process');
+        try {
+          // Point this to your cookies.txt location
+          const cookiePath = '/var/www/live-admin/cookies.txt';
+          
+          // Command to get the direct stream URL
+          const cmd = `/usr/local/bin/yt-dlp --cookies ${cookiePath} --user-agent "facebookexternalhit/1.1" -g "${resolvedInputUrl}"`;
+          
+          resolvedInputUrl = execSync(cmd, { 
+            encoding: 'utf8',
+            env: { ...process.env, PATH: `${process.env.PATH}:/root/.deno/bin` }
+          }).trim();
+        } catch (err) {
+          throw new Error(`yt-dlp failed: ${err.message}`);
+        }
+      }
+      // ----------------------------------------------
+
       // Check if already running
       if (this.processes.has(channelId)) {
         throw new Error('Stream is already running');
       }
+
 
       // Check max concurrent streams
       const maxStreams = parseInt(
@@ -68,9 +93,9 @@ class StreamManager {
 
       // Build FFmpeg arguments
       const ffmpegArgs = [
-        '-re', // Read input at native frame rate
+        '-re',
         '-i',
-        channel.input_url,
+         resolvedInputUrl,
         '-c',
         'copy', // Copy codec (no transcoding)
         '-f',
