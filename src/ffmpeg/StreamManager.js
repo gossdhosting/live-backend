@@ -241,8 +241,10 @@ class StreamManager {
           platform: dest.platform,
           lastUpdate: new Date()
         });
+        logger.info(`[RTMP-INIT] Added RTMP destination ${dest.platform} (ID: ${dest.id}) to status map for channel ${channelId}`);
       });
       this.rtmpConnectionStatus.set(channelId, rtmpStatusMap);
+      logger.info(`[RTMP-INIT] Set rtmpConnectionStatus for channel ${channelId}, map size: ${rtmpStatusMap.size}`);
 
       // Check if watermark is enabled
       const hasWatermark = channel.watermark_enabled && channel.watermark_path && fs.existsSync(channel.watermark_path);
@@ -403,10 +405,21 @@ class StreamManager {
           const processStillRunning = this.processes.has(channelId);
           const rtmpStatusMap = this.rtmpConnectionStatus.get(channelId);
 
+          logger.info(`[RTMP-TIMER] 5-second timer fired for channel ${channelId}`, {
+            processStillRunning,
+            hasRtmpStatusMap: !!rtmpStatusMap,
+            rtmpStatusMapSize: rtmpStatusMap ? rtmpStatusMap.size : 0,
+            allRtmpChannels: Array.from(this.rtmpConnectionStatus.keys())
+          });
+
           if (processStillRunning && rtmpStatusMap) {
             // Update all RTMP destinations to connected if process is still running
             rtmpDestinations.forEach(dest => {
               const status = rtmpStatusMap.get(dest.id);
+              logger.info(`[RTMP-TIMER] Checking dest ${dest.platform} (ID: ${dest.id})`, {
+                hasStatus: !!status,
+                currentStatus: status?.status
+              });
               if (status && status.status === 'connecting') {
                 status.status = 'connected';
                 status.lastUpdate = new Date();
@@ -701,10 +714,19 @@ class StreamManager {
     const reconnectAttempts = this.reconnectAttempts.get(channelId) || 0;
     const rtmpStatusMap = this.rtmpConnectionStatus.get(channelId);
 
+    logger.info(`[RTMP-GET] getStreamHealth called for channel ${channelId}`, {
+      hasProcessInfo: !!processInfo,
+      hasRtmpStatusMap: !!rtmpStatusMap,
+      rtmpStatusMapSize: rtmpStatusMap ? rtmpStatusMap.size : 0,
+      allRtmpChannels: Array.from(this.rtmpConnectionStatus.keys()),
+      rtmpStatusMapKeys: rtmpStatusMap ? Array.from(rtmpStatusMap.keys()) : []
+    });
+
     // Convert RTMP status Map to array for API response
     const rtmpConnections = [];
     if (rtmpStatusMap) {
       for (const [destId, status] of rtmpStatusMap.entries()) {
+        logger.info(`[RTMP-GET] Found RTMP dest ${status.platform} (ID: ${destId}) with status: ${status.status}`);
         rtmpConnections.push({
           destinationId: destId,
           platform: status.platform,
@@ -713,6 +735,8 @@ class StreamManager {
         });
       }
     }
+
+    logger.info(`[RTMP-GET] Returning ${rtmpConnections.length} RTMP connections for channel ${channelId}`);
 
     if (!processInfo) {
       return {
