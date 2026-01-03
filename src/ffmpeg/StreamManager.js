@@ -311,6 +311,7 @@ class StreamManager {
       const ffmpegArgs = [
         '-loglevel', 'warning', // Only show warnings and errors
         '-err_detect', 'ignore_err', // Continue on non-critical errors
+        '-threads', '1', // OPTIMIZATION: Limit to 1 thread to prevent CPU spikes on low-core VPS
       ];
 
       // Add loop for video files if enabled
@@ -352,6 +353,7 @@ class StreamManager {
       const titlePosition = Settings.get('title_position')?.value || 'bottom-left';
       const titleTextColor = Settings.get('title_text_color')?.value || '#FFFFFF';
       const titleFontSize = Settings.get('title_font_size')?.value || '32';
+      const titleBoxPadding = Settings.get('title_box_padding')?.value || '5';
 
       if (hasWatermark) {
         const position = this.getWatermarkPosition(channel.watermark_position || 'top-left');
@@ -365,7 +367,7 @@ class StreamManager {
 
         // Add title overlay if enabled
         if (titleEnabled && streamTitle) {
-          const titleDrawtext = this.buildDrawtextFilter(streamTitle, titleBgColor, titleOpacity, titlePosition, titleTextColor, titleFontSize);
+          const titleDrawtext = this.buildDrawtextFilter(streamTitle, titleBgColor, titleOpacity, titlePosition, titleTextColor, titleFontSize, titleBoxPadding);
           watermarkFilter += titleDrawtext;
         }
 
@@ -385,7 +387,7 @@ class StreamManager {
 
         // Add title overlay if enabled
         if (titleEnabled && streamTitle) {
-          const titleDrawtext = this.buildDrawtextFilter(streamTitle, titleBgColor, titleOpacity, titlePosition, titleTextColor, titleFontSize);
+          const titleDrawtext = this.buildDrawtextFilter(streamTitle, titleBgColor, titleOpacity, titlePosition, titleTextColor, titleFontSize, titleBoxPadding);
           scaleFilter += titleDrawtext;
         }
 
@@ -907,13 +909,14 @@ class StreamManager {
   }
 
   // Build drawtext filter for title overlay
-  buildDrawtextFilter(text, bgColor, bgOpacity, position, textColor, fontSize) {
+  buildDrawtextFilter(text, bgColor, bgOpacity, position, textColor, fontSize, boxPadding = '5') {
     // Escape text for FFmpeg (single quotes and colons need escaping)
     const escapedText = text.replace(/'/g, "'\\''").replace(/:/g, '\\:');
 
     // Calculate position based on settings
     let x, y;
     const padding = 20; // Padding from edges
+    const parsedBoxPadding = parseInt(boxPadding) || 5; // Parse box padding (lower = less CPU)
 
     if (position === 'top-left') {
       x = padding;
@@ -939,8 +942,9 @@ class StreamManager {
       y = `h-text_h-${padding}`;
     }
 
-    // Build drawtext filter with background box
-    const drawtextFilter = `,drawtext=text='${escapedText}':fontsize=${fontSize}:fontcolor=${textColor}:x=${x}:y=${y}:box=1:boxcolor=${bgColor}@${bgOpacity}:boxborderw=10`;
+    // OPTIMIZED: Removed boxborderw, using minimal box padding to reduce CPU usage
+    // Lower box padding = less CPU overhead on each frame
+    const drawtextFilter = `,drawtext=text='${escapedText}':fontsize=${fontSize}:fontcolor=${textColor}:x=${x}:y=${y}:box=1:boxcolor=${bgColor}@${bgOpacity}:boxborderw=${parsedBoxPadding}`;
 
     return drawtextFilter;
   }

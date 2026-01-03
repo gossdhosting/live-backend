@@ -170,6 +170,11 @@ const initDatabase = () => {
       value: '32',
       description: 'Title overlay font size in pixels',
     },
+    {
+      key: 'title_box_padding',
+      value: '5',
+      description: 'Title box padding in pixels (lower = less CPU usage)',
+    },
   ];
 
   const insertSetting = db.prepare(`
