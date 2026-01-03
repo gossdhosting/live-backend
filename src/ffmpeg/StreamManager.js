@@ -11,6 +11,12 @@ class StreamManager {
     // Map of channel ID to process object
     this.processes = new Map();
 
+    // Track reconnection attempts
+    this.reconnectAttempts = new Map();
+
+    // Stream health metrics
+    this.healthMetrics = new Map();
+
     // Ensure HLS base directory exists
     this.hlsBasePath = process.env.HLS_BASE_PATH || path.join(process.cwd(), 'var', 'hls');
     if (!fs.existsSync(this.hlsBasePath)) {
@@ -27,10 +33,36 @@ class StreamManager {
     // FFmpeg executable path
     this.ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg';
 
+    // Configuration
+    this.maxReconnectAttempts = parseInt(process.env.MAX_RECONNECT_ATTEMPTS || '5');
+    this.reconnectDelay = parseInt(process.env.RECONNECT_DELAY || '5000');
+
     logger.info('StreamManager initialized', {
       hlsBasePath: this.hlsBasePath,
       ffmpegLogPath: this.ffmpegLogPath,
+      maxReconnectAttempts: this.maxReconnectAttempts,
     });
+
+    // Start health check interval
+    this.startHealthMonitoring();
+  }
+
+  // Monitor stream health
+  startHealthMonitoring() {
+    setInterval(() => {
+      for (const [channelId, processInfo] of this.processes.entries()) {
+        const uptime = Math.floor((Date.now() - processInfo.startTime) / 1000);
+        const metrics = this.healthMetrics.get(channelId) || { errors: 0, lastError: null };
+
+        // Update metrics
+        this.healthMetrics.set(channelId, {
+          ...metrics,
+          uptime,
+          status: 'healthy',
+          lastCheck: new Date().toISOString(),
+        });
+      }
+    }, 30000); // Check every 30 seconds
   }
 
   // Get platform-specific encoding settings
@@ -158,9 +190,15 @@ class StreamManager {
       // Check if watermark is enabled
       const hasWatermark = channel.watermark_enabled && channel.watermark_path && fs.existsSync(channel.watermark_path);
 
-      // Build FFmpeg arguments
+      // Build FFmpeg arguments with improved error handling and quality
       const ffmpegArgs = [
-        '-re',
+        '-loglevel', 'warning', // Only show warnings and errors
+        '-err_detect', 'ignore_err', // Continue on non-critical errors
+        '-reconnect', '1', // Enable reconnection
+        '-reconnect_streamed', '1', // Reconnect for streamed protocols
+        '-reconnect_delay_max', '5', // Max delay between reconnection attempts
+        '-timeout', '10000000', // 10 second timeout for I/O operations
+        '-re', // Read input at native frame rate
         '-i',
          resolvedInputUrl,
       ];
@@ -170,37 +208,17 @@ class StreamManager {
         ffmpegArgs.push('-i', channel.watermark_path);
       }
 
-      // Add video filter for watermark
+      // Build filter complex and outputs based on watermark and RTMP destinations
       if (hasWatermark) {
         const position = this.getWatermarkPosition(channel.watermark_position || 'top-left');
         const opacity = channel.watermark_opacity || 1.0;
         const scale = channel.watermark_scale || 1.0;
-        ffmpegArgs.push(
-          '-filter_complex',
-          `[1:v]scale=iw*${scale}:ih*${scale},format=rgba,colorchannelmixer=aa=${opacity}[logo];[0:v][logo]overlay=${position}`,
-          '-c:v',
-          'libx264', // Need to encode when applying overlay
-          '-preset',
-          'veryfast', // Fast encoding preset
-          '-g',
-          '60', // Keyframe interval: 60 frames (2 seconds at 30fps)
-          '-keyint_min',
-          '60', // Minimum keyframe interval
-          '-sc_threshold',
-          '0', // Disable scene change detection for consistent keyframes
-          '-c:a',
-          'copy', // Copy audio codec (no transcoding)
-        );
-      } else {
-        ffmpegArgs.push(
-          '-c:v',
-          'copy', // Copy video codec (no transcoding)
-          '-c:a',
-          'copy', // Copy audio codec (no transcoding)
-        );
-      }
 
-      if (hasWatermark) {
+        // Build watermark filter - creates [watermarked] output
+        const watermarkFilter = `[1:v]scale=iw*${scale}:ih*${scale},format=rgba,colorchannelmixer=aa=${opacity}[logo];[0:v][logo]overlay=${position}[watermarked]`;
+
+        ffmpegArgs.push('-filter_complex', watermarkFilter);
+
         logger.info(`Watermark enabled for channel ${channelId}`, {
           position: channel.watermark_position,
           opacity: channel.watermark_opacity,
@@ -210,19 +228,27 @@ class StreamManager {
       }
 
       // Add HLS output
+      if (hasWatermark) {
+        ffmpegArgs.push(
+          '-map', '[watermarked]', // Use watermarked video
+          '-map', '0:a', // Use original audio
+        );
+      }
+
       ffmpegArgs.push(
-        '-f',
-        'hls', // HLS format
-        '-hls_time',
-        hlsSegmentDuration,
-        '-hls_list_size',
-        hlsListSize,
-        '-hls_flags',
-        'delete_segments+append_list', // Delete old segments
-        '-hls_segment_filename',
-        path.join(outputDir, 'segment_%03d.ts'),
+        '-c:v', hasWatermark ? 'libx264' : 'copy',
+        '-c:a', 'copy',
+        '-preset', hasWatermark ? 'veryfast' : undefined,
+        '-g', hasWatermark ? '60' : undefined,
+        '-keyint_min', hasWatermark ? '60' : undefined,
+        '-sc_threshold', hasWatermark ? '0' : undefined,
+        '-f', 'hls',
+        '-hls_time', hlsSegmentDuration,
+        '-hls_list_size', hlsListSize,
+        '-hls_flags', 'delete_segments+append_list',
+        '-hls_segment_filename', path.join(outputDir, 'segment_%03d.ts'),
         outputPath
-      );
+      ).filter(arg => arg !== undefined);
 
       // Add RTMP outputs with platform-specific encoding
       if (rtmpDestinations.length > 0) {
@@ -237,10 +263,15 @@ class StreamManager {
             dest.custom_bitrate
           );
 
-          // ALWAYS encode for RTMP to ensure proper keyframe intervals
-          // Platforms like Twitch require keyframes every 2 seconds
+          // Map video and audio for RTMP output
+          if (hasWatermark) {
+            ffmpegArgs.push('-map', '[watermarked]', '-map', '0:a');
+          } else {
+            ffmpegArgs.push('-map', '0:v', '-map', '0:a');
+          }
+
+          // RTMP encoding settings
           ffmpegArgs.push(
-            '-f', 'flv',
             '-c:v', 'libx264',
             '-preset', 'veryfast',
             '-b:v', encodingSettings.videoBitrate,
@@ -254,6 +285,7 @@ class StreamManager {
             '-r', encodingSettings.fps.toString(),
             '-c:a', 'aac',
             '-b:a', encodingSettings.audioBitrate,
+            '-f', 'flv',
             rtmpUrl
           );
 
@@ -286,6 +318,17 @@ class StreamManager {
         process: ffmpegProcess,
         logStream,
         startTime: Date.now(),
+        errorCount: 0,
+        lastError: null,
+      });
+
+      // Initialize health metrics
+      this.healthMetrics.set(channelId, {
+        uptime: 0,
+        status: 'starting',
+        errors: 0,
+        lastError: null,
+        lastCheck: new Date().toISOString(),
       });
 
       // Update channel status
@@ -304,9 +347,53 @@ class StreamManager {
         const message = data.toString();
         logStream.write(`[STDERR] ${new Date().toISOString()} - ${message}`);
 
-        // Log important messages to database
-        if (message.includes('error') || message.includes('Error')) {
-          Channel.addLog(channelId, 'error', message.substring(0, 500));
+        const processInfo = this.processes.get(channelId);
+        const metrics = this.healthMetrics.get(channelId);
+
+        // Detect critical errors
+        const criticalErrors = [
+          'Connection refused',
+          'Connection timed out',
+          'HTTP error 403',
+          'HTTP error 404',
+          'HTTP error 401',
+          'Server returned 5XX',
+          'Invalid data found',
+          'Decoder (codec none) not found',
+          'No such file or directory',
+        ];
+
+        const isCriticalError = criticalErrors.some(err => message.includes(err));
+
+        if (isCriticalError) {
+          if (processInfo) {
+            processInfo.errorCount++;
+            processInfo.lastError = message.substring(0, 200);
+          }
+          if (metrics) {
+            metrics.errors++;
+            metrics.lastError = message.substring(0, 200);
+            metrics.status = 'error';
+          }
+          Channel.addLog(channelId, 'error', `Critical: ${message.substring(0, 500)}`);
+          logger.error(`Critical FFmpeg error for channel ${channelId}`, { error: message.substring(0, 200) });
+        } else if (message.toLowerCase().includes('error')) {
+          // Non-critical errors
+          if (processInfo) {
+            processInfo.errorCount++;
+          }
+          if (metrics) {
+            metrics.errors++;
+          }
+          Channel.addLog(channelId, 'warning', message.substring(0, 500));
+        }
+
+        // Detect successful stream start
+        if (message.includes('Opening') && message.includes('for writing')) {
+          if (metrics) {
+            metrics.status = 'healthy';
+          }
+          logger.info(`Stream established for channel ${channelId}`);
         }
       });
 
@@ -323,32 +410,61 @@ class StreamManager {
           this.processes.delete(channelId);
         }
 
+        // Clean up health metrics
+        this.healthMetrics.delete(channelId);
+
         const currentChannel = Channel.findById(channelId);
         if (!currentChannel) return;
 
-        if (code === 0) {
+        if (code === 0 || signal === 'SIGTERM') {
           // Normal exit
           Channel.updateStatus(channelId, 'stopped', null, null);
           Channel.addLog(channelId, 'info', 'Stream stopped normally');
+          this.reconnectAttempts.delete(channelId);
         } else {
-          // Error exit
-          const errorMsg = `Stream exited with code ${code}`;
+          // Error exit - determine if we should restart
+          const processMetrics = processInfo || {};
+          const lastError = processMetrics.lastError || `Exit code ${code}`;
+
+          const errorMsg = `Stream failed: ${lastError}`;
           Channel.updateStatus(channelId, 'error', null, errorMsg);
           Channel.addLog(channelId, 'error', errorMsg);
 
-          // Auto-restart if enabled
+          // Auto-restart logic with exponential backoff
           if (
             currentChannel.auto_restart &&
             Settings.get('auto_restart_enabled')?.value === 'true'
           ) {
-            logger.info(`Auto-restarting stream for channel ${channelId}`);
-            setTimeout(() => {
-              this.startStream(channelId).catch((err) => {
-                logger.error(`Auto-restart failed for channel ${channelId}`, {
-                  error: err.message,
+            const attempts = this.reconnectAttempts.get(channelId) || 0;
+
+            if (attempts < this.maxReconnectAttempts) {
+              this.reconnectAttempts.set(channelId, attempts + 1);
+
+              // Exponential backoff: 5s, 10s, 20s, 40s, 80s
+              const delay = this.reconnectDelay * Math.pow(2, attempts);
+
+              logger.info(`Auto-restart attempt ${attempts + 1}/${this.maxReconnectAttempts} for channel ${channelId} in ${delay}ms`);
+              Channel.addLog(channelId, 'info', `Restarting in ${delay / 1000}s (attempt ${attempts + 1}/${this.maxReconnectAttempts})`);
+
+              setTimeout(() => {
+                this.startStream(channelId).then(() => {
+                  // Reset attempts on successful start
+                  this.reconnectAttempts.delete(channelId);
+                  logger.info(`Stream restarted successfully for channel ${channelId}`);
+                  Channel.addLog(channelId, 'info', 'Stream restarted successfully');
+                }).catch((err) => {
+                  logger.error(`Auto-restart failed for channel ${channelId}`, {
+                    error: err.message,
+                    attempt: attempts + 1,
+                  });
+                  Channel.addLog(channelId, 'error', `Restart attempt ${attempts + 1} failed: ${err.message}`);
                 });
-              });
-            }, 5000); // Wait 5 seconds before restart
+              }, delay);
+            } else {
+              logger.error(`Max restart attempts reached for channel ${channelId}`);
+              Channel.addLog(channelId, 'error', `Max restart attempts (${this.maxReconnectAttempts}) reached. Manual intervention required.`);
+              this.reconnectAttempts.delete(channelId);
+            }
           }
         }
       });
@@ -394,6 +510,9 @@ class StreamManager {
       if (!processInfo) {
         // Update status even if process not found
         Channel.updateStatus(channelId, 'stopped', null, null);
+        // Clear reconnect attempts
+        this.reconnectAttempts.delete(channelId);
+        this.healthMetrics.delete(channelId);
         return {
           success: true,
           message: 'Stream was not running',
@@ -403,6 +522,9 @@ class StreamManager {
       logger.info(`Stopping stream for channel ${channelId}`, {
         pid: processInfo.process.pid,
       });
+
+      // Clear reconnect attempts to prevent auto-restart
+      this.reconnectAttempts.delete(channelId);
 
       // Kill the FFmpeg process gracefully
       processInfo.process.kill('SIGTERM');
@@ -429,6 +551,32 @@ class StreamManager {
     }
   }
 
+  // Get stream health metrics
+  getStreamHealth(channelId) {
+    const processInfo = this.processes.get(channelId);
+    const metrics = this.healthMetrics.get(channelId);
+    const reconnectAttempts = this.reconnectAttempts.get(channelId) || 0;
+
+    if (!processInfo) {
+      return {
+        running: false,
+        status: 'stopped',
+      };
+    }
+
+    return {
+      running: true,
+      pid: processInfo.process.pid,
+      uptime: Math.floor((Date.now() - processInfo.startTime) / 1000),
+      errorCount: processInfo.errorCount || 0,
+      lastError: processInfo.lastError,
+      reconnectAttempts,
+      maxReconnectAttempts: this.maxReconnectAttempts,
+      status: metrics?.status || 'unknown',
+      healthMetrics: metrics,
+    };
+  }
+
   // Get watermark position for FFmpeg overlay filter
   getWatermarkPosition(position) {
     const positions = {
@@ -445,21 +593,9 @@ class StreamManager {
     return positions[position] || positions['top-left'];
   }
 
-  // Get stream status
+  // Get stream status (backward compatible, uses health metrics)
   getStreamStatus(channelId) {
-    const processInfo = this.processes.get(channelId);
-
-    if (!processInfo) {
-      return {
-        running: false,
-      };
-    }
-
-    return {
-      running: true,
-      pid: processInfo.process.pid,
-      uptime: Math.floor((Date.now() - processInfo.startTime) / 1000),
-    };
+    return this.getStreamHealth(channelId);
   }
 
   // Stop all streams
