@@ -235,22 +235,25 @@ class StreamManager {
         );
       }
 
-      const hlsArgs = [
-        '-c:v', hasWatermark ? 'libx264' : 'copy',
-        '-c:a', 'copy',
-        '-preset', hasWatermark ? 'veryfast' : undefined,
-        '-g', hasWatermark ? '60' : undefined,
-        '-keyint_min', hasWatermark ? '60' : undefined,
-        '-sc_threshold', hasWatermark ? '0' : undefined,
+      // Add HLS encoding settings
+      ffmpegArgs.push('-c:v', hasWatermark ? 'libx264' : 'copy');
+      ffmpegArgs.push('-c:a', 'copy');
+
+      if (hasWatermark) {
+        ffmpegArgs.push('-preset', 'veryfast');
+        ffmpegArgs.push('-g', '60');
+        ffmpegArgs.push('-keyint_min', '60');
+        ffmpegArgs.push('-sc_threshold', '0');
+      }
+
+      ffmpegArgs.push(
         '-f', 'hls',
         '-hls_time', hlsSegmentDuration,
         '-hls_list_size', hlsListSize,
         '-hls_flags', 'delete_segments+append_list',
         '-hls_segment_filename', path.join(outputDir, 'segment_%03d.ts'),
         outputPath
-      ].filter(arg => arg !== undefined);
-
-      ffmpegArgs.push(...hlsArgs);
+      );
 
       // Add RTMP outputs with platform-specific encoding
       if (rtmpDestinations.length > 0) {
