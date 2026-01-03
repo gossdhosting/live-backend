@@ -7,6 +7,7 @@ export const apiLimiter = rateLimit({
   message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { trustProxy: false }, // Disable validation since we handle trust proxy in server.js
 });
 
 // Strict rate limiter for stream control
@@ -16,6 +17,7 @@ export const streamControlLimiter = rateLimit({
   message: 'Too many stream control requests, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { trustProxy: false },
 });
 
 // Login rate limiter
@@ -25,4 +27,5 @@ export const loginLimiter = rateLimit({
   message: 'Too many login attempts, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { trustProxy: false },
 });
