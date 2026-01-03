@@ -379,6 +379,8 @@ class StreamManager {
         ffmpegArgs.push(
           '-c:v', 'libx264',
           '-preset', 'ultrafast', // Use ultrafast preset for 2-core VPS
+          '-pix_fmt', 'yuv420p',  // Force YUV 4:2:0 for Twitch/player compatibility
+          '-flags', '+global_header', // Ensure SPS/PPS headers work in Tee muxer
           '-g', '60',
           '-keyint_min', '60',
           '-sc_threshold', '0',
@@ -393,7 +395,8 @@ class StreamManager {
       }
 
       // Audio encoding once (AAC for RTMP compatibility)
-      ffmpegArgs.push('-c:a', 'aac', '-b:a', '128k', '-ar', '44100');
+      // Use 48kHz for better compatibility with Twitch and web players
+      ffmpegArgs.push('-c:a', 'aac', '-b:a', '128k', '-ar', '48000');
 
       // Map once - tee muxer will distribute the encoded stream
       if (needsEncoding) {
