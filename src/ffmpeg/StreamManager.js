@@ -138,6 +138,12 @@ class StreamManager {
           'libx264', // Need to encode when applying overlay
           '-preset',
           'veryfast', // Fast encoding preset
+          '-g',
+          '60', // Keyframe interval: 60 frames (2 seconds at 30fps)
+          '-keyint_min',
+          '60', // Minimum keyframe interval
+          '-sc_threshold',
+          '0', // Disable scene change detection for consistent keyframes
           '-c:a',
           'copy', // Copy audio codec (no transcoding)
         );
