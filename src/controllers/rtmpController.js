@@ -7,7 +7,7 @@ export const getRtmpDestinations = async (req, res) => {
     const { channelId } = req.params;
 
     // Verify channel exists
-    const channel = Channel.getById(channelId);
+    const channel = Channel.findById(channelId);
     if (!channel) {
       return res.status(404).json({ error: 'Channel not found' });
     }
@@ -31,7 +31,7 @@ export const createRtmpDestination = async (req, res) => {
     }
 
     // Verify channel exists
-    const channel = Channel.getById(channelId);
+    const channel = Channel.findById(channelId);
     if (!channel) {
       return res.status(404).json({ error: 'Channel not found' });
     }
