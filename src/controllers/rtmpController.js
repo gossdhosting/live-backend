@@ -1,4 +1,5 @@
 import RtmpDestination from '../models/rtmpDestination.js';
+import RtmpTemplate from '../models/rtmpTemplate.js';
 import Channel from '../models/Channel.js';
 import logger from '../utils/logger.js';
 
@@ -108,5 +109,59 @@ export const deleteRtmpDestination = async (req, res) => {
   } catch (error) {
     logger.error('Failed to delete RTMP destination', { error: error.message });
     res.status(500).json({ error: 'Failed to delete RTMP destination' });
+  }
+};
+
+// Toggle a template for a specific channel (enable/disable)
+export const toggleTemplateForChannel = async (req, res) => {
+  try {
+    const { channelId, templateId } = req.params;
+    const { enabled } = req.body;
+
+    // Verify channel exists
+    const channel = Channel.findById(channelId);
+    if (!channel) {
+      return res.status(404).json({ error: 'Channel not found' });
+    }
+
+    // Verify template exists
+    const template = RtmpTemplate.getById(templateId);
+    if (!template) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+
+    // Check if destination already exists for this channel+template
+    const existingDestination = RtmpDestination.getByChannelAndTemplate(channelId, templateId);
+
+    if (enabled) {
+      // Enable: create or update destination
+      if (existingDestination) {
+        const destination = RtmpDestination.update(existingDestination.id, { enabled: 1 });
+        logger.info(`RTMP destination enabled for channel ${channelId}`, { templateId });
+        return res.json({ destination });
+      } else {
+        const destination = RtmpDestination.create({
+          channel_id: channelId,
+          template_id: templateId,
+          platform: template.platform,
+          rtmp_url: template.rtmp_url,
+          stream_key: template.stream_key,
+          enabled: 1,
+        });
+        logger.info(`RTMP destination created from template for channel ${channelId}`, { templateId });
+        return res.status(201).json({ destination });
+      }
+    } else {
+      // Disable: delete destination if exists
+      if (existingDestination) {
+        RtmpDestination.delete(existingDestination.id);
+        logger.info(`RTMP destination disabled for channel ${channelId}`, { templateId });
+        return res.json({ message: 'Destination disabled' });
+      }
+      return res.json({ message: 'Destination already disabled' });
+    }
+  } catch (error) {
+    logger.error('Failed to toggle template for channel', { error: error.message });
+    res.status(500).json({ error: 'Failed to toggle template for channel' });
   }
 };

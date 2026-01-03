@@ -74,18 +74,33 @@ const initDatabase = () => {
     )
   `);
 
-  // RTMP destinations table
+  // Global RTMP templates table (configured once, used by all channels)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS rtmp_templates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      platform TEXT NOT NULL,
+      rtmp_url TEXT NOT NULL,
+      stream_key TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // RTMP destinations table (per-channel enable/disable of templates)
   db.exec(`
     CREATE TABLE IF NOT EXISTS rtmp_destinations (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       channel_id INTEGER NOT NULL,
+      template_id INTEGER,
       platform TEXT NOT NULL,
       rtmp_url TEXT NOT NULL,
       stream_key TEXT NOT NULL,
       enabled INTEGER DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE
+      FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE,
+      FOREIGN KEY (template_id) REFERENCES rtmp_templates(id) ON DELETE SET NULL
     )
   `);
 
@@ -146,6 +161,21 @@ const initDatabase = () => {
     }
   } catch (error) {
     console.log('Watermark columns migration:', error.message);
+  }
+
+  // Add template_id column to rtmp_destinations if it doesn't exist (migration)
+  try {
+    const rtmpTableInfo = db.prepare('PRAGMA table_info(rtmp_destinations)').all();
+    const hasTemplateId = rtmpTableInfo.some(col => col.name === 'template_id');
+
+    if (!hasTemplateId) {
+      db.exec(`
+        ALTER TABLE rtmp_destinations ADD COLUMN template_id INTEGER REFERENCES rtmp_templates(id) ON DELETE SET NULL;
+      `);
+      console.log('✅ Added template_id column to rtmp_destinations table');
+    }
+  } catch (error) {
+    console.log('RTMP template_id migration:', error.message);
   }
 
   console.log('✅ Database initialized successfully');

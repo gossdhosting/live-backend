@@ -13,17 +13,23 @@ class RtmpDestination {
 
   static create(data) {
     const stmt = db.prepare(`
-      INSERT INTO rtmp_destinations (channel_id, platform, rtmp_url, stream_key, enabled)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO rtmp_destinations (channel_id, template_id, platform, rtmp_url, stream_key, enabled)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
     const result = stmt.run(
       data.channel_id,
+      data.template_id || null,
       data.platform,
       data.rtmp_url,
       data.stream_key,
       data.enabled !== undefined ? data.enabled : 1
     );
     return this.getById(result.lastInsertRowid);
+  }
+
+  static getByChannelAndTemplate(channelId, templateId) {
+    const stmt = db.prepare('SELECT * FROM rtmp_destinations WHERE channel_id = ? AND template_id = ?');
+    return stmt.get(channelId, templateId);
   }
 
   static update(id, data) {

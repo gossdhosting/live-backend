@@ -13,6 +13,7 @@ import channelRoutes from './src/routes/channels.js';
 import settingsRoutes from './src/routes/settings.js';
 import publicRoutes from './src/routes/public.js';
 import rtmpRoutes from './src/routes/rtmp.js';
+import rtmpTemplateRoutes from './src/routes/rtmpTemplates.js';
 import watermarkRoutes from './src/routes/watermark.js';
 
 // Middleware
@@ -50,6 +51,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/channels', channelRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api', rtmpRoutes);
+app.use('/api/rtmp', rtmpTemplateRoutes);
 app.use('/api/watermark', watermarkRoutes);
 
 // Public API (for Flutter app)
