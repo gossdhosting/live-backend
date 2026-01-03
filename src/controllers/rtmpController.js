@@ -37,9 +37,9 @@ export const createRtmpDestination = async (req, res) => {
     }
 
     // Validate platform
-    const validPlatforms = ['facebook', 'youtube', 'custom'];
+    const validPlatforms = ['facebook', 'youtube', 'twitch', 'custom'];
     if (!validPlatforms.includes(platform.toLowerCase())) {
-      return res.status(400).json({ error: 'Invalid platform. Must be facebook, youtube, or custom' });
+      return res.status(400).json({ error: 'Invalid platform. Must be facebook, youtube, twitch, or custom' });
     }
 
     const destination = RtmpDestination.create({
@@ -71,9 +71,9 @@ export const updateRtmpDestination = async (req, res) => {
 
     // Validate platform if provided
     if (platform) {
-      const validPlatforms = ['facebook', 'youtube', 'custom'];
+      const validPlatforms = ['facebook', 'youtube', 'twitch', 'custom'];
       if (!validPlatforms.includes(platform.toLowerCase())) {
-        return res.status(400).json({ error: 'Invalid platform. Must be facebook, youtube, or custom' });
+        return res.status(400).json({ error: 'Invalid platform. Must be facebook, youtube, twitch, or custom' });
       }
     }
 

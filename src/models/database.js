@@ -126,6 +126,7 @@ const initDatabase = () => {
   try {
     const tableInfo = db.prepare('PRAGMA table_info(channels)').all();
     const hasWatermarkEnabled = tableInfo.some(col => col.name === 'watermark_enabled');
+    const hasWatermarkScale = tableInfo.some(col => col.name === 'watermark_scale');
 
     if (!hasWatermarkEnabled) {
       db.exec(`
@@ -135,6 +136,13 @@ const initDatabase = () => {
         ALTER TABLE channels ADD COLUMN watermark_opacity REAL DEFAULT 1.0;
       `);
       console.log('✅ Added watermark columns to channels table');
+    }
+
+    if (!hasWatermarkScale) {
+      db.exec(`
+        ALTER TABLE channels ADD COLUMN watermark_scale REAL DEFAULT 1.0;
+      `);
+      console.log('✅ Added watermark_scale column to channels table');
     }
   } catch (error) {
     console.log('Watermark columns migration:', error.message);

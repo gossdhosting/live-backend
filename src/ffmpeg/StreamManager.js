@@ -130,9 +130,10 @@ class StreamManager {
       if (hasWatermark) {
         const position = this.getWatermarkPosition(channel.watermark_position || 'top-left');
         const opacity = channel.watermark_opacity || 1.0;
+        const scale = channel.watermark_scale || 1.0;
         ffmpegArgs.push(
           '-filter_complex',
-          `[1:v]format=rgba,colorchannelmixer=aa=${opacity}[logo];[0:v][logo]overlay=${position}`,
+          `[1:v]scale=iw*${scale}:ih*${scale},format=rgba,colorchannelmixer=aa=${opacity}[logo];[0:v][logo]overlay=${position}`,
           '-c:v',
           'libx264', // Need to encode when applying overlay
           '-preset',
@@ -153,6 +154,7 @@ class StreamManager {
         logger.info(`Watermark enabled for channel ${channelId}`, {
           position: channel.watermark_position,
           opacity: channel.watermark_opacity,
+          scale: channel.watermark_scale,
         });
         Channel.addLog(channelId, 'info', `Watermark applied at ${channel.watermark_position}`);
       }
