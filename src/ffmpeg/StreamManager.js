@@ -341,29 +341,17 @@ class StreamManager {
         ffmpegArgs.push('-i', channel.watermark_path);
       }
 
-      // Calculate total outputs: 1 for HLS + number of RTMP destinations
-      const totalOutputs = 1 + rtmpDestinations.length;
-
       // Build filter complex for video processing
+      // NO SPLIT needed - Tee muxer handles distribution after encoding
       if (hasWatermark) {
         const position = this.getWatermarkPosition(channel.watermark_position || 'top-left');
         const opacity = channel.watermark_opacity || 1.0;
         const scale = channel.watermark_scale || 1.0;
 
-        // Build watermark filter - scale, apply watermark, then split for multiple outputs
+        // Build watermark filter - scale, apply watermark, output to [vout]
         let watermarkFilter = `[0:v]scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=decrease,pad=${resolution.width}:${resolution.height}:(ow-iw)/2:(oh-ih)/2[scaled];`;
         watermarkFilter += `[1:v]scale=iw*${scale}:ih*${scale},format=rgba,colorchannelmixer=aa=${opacity}[logo];`;
-        watermarkFilter += `[scaled][logo]overlay=${position}`;
-
-        // Split output into unique labels for each destination
-        if (totalOutputs > 1) {
-          watermarkFilter += `,split=${totalOutputs}`;
-          for (let i = 0; i < totalOutputs; i++) {
-            watermarkFilter += `[vout${i}]`;
-          }
-        } else {
-          watermarkFilter += `[vout0]`;
-        }
+        watermarkFilter += `[scaled][logo]overlay=${position}[vout]`;
 
         ffmpegArgs.push('-filter_complex', watermarkFilter);
 
@@ -371,32 +359,19 @@ class StreamManager {
           position: channel.watermark_position,
           opacity: channel.watermark_opacity,
           scale: channel.watermark_scale,
-          outputs: totalOutputs,
         });
         Channel.addLog(channelId, 'info', `Watermark applied at ${channel.watermark_position}`);
       } else if (rtmpDestinations.length > 0) {
-        // No watermark but have RTMP destinations - scale and split
-        let scaleFilter = `[0:v]scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=decrease,pad=${resolution.width}:${resolution.height}:(ow-iw)/2:(oh-ih)/2`;
-
-        // Split output into unique labels for each destination
-        if (totalOutputs > 1) {
-          scaleFilter += `,split=${totalOutputs}`;
-          for (let i = 0; i < totalOutputs; i++) {
-            scaleFilter += `[vout${i}]`;
-          }
-        } else {
-          scaleFilter += `[vout0]`;
-        }
+        // No watermark but have RTMP destinations - just scale to [vout]
+        let scaleFilter = `[0:v]scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=decrease,pad=${resolution.width}:${resolution.height}:(ow-iw)/2:(oh-ih)/2[vout]`;
 
         ffmpegArgs.push('-filter_complex', scaleFilter);
 
-        logger.info(`Quality preset ${qualityPreset} (${resolution.width}x${resolution.height}) applied for channel ${channelId}`, {
-          outputs: totalOutputs,
-        });
+        logger.info(`Quality preset ${qualityPreset} (${resolution.width}x${resolution.height}) applied for channel ${channelId}`);
         Channel.addLog(channelId, 'info', `Output quality: ${qualityPreset} (${resolution.width}x${resolution.height})`);
       }
 
-      // OPTIMIZATION: Encode once, copy to all outputs using tee muxer
+      // OPTIMIZATION: Encode once, use tee muxer to distribute to all outputs
       const needsEncoding = hasWatermark || rtmpDestinations.length > 0;
 
       if (needsEncoding) {
@@ -418,60 +393,63 @@ class StreamManager {
       }
 
       // Audio encoding once (AAC for RTMP compatibility)
-      if (rtmpDestinations.length > 0) {
-        ffmpegArgs.push('-c:a', 'aac', '-b:a', '128k', '-ar', '44100');
-      } else {
-        ffmpegArgs.push('-c:a', 'copy');
-      }
+      ffmpegArgs.push('-c:a', 'aac', '-b:a', '128k', '-ar', '44100');
 
-      // Output to HLS (primary output - uses [vout0])
-      // Add map commands for HLS output
-      if (hasWatermark || rtmpDestinations.length > 0) {
-        ffmpegArgs.push('-map', '[vout0]');
+      // Map once - tee muxer will distribute the encoded stream
+      if (needsEncoding) {
+        ffmpegArgs.push('-map', '[vout]');
       } else {
         ffmpegArgs.push('-map', '0:v');
       }
       ffmpegArgs.push('-map', '0:a');
 
-      ffmpegArgs.push(
-        '-f', 'hls',
-        '-hls_time', hlsSegmentDuration,
-        '-hls_list_size', hlsListSize,
-        '-hls_flags', 'delete_segments+append_list',
-        '-hls_segment_filename', path.join(outputDir, 'segment_%03d.ts'),
-        outputPath
-      );
-
-      // Add RTMP outputs using split filter outputs ([vout1], [vout2], etc.)
+      // Use Tee Muxer to send encoded stream to multiple destinations
       if (rtmpDestinations.length > 0) {
-        logger.info(`Adding ${rtmpDestinations.length} RTMP destination(s) for channel ${channelId}`);
+        // Build tee outputs
+        const teeOutputs = [];
 
-        rtmpDestinations.forEach((dest, index) => {
+        // Convert Windows paths to forward slashes for FFmpeg
+        const safeOutputPath = outputPath.replace(/\\/g, '/');
+        const segmentPath = path.join(outputDir, 'segment_%03d.ts').replace(/\\/g, '/');
+
+        // HLS output for tee muxer
+        const hlsFlags = [
+          `hls_time=${hlsSegmentDuration}`,
+          `hls_list_size=${hlsListSize}`,
+          `hls_flags=delete_segments+append_list`,
+          `hls_segment_filename=${segmentPath}`
+        ].join(':');
+
+        teeOutputs.push(`[f=hls:${hlsFlags}]${safeOutputPath}`);
+
+        // Add RTMP outputs
+        rtmpDestinations.forEach((dest) => {
           const rtmpUrl = `${dest.rtmp_url}${dest.stream_key}`;
-          const outputIndex = index + 1; // HLS uses vout0, RTMP uses vout1, vout2, etc.
+          // onfail=ignore ensures one RTMP failure doesn't kill the whole stream
+          teeOutputs.push(`[f=flv:flvflags=no_duration_filesize:onfail=ignore]${rtmpUrl}`);
 
-          // Map the split filter output for this RTMP destination
-          // Each RTMP output gets its own unique label from the split filter
-          if (hasWatermark || rtmpDestinations.length > 0) {
-            ffmpegArgs.push('-map', `[vout${outputIndex}]`);
-          } else {
-            ffmpegArgs.push('-map', '0:v');
-          }
-          ffmpegArgs.push('-map', '0:a');
-
-          // RTMP-specific options to handle connection issues gracefully
-          ffmpegArgs.push(
-            '-f', 'flv',
-            '-flvflags', 'no_duration_filesize',  // Ignore duration/filesize errors
-            rtmpUrl
-          );
-
-          logger.info(`Added ${dest.platform} RTMP output [vout${outputIndex}] for channel ${channelId}`);
+          logger.info(`Added ${dest.platform} to tee muxer for channel ${channelId}`);
           Channel.addLog(channelId, 'info', `Streaming to ${dest.platform}`);
         });
 
-        logger.info(`Streaming to ${rtmpDestinations.length + 1} outputs for channel ${channelId}`);
+        // Add tee muxer
+        ffmpegArgs.push(
+          '-f', 'tee',
+          teeOutputs.join('|')
+        );
+
+        logger.info(`Using tee muxer for ${rtmpDestinations.length + 1} outputs (1 HLS + ${rtmpDestinations.length} RTMP)`);
         Channel.addLog(channelId, 'info', `Multi-output: HLS + ${rtmpDestinations.length} RTMP destination(s)`);
+      } else {
+        // No RTMP destinations, just output to HLS normally
+        ffmpegArgs.push(
+          '-f', 'hls',
+          '-hls_time', hlsSegmentDuration,
+          '-hls_list_size', hlsListSize,
+          '-hls_flags', 'delete_segments+append_list',
+          '-hls_segment_filename', path.join(outputDir, 'segment_%03d.ts'),
+          outputPath
+        );
       }
 
       // Create log file for this channel
