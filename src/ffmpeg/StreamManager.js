@@ -352,7 +352,6 @@ class StreamManager {
         watermarkFilter += `[1:v]scale=iw*${scale}:ih*${scale},format=rgba,colorchannelmixer=aa=${opacity}[logo];[scaled][logo]overlay=${position}[vout]`;
 
         ffmpegArgs.push('-filter_complex', watermarkFilter);
-        ffmpegArgs.push('-map', '[vout]', '-map', '0:a');
 
         logger.info(`Watermark enabled for channel ${channelId}`, {
           position: channel.watermark_position,
@@ -365,7 +364,6 @@ class StreamManager {
         let scaleFilter = `[0:v]scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=decrease,pad=${resolution.width}:${resolution.height}:(ow-iw)/2:(oh-ih)/2[vout]`;
 
         ffmpegArgs.push('-filter_complex', scaleFilter);
-        ffmpegArgs.push('-map', '[vout]', '-map', '0:a');
 
         logger.info(`Quality preset ${qualityPreset} (${resolution.width}x${resolution.height}) applied for channel ${channelId}`);
         Channel.addLog(channelId, 'info', `Output quality: ${qualityPreset} (${resolution.width}x${resolution.height})`);
@@ -400,6 +398,14 @@ class StreamManager {
       }
 
       // Output to HLS (primary output)
+      // Add map commands for HLS output
+      if (hasWatermark || rtmpDestinations.length > 0) {
+        ffmpegArgs.push('-map', '[vout]');
+      } else {
+        ffmpegArgs.push('-map', '0:v');
+      }
+      ffmpegArgs.push('-map', '0:a');
+
       ffmpegArgs.push(
         '-f', 'hls',
         '-hls_time', hlsSegmentDuration,
