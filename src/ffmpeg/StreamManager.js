@@ -48,18 +48,34 @@ class StreamManager {
         
         const { execSync } = await import('child_process');
         try {
-          // Point this to your cookies.txt location
-          const cookiePath = '/var/www/live-admin/cookies.txt';
-          
-          // Command to get the direct stream URL
-          const cmd = `/usr/local/bin/yt-dlp --cookies ${cookiePath} --user-agent "facebookexternalhit/1.1" -g "${resolvedInputUrl}"`;
-          
-          resolvedInputUrl = execSync(cmd, { 
+          // Get cookie path from environment variable or use default
+          const cookiePath = process.env.YOUTUBE_COOKIES_PATH || '/var/www/live-admin/cookies.txt';
+
+          // Check if cookies file exists
+          if (!fs.existsSync(cookiePath)) {
+            throw new Error(`Cookies file not found at ${cookiePath}. Please ensure cookies.txt exists.`);
+          }
+
+          // Command to get the direct stream URL with cookies
+          const ytdlpPath = process.env.YTDLP_PATH || 'yt-dlp';
+          const cmd = `${ytdlpPath} --cookies "${cookiePath}" --user-agent "facebookexternalhit/1.1" -g "${resolvedInputUrl}"`;
+
+          logger.info(`Executing yt-dlp with cookies from ${cookiePath}`);
+
+          resolvedInputUrl = execSync(cmd, {
             encoding: 'utf8',
-            env: { ...process.env, PATH: `${process.env.PATH}:/root/.deno/bin` }
+            timeout: 30000, // 30 second timeout
+            env: { ...process.env, PATH: `${process.env.PATH}:/usr/local/bin:/root/.deno/bin` }
           }).trim();
+
+          if (!resolvedInputUrl) {
+            throw new Error('yt-dlp returned empty URL');
+          }
+
+          logger.info(`Successfully resolved YouTube URL for channel ${channelId}`);
         } catch (err) {
-          throw new Error(`yt-dlp failed: ${err.message}`);
+          logger.error(`yt-dlp failed for channel ${channelId}`, { error: err.message });
+          throw new Error(`Failed to resolve YouTube URL: ${err.message}`);
         }
       }
       // ----------------------------------------------
