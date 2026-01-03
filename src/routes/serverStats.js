@@ -1,6 +1,6 @@
 import express from 'express';
 import { getServerStats } from '../controllers/serverStatsController.js';
-import { authenticate } from '../middleware/auth.js';
+import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -9,6 +9,6 @@ const router = express.Router();
  * @desc    Get server statistics (CPU, RAM, Disk, Network)
  * @access  Private
  */
-router.get('/', authenticate, getServerStats);
+router.get('/', authenticateToken, getServerStats);
 
 export default router;
