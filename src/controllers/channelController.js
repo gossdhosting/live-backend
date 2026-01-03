@@ -1,4 +1,5 @@
 import Channel from '../models/Channel.js';
+import MediaFile from '../models/MediaFile.js';
 import streamManager from '../ffmpeg/StreamManager.js';
 import { isValidYouTubeUrl, isValidChannelName } from '../utils/validation.js';
 import logger from '../utils/logger.js';
@@ -48,11 +49,21 @@ export const getChannel = (req, res) => {
 // Create channel
 export const createChannel = (req, res) => {
   try {
-    const { name, description, input_url, auto_restart, quality_preset, stream_title } = req.body;
+    const {
+      name,
+      description,
+      input_url,
+      auto_restart,
+      quality_preset,
+      stream_title,
+      input_type,
+      media_file_id,
+      loop_video
+    } = req.body;
 
     // Validation
-    if (!name || !input_url) {
-      return res.status(400).json({ error: 'Name and input URL required' });
+    if (!name) {
+      return res.status(400).json({ error: 'Channel name is required' });
     }
 
     if (!isValidChannelName(name)) {
@@ -61,20 +72,48 @@ export const createChannel = (req, res) => {
         .json({ error: 'Channel name must be 2-100 characters' });
     }
 
-    if (!isValidYouTubeUrl(input_url)) {
-      return res.status(400).json({ error: 'Invalid YouTube URL' });
+    // Validate based on input type
+    const finalInputType = input_type || 'youtube';
+
+    if (finalInputType === 'youtube') {
+      if (!input_url) {
+        return res.status(400).json({ error: 'YouTube URL is required' });
+      }
+      if (!isValidYouTubeUrl(input_url)) {
+        return res.status(400).json({ error: 'Invalid YouTube URL' });
+      }
+    } else if (finalInputType === 'video') {
+      if (!media_file_id) {
+        return res.status(400).json({ error: 'Media file selection is required for video input type' });
+      }
+      // Verify media file exists
+      const mediaFile = MediaFile.findById(media_file_id);
+      if (!mediaFile) {
+        return res.status(400).json({ error: 'Selected media file not found' });
+      }
+    } else {
+      return res.status(400).json({ error: 'Invalid input type. Must be "youtube" or "video"' });
     }
 
     const channel = Channel.create({
       name,
       description,
-      input_url,
+      input_url: input_url || '',
       auto_restart: auto_restart ? 1 : 0,
       quality_preset,
-      stream_title,
+      stream_title: stream_title || '',
+      input_type: finalInputType,
+      media_file_id: media_file_id || null,
+      loop_video: loop_video ? 1 : 0,
     });
 
-    logger.info('Channel created', { channelId: channel.id, name });
+    logger.info('Channel created', {
+      channelId: channel.id,
+      name,
+      inputType: finalInputType,
+      mediaFileId: media_file_id,
+      loopVideo: loop_video
+    });
 
     res.status(201).json({ channel });
   } catch (error) {

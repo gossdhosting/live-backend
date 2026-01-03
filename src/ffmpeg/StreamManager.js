@@ -163,10 +163,30 @@ class StreamManager {
         throw new Error('Channel not found');
       }
 
-      // --- ADD THIS BLOCK TO RESOLVE YOUTUBE URLS ---
+      // --- HANDLE INPUT TYPE (YOUTUBE VS VIDEO FILE) ---
       let resolvedInputUrl = channel.input_url;
-      
-      if (resolvedInputUrl.includes('youtube.com') || resolvedInputUrl.includes('youtu.be')) {
+      const isVideoFile = channel.input_type === 'video';
+
+      // If input type is video, get the file path from MediaFile
+      if (isVideoFile) {
+        if (!channel.media_file_id) {
+          throw new Error('Media file not selected for video input type');
+        }
+
+        const MediaFile = (await import('../models/MediaFile.js')).default;
+        const mediaFile = MediaFile.findById(channel.media_file_id);
+
+        if (!mediaFile) {
+          throw new Error('Selected media file not found');
+        }
+
+        if (!fs.existsSync(mediaFile.file_path)) {
+          throw new Error(`Media file not found at path: ${mediaFile.file_path}`);
+        }
+
+        resolvedInputUrl = mediaFile.file_path;
+        logger.info(`Using video file for channel ${channelId}: ${mediaFile.original_name}`);
+      } else if (resolvedInputUrl.includes('youtube.com') || resolvedInputUrl.includes('youtu.be')) {
         logger.info(`Resolving YouTube URL for channel ${channelId}`);
         
         const { execSync } = await import('child_process');
@@ -257,14 +277,30 @@ class StreamManager {
       const ffmpegArgs = [
         '-loglevel', 'warning', // Only show warnings and errors
         '-err_detect', 'ignore_err', // Continue on non-critical errors
-        '-reconnect', '1', // Enable reconnection
-        '-reconnect_streamed', '1', // Reconnect for streamed protocols
-        '-reconnect_delay_max', '5', // Max delay between reconnection attempts
-        '-timeout', '10000000', // 10 second timeout for I/O operations
+      ];
+
+      // Add loop for video files if enabled
+      if (isVideoFile && channel.loop_video) {
+        ffmpegArgs.push('-stream_loop', '-1'); // -1 means infinite loop
+        logger.info(`Auto-loop enabled for channel ${channelId}`);
+        Channel.addLog(channelId, 'info', 'Video will loop automatically');
+      }
+
+      // Add reconnection settings only for YouTube/live streams
+      if (!isVideoFile) {
+        ffmpegArgs.push(
+          '-reconnect', '1',
+          '-reconnect_streamed', '1',
+          '-reconnect_delay_max', '5',
+          '-timeout', '10000000'
+        );
+      }
+
+      ffmpegArgs.push(
         '-re', // Read input at native frame rate
         '-i',
-         resolvedInputUrl,
-      ];
+        resolvedInputUrl
+      );
 
       // Add watermark input if enabled
       if (hasWatermark) {
