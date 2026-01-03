@@ -76,7 +76,18 @@ class RtmpDestination {
   }
 
   static getEnabledForChannel(channelId) {
-    const stmt = db.prepare('SELECT * FROM rtmp_destinations WHERE channel_id = ? AND enabled = 1');
+    const stmt = db.prepare(`
+      SELECT
+        d.*,
+        t.video_bitrate as template_video_bitrate,
+        t.audio_bitrate as template_audio_bitrate,
+        t.profile as template_profile,
+        t.preset as template_preset,
+        t.fps as template_fps
+      FROM rtmp_destinations d
+      LEFT JOIN rtmp_templates t ON d.template_id = t.id
+      WHERE d.channel_id = ? AND d.enabled = 1
+    `);
     return stmt.all(channelId);
   }
 }

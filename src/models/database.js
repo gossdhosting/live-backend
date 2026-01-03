@@ -82,6 +82,11 @@ const initDatabase = () => {
       platform TEXT NOT NULL,
       rtmp_url TEXT NOT NULL,
       stream_key TEXT NOT NULL,
+      video_bitrate TEXT DEFAULT NULL,
+      audio_bitrate TEXT DEFAULT NULL,
+      profile TEXT DEFAULT NULL,
+      preset TEXT DEFAULT NULL,
+      fps INTEGER DEFAULT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )

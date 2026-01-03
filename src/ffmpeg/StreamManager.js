@@ -214,8 +214,21 @@ class StreamManager {
         const opacity = channel.watermark_opacity || 1.0;
         const scale = channel.watermark_scale || 1.0;
 
-        // Build watermark filter - creates [watermarked] output
-        const watermarkFilter = `[1:v]scale=iw*${scale}:ih*${scale},format=rgba,colorchannelmixer=aa=${opacity}[logo];[0:v][logo]overlay=${position}[watermarked]`;
+        // Calculate how many outputs we need (HLS + RTMP destinations)
+        const numOutputs = 1 + rtmpDestinations.length;
+
+        // Build watermark filter with split for multiple outputs
+        let watermarkFilter = `[1:v]scale=iw*${scale}:ih*${scale},format=rgba,colorchannelmixer=aa=${opacity}[logo];[0:v][logo]overlay=${position}`;
+
+        // If we have multiple outputs, split the watermarked video
+        if (numOutputs > 1) {
+          watermarkFilter += `[watermarked];[watermarked]split=${numOutputs}`;
+          for (let i = 0; i < numOutputs; i++) {
+            watermarkFilter += `[v${i}]`;
+          }
+        } else {
+          watermarkFilter += `[v0]`;
+        }
 
         ffmpegArgs.push('-filter_complex', watermarkFilter);
 
@@ -223,6 +236,7 @@ class StreamManager {
           position: channel.watermark_position,
           opacity: channel.watermark_opacity,
           scale: channel.watermark_scale,
+          outputs: numOutputs,
         });
         Channel.addLog(channelId, 'info', `Watermark applied at ${channel.watermark_position}`);
       }
@@ -230,7 +244,7 @@ class StreamManager {
       // Add HLS output
       if (hasWatermark) {
         ffmpegArgs.push(
-          '-map', '[watermarked]', // Use watermarked video
+          '-map', '[v0]', // Use first split output
           '-map', '0:a', // Use original audio
         );
       }
@@ -259,18 +273,37 @@ class StreamManager {
       if (rtmpDestinations.length > 0) {
         logger.info(`Adding ${rtmpDestinations.length} RTMP destination(s) for channel ${channelId}`);
 
-        for (const dest of rtmpDestinations) {
+        for (let i = 0; i < rtmpDestinations.length; i++) {
+          const dest = rtmpDestinations[i];
           const rtmpUrl = `${dest.rtmp_url}${dest.stream_key}`;
 
-          // Get platform-specific settings
+          // Get platform-specific settings (template settings take priority)
           const encodingSettings = this.getPlatformEncodingSettings(
             dest.platform,
             dest.custom_bitrate
           );
 
+          // Override with template settings if available
+          if (dest.template_video_bitrate) {
+            encodingSettings.videoBitrate = dest.template_video_bitrate;
+            encodingSettings.maxrate = dest.template_video_bitrate;
+            encodingSettings.bufsize = `${parseInt(dest.template_video_bitrate) * 2}k`;
+          }
+          if (dest.template_audio_bitrate) {
+            encodingSettings.audioBitrate = dest.template_audio_bitrate;
+          }
+          if (dest.template_profile) {
+            encodingSettings.profile = dest.template_profile;
+          }
+          if (dest.template_fps) {
+            encodingSettings.fps = dest.template_fps;
+          }
+          const preset = dest.template_preset || 'veryfast';
+
           // Map video and audio for RTMP output
           if (hasWatermark) {
-            ffmpegArgs.push('-map', '[watermarked]', '-map', '0:a');
+            // Use the corresponding split output (v1, v2, etc. - v0 is used by HLS)
+            ffmpegArgs.push('-map', `[v${i + 1}]`, '-map', '0:a');
           } else {
             ffmpegArgs.push('-map', '0:v', '-map', '0:a');
           }
@@ -278,7 +311,7 @@ class StreamManager {
           // RTMP encoding settings
           ffmpegArgs.push(
             '-c:v', 'libx264',
-            '-preset', 'veryfast',
+            '-preset', preset,
             '-b:v', encodingSettings.videoBitrate,
             '-maxrate', encodingSettings.maxrate,
             '-bufsize', encodingSettings.bufsize,

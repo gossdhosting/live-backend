@@ -2,13 +2,23 @@ import db from './database.js';
 
 class RtmpTemplate {
   // Create a new RTMP template
-  static create({ name, platform, rtmp_url, stream_key }) {
+  static create({ name, platform, rtmp_url, stream_key, video_bitrate, audio_bitrate, profile, preset, fps }) {
     const stmt = db.prepare(`
-      INSERT INTO rtmp_templates (name, platform, rtmp_url, stream_key)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO rtmp_templates (name, platform, rtmp_url, stream_key, video_bitrate, audio_bitrate, profile, preset, fps)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    const result = stmt.run(name, platform, rtmp_url, stream_key);
+    const result = stmt.run(
+      name,
+      platform,
+      rtmp_url,
+      stream_key,
+      video_bitrate || null,
+      audio_bitrate || null,
+      profile || null,
+      preset || null,
+      fps || null
+    );
     return this.getById(result.lastInsertRowid);
   }
 
@@ -25,7 +35,7 @@ class RtmpTemplate {
   }
 
   // Update template
-  static update(id, { name, platform, rtmp_url, stream_key }) {
+  static update(id, { name, platform, rtmp_url, stream_key, video_bitrate, audio_bitrate, profile, preset, fps }) {
     const fields = [];
     const values = [];
 
@@ -44,6 +54,26 @@ class RtmpTemplate {
     if (stream_key !== undefined) {
       fields.push('stream_key = ?');
       values.push(stream_key);
+    }
+    if (video_bitrate !== undefined) {
+      fields.push('video_bitrate = ?');
+      values.push(video_bitrate || null);
+    }
+    if (audio_bitrate !== undefined) {
+      fields.push('audio_bitrate = ?');
+      values.push(audio_bitrate || null);
+    }
+    if (profile !== undefined) {
+      fields.push('profile = ?');
+      values.push(profile || null);
+    }
+    if (preset !== undefined) {
+      fields.push('preset = ?');
+      values.push(preset || null);
+    }
+    if (fps !== undefined) {
+      fields.push('fps = ?');
+      values.push(fps || null);
     }
 
     if (fields.length === 0) return null;
