@@ -50,8 +50,34 @@ class StreamManager {
       maxReconnectAttempts: this.maxReconnectAttempts,
     });
 
+    // Clean up orphaned stream states on startup
+    this.cleanupOrphanedStreams();
+
     // Start health check interval
     this.startHealthMonitoring();
+  }
+
+  // Clean up channels marked as running but not actually tracked
+  async cleanupOrphanedStreams() {
+    try {
+      const channels = Channel.getAll();
+      let cleanedCount = 0;
+
+      for (const channel of channels) {
+        // If channel is marked as running but we don't have it in our process map
+        if (channel.status === 'running' && !this.processes.has(channel.id)) {
+          logger.warn(`Found orphaned stream state for channel ${channel.id}, marking as stopped`);
+          Channel.updateStatus(channel.id, 'stopped');
+          cleanedCount++;
+        }
+      }
+
+      if (cleanedCount > 0) {
+        logger.info(`Cleaned up ${cleanedCount} orphaned stream state(s)`);
+      }
+    } catch (error) {
+      logger.error('Failed to cleanup orphaned streams', { error: error.message });
+    }
   }
 
   // Monitor stream health
@@ -677,24 +703,10 @@ class StreamManager {
     const reconnectAttempts = this.reconnectAttempts.get(channelId) || 0;
     const rtmpStatusMap = this.rtmpConnectionStatus.get(channelId);
 
-    // Debug logging
-    logger.info(`[DEBUG] getStreamHealth called for channel ${channelId}`, {
-      hasProcessInfo: !!processInfo,
-      hasRtmpStatusMap: !!rtmpStatusMap,
-      rtmpStatusMapSize: rtmpStatusMap ? rtmpStatusMap.size : 0,
-      allRtmpChannels: Array.from(this.rtmpConnectionStatus.keys())
-    });
-
     // Convert RTMP status Map to array for API response
     const rtmpConnections = [];
     if (rtmpStatusMap) {
       for (const [destId, status] of rtmpStatusMap.entries()) {
-        logger.info(`[DEBUG] Adding RTMP connection to response`, {
-          channelId,
-          destId,
-          platform: status.platform,
-          status: status.status
-        });
         rtmpConnections.push({
           destinationId: destId,
           platform: status.platform,
@@ -703,12 +715,6 @@ class StreamManager {
         });
       }
     }
-
-    logger.info(`[DEBUG] Final rtmpConnections array`, {
-      channelId,
-      count: rtmpConnections.length,
-      connections: rtmpConnections
-    });
 
     if (!processInfo) {
       return {
