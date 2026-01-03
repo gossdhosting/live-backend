@@ -235,7 +235,7 @@ class StreamManager {
         );
       }
 
-      ffmpegArgs.push(
+      const hlsArgs = [
         '-c:v', hasWatermark ? 'libx264' : 'copy',
         '-c:a', 'copy',
         '-preset', hasWatermark ? 'veryfast' : undefined,
@@ -248,7 +248,9 @@ class StreamManager {
         '-hls_flags', 'delete_segments+append_list',
         '-hls_segment_filename', path.join(outputDir, 'segment_%03d.ts'),
         outputPath
-      ).filter(arg => arg !== undefined);
+      ].filter(arg => arg !== undefined);
+
+      ffmpegArgs.push(...hlsArgs);
 
       // Add RTMP outputs with platform-specific encoding
       if (rtmpDestinations.length > 0) {
