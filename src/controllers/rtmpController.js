@@ -48,7 +48,7 @@ export const createRtmpDestination = async (req, res) => {
       platform: platform.toLowerCase(),
       rtmp_url,
       stream_key,
-      enabled: enabled !== undefined ? enabled : 1,
+      enabled: enabled !== undefined ? (enabled ? 1 : 0) : 1,
     });
 
     logger.info(`RTMP destination created for channel ${channelId}`, { platform, id: destination.id });
@@ -82,7 +82,7 @@ export const updateRtmpDestination = async (req, res) => {
       platform: platform?.toLowerCase(),
       rtmp_url,
       stream_key,
-      enabled,
+      enabled: enabled !== undefined ? (enabled ? 1 : 0) : undefined,
     });
 
     logger.info(`RTMP destination updated`, { id, platform });
