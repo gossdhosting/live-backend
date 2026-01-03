@@ -237,40 +237,30 @@ class StreamManager {
             dest.custom_bitrate
           );
 
-          // If watermark is already applied, video is already encoded, so we can copy
-          // Otherwise, we need to encode with platform-specific settings
-          if (hasWatermark) {
-            // Video already encoded with watermark, just copy
-            ffmpegArgs.push(
-              '-f', 'flv',
-              '-c:v', 'copy',
-              '-c:a', 'copy',
-              rtmpUrl
-            );
-          } else {
-            // Need to encode video with platform-specific settings
-            ffmpegArgs.push(
-              '-f', 'flv',
-              '-c:v', 'libx264',
-              '-preset', 'veryfast',
-              '-b:v', encodingSettings.videoBitrate,
-              '-maxrate', encodingSettings.maxrate,
-              '-bufsize', encodingSettings.bufsize,
-              '-g', '60',
-              '-keyint_min', '60',
-              '-sc_threshold', '0',
-              '-profile:v', encodingSettings.profile,
-              '-level', encodingSettings.level,
-              '-r', encodingSettings.fps.toString(),
-              '-c:a', 'aac',
-              '-b:a', encodingSettings.audioBitrate,
-              rtmpUrl
-            );
-          }
+          // ALWAYS encode for RTMP to ensure proper keyframe intervals
+          // Platforms like Twitch require keyframes every 2 seconds
+          ffmpegArgs.push(
+            '-f', 'flv',
+            '-c:v', 'libx264',
+            '-preset', 'veryfast',
+            '-b:v', encodingSettings.videoBitrate,
+            '-maxrate', encodingSettings.maxrate,
+            '-bufsize', encodingSettings.bufsize,
+            '-g', '60',
+            '-keyint_min', '60',
+            '-sc_threshold', '0',
+            '-profile:v', encodingSettings.profile,
+            '-level', encodingSettings.level,
+            '-r', encodingSettings.fps.toString(),
+            '-c:a', 'aac',
+            '-b:a', encodingSettings.audioBitrate,
+            rtmpUrl
+          );
 
           logger.info(`Added ${dest.platform} RTMP output for channel ${channelId}`, {
             bitrate: encodingSettings.videoBitrate,
             profile: encodingSettings.profile,
+            hasWatermark,
           });
           Channel.addLog(channelId, 'info', `Streaming to ${dest.platform} (${encodingSettings.videoBitrate})`);
         }
