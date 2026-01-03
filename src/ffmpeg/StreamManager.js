@@ -343,15 +343,33 @@ class StreamManager {
 
       // Build filter complex for video processing
       // NO SPLIT needed - Tee muxer handles distribution after encoding
+
+      // Get title overlay settings
+      const titleEnabled = channel.title_enabled || 0;
+      const streamTitle = channel.stream_title || '';
+      const titleBgColor = Settings.get('title_bg_color')?.value || '#000000';
+      const titleOpacity = parseFloat(Settings.get('title_opacity')?.value || '80') / 100;
+      const titlePosition = Settings.get('title_position')?.value || 'bottom-left';
+      const titleTextColor = Settings.get('title_text_color')?.value || '#FFFFFF';
+      const titleFontSize = Settings.get('title_font_size')?.value || '32';
+
       if (hasWatermark) {
         const position = this.getWatermarkPosition(channel.watermark_position || 'top-left');
         const opacity = channel.watermark_opacity || 1.0;
         const scale = channel.watermark_scale || 1.0;
 
-        // Build watermark filter - scale, apply watermark, output to [vout]
+        // Build watermark filter - scale, apply watermark
         let watermarkFilter = `[0:v]scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=decrease,pad=${resolution.width}:${resolution.height}:(ow-iw)/2:(oh-ih)/2[scaled];`;
         watermarkFilter += `[1:v]scale=iw*${scale}:ih*${scale},format=rgba,colorchannelmixer=aa=${opacity}[logo];`;
-        watermarkFilter += `[scaled][logo]overlay=${position}[vout]`;
+        watermarkFilter += `[scaled][logo]overlay=${position}`;
+
+        // Add title overlay if enabled
+        if (titleEnabled && streamTitle) {
+          const titleDrawtext = this.buildDrawtextFilter(streamTitle, titleBgColor, titleOpacity, titlePosition, titleTextColor, titleFontSize);
+          watermarkFilter += titleDrawtext;
+        }
+
+        watermarkFilter += '[vout]';
 
         ffmpegArgs.push('-filter_complex', watermarkFilter);
 
@@ -361,9 +379,17 @@ class StreamManager {
           scale: channel.watermark_scale,
         });
         Channel.addLog(channelId, 'info', `Watermark applied at ${channel.watermark_position}`);
-      } else if (rtmpDestinations.length > 0) {
-        // No watermark but have RTMP destinations - just scale to [vout]
-        let scaleFilter = `[0:v]scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=decrease,pad=${resolution.width}:${resolution.height}:(ow-iw)/2:(oh-ih)/2[vout]`;
+      } else if (rtmpDestinations.length > 0 || (titleEnabled && streamTitle)) {
+        // No watermark but have RTMP destinations or title - scale and optionally add title
+        let scaleFilter = `[0:v]scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=decrease,pad=${resolution.width}:${resolution.height}:(ow-iw)/2:(oh-ih)/2`;
+
+        // Add title overlay if enabled
+        if (titleEnabled && streamTitle) {
+          const titleDrawtext = this.buildDrawtextFilter(streamTitle, titleBgColor, titleOpacity, titlePosition, titleTextColor, titleFontSize);
+          scaleFilter += titleDrawtext;
+        }
+
+        scaleFilter += '[vout]';
 
         ffmpegArgs.push('-filter_complex', scaleFilter);
 
@@ -371,8 +397,18 @@ class StreamManager {
         Channel.addLog(channelId, 'info', `Output quality: ${qualityPreset} (${resolution.width}x${resolution.height})`);
       }
 
+      // Log title overlay if enabled
+      if (titleEnabled && streamTitle) {
+        logger.info(`Title overlay enabled for channel ${channelId}`, {
+          title: streamTitle,
+          position: titlePosition,
+          fontSize: titleFontSize,
+        });
+        Channel.addLog(channelId, 'info', `Title overlay: "${streamTitle}" at ${titlePosition}`);
+      }
+
       // OPTIMIZATION: Encode once, use tee muxer to distribute to all outputs
-      const needsEncoding = hasWatermark || rtmpDestinations.length > 0;
+      const needsEncoding = hasWatermark || rtmpDestinations.length > 0 || (titleEnabled && streamTitle);
 
       if (needsEncoding) {
         // Single encoder for all outputs
@@ -868,6 +904,45 @@ class StreamManager {
       'bottom-right': 'main_w-overlay_w-10:main_h-overlay_h-10',
     };
     return positions[position] || positions['top-left'];
+  }
+
+  // Build drawtext filter for title overlay
+  buildDrawtextFilter(text, bgColor, bgOpacity, position, textColor, fontSize) {
+    // Escape text for FFmpeg (single quotes and colons need escaping)
+    const escapedText = text.replace(/'/g, "'\\''").replace(/:/g, '\\:');
+
+    // Calculate position based on settings
+    let x, y;
+    const padding = 20; // Padding from edges
+
+    if (position === 'top-left') {
+      x = padding;
+      y = padding;
+    } else if (position === 'top-center') {
+      x = '(w-text_w)/2';
+      y = padding;
+    } else if (position === 'top-right') {
+      x = `w-text_w-${padding}`;
+      y = padding;
+    } else if (position === 'bottom-left') {
+      x = padding;
+      y = `h-text_h-${padding}`;
+    } else if (position === 'bottom-center') {
+      x = '(w-text_w)/2';
+      y = `h-text_h-${padding}`;
+    } else if (position === 'bottom-right') {
+      x = `w-text_w-${padding}`;
+      y = `h-text_h-${padding}`;
+    } else {
+      // Default to bottom-left
+      x = padding;
+      y = `h-text_h-${padding}`;
+    }
+
+    // Build drawtext filter with background box
+    const drawtextFilter = `,drawtext=text='${escapedText}':fontsize=${fontSize}:fontcolor=${textColor}:x=${x}:y=${y}:box=1:boxcolor=${bgColor}@${bgOpacity}:boxborderw=10`;
+
+    return drawtextFilter;
   }
 
   // Get stream status (backward compatible, uses health metrics)

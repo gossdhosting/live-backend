@@ -145,6 +145,31 @@ const initDatabase = () => {
       value: process.env.AUTO_RESTART_ENABLED || 'true',
       description: 'Global auto-restart toggle',
     },
+    {
+      key: 'title_bg_color',
+      value: '#000000',
+      description: 'Title overlay background color',
+    },
+    {
+      key: 'title_opacity',
+      value: '80',
+      description: 'Title overlay background opacity (0-100)',
+    },
+    {
+      key: 'title_position',
+      value: 'bottom-left',
+      description: 'Title overlay position on video',
+    },
+    {
+      key: 'title_text_color',
+      value: '#FFFFFF',
+      description: 'Title overlay text color',
+    },
+    {
+      key: 'title_font_size',
+      value: '32',
+      description: 'Title overlay font size in pixels',
+    },
   ];
 
   const insertSetting = db.prepare(`
@@ -203,6 +228,14 @@ const initDatabase = () => {
         ALTER TABLE channels ADD COLUMN loop_video INTEGER DEFAULT 0;
       `);
       console.log('✅ Added input_type, media_file_id, and loop_video columns to channels table');
+    }
+
+    const hasTitleEnabled = tableInfo.some(col => col.name === 'title_enabled');
+    if (!hasTitleEnabled) {
+      db.exec(`
+        ALTER TABLE channels ADD COLUMN title_enabled INTEGER DEFAULT 0;
+      `);
+      console.log('✅ Added title_enabled column to channels table');
     }
   } catch (error) {
     console.log('Watermark columns migration:', error.message);
