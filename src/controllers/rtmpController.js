@@ -24,7 +24,7 @@ export const getRtmpDestinations = async (req, res) => {
 export const createRtmpDestination = async (req, res) => {
   try {
     const { channelId } = req.params;
-    const { platform, rtmp_url, stream_key, enabled } = req.body;
+    const { platform, rtmp_url, stream_key, enabled, custom_bitrate } = req.body;
 
     // Validate required fields
     if (!platform || !rtmp_url || !stream_key) {
@@ -49,9 +49,10 @@ export const createRtmpDestination = async (req, res) => {
       rtmp_url,
       stream_key,
       enabled: enabled !== undefined ? (enabled ? 1 : 0) : 1,
+      custom_bitrate: custom_bitrate || null,
     });
 
-    logger.info(`RTMP destination created for channel ${channelId}`, { platform, id: destination.id });
+    logger.info(`RTMP destination created for channel ${channelId}`, { platform, id: destination.id, custom_bitrate });
     res.status(201).json({ destination });
   } catch (error) {
     logger.error('Failed to create RTMP destination', { error: error.message });
@@ -62,7 +63,7 @@ export const createRtmpDestination = async (req, res) => {
 export const updateRtmpDestination = async (req, res) => {
   try {
     const { id } = req.params;
-    const { platform, rtmp_url, stream_key, enabled } = req.body;
+    const { platform, rtmp_url, stream_key, enabled, custom_bitrate } = req.body;
 
     // Check if destination exists
     const existing = RtmpDestination.getById(id);
@@ -83,9 +84,10 @@ export const updateRtmpDestination = async (req, res) => {
       rtmp_url,
       stream_key,
       enabled: enabled !== undefined ? (enabled ? 1 : 0) : undefined,
+      custom_bitrate: custom_bitrate !== undefined ? custom_bitrate : undefined,
     });
 
-    logger.info(`RTMP destination updated`, { id, platform });
+    logger.info(`RTMP destination updated`, { id, platform, custom_bitrate });
     res.json({ destination });
   } catch (error) {
     logger.error('Failed to update RTMP destination', { error: error.message });

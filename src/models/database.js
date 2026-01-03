@@ -167,6 +167,7 @@ const initDatabase = () => {
   try {
     const rtmpTableInfo = db.prepare('PRAGMA table_info(rtmp_destinations)').all();
     const hasTemplateId = rtmpTableInfo.some(col => col.name === 'template_id');
+    const hasCustomBitrate = rtmpTableInfo.some(col => col.name === 'custom_bitrate');
 
     if (!hasTemplateId) {
       db.exec(`
@@ -174,8 +175,15 @@ const initDatabase = () => {
       `);
       console.log('✅ Added template_id column to rtmp_destinations table');
     }
+
+    if (!hasCustomBitrate) {
+      db.exec(`
+        ALTER TABLE rtmp_destinations ADD COLUMN custom_bitrate INTEGER;
+      `);
+      console.log('✅ Added custom_bitrate column to rtmp_destinations table');
+    }
   } catch (error) {
-    console.log('RTMP template_id migration:', error.message);
+    console.log('RTMP migrations:', error.message);
   }
 
   console.log('✅ Database initialized successfully');

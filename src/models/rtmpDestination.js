@@ -13,8 +13,8 @@ class RtmpDestination {
 
   static create(data) {
     const stmt = db.prepare(`
-      INSERT INTO rtmp_destinations (channel_id, template_id, platform, rtmp_url, stream_key, enabled)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO rtmp_destinations (channel_id, template_id, platform, rtmp_url, stream_key, enabled, custom_bitrate)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
     const result = stmt.run(
       data.channel_id,
@@ -22,7 +22,8 @@ class RtmpDestination {
       data.platform,
       data.rtmp_url,
       data.stream_key,
-      data.enabled !== undefined ? data.enabled : 1
+      data.enabled !== undefined ? data.enabled : 1,
+      data.custom_bitrate || null
     );
     return this.getById(result.lastInsertRowid);
   }
@@ -51,6 +52,10 @@ class RtmpDestination {
     if (data.enabled !== undefined) {
       updates.push('enabled = ?');
       values.push(data.enabled);
+    }
+    if (data.custom_bitrate !== undefined) {
+      updates.push('custom_bitrate = ?');
+      values.push(data.custom_bitrate);
     }
 
     updates.push('updated_at = CURRENT_TIMESTAMP');

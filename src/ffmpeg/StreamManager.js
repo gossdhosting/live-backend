@@ -33,6 +33,50 @@ class StreamManager {
     });
   }
 
+  // Get platform-specific encoding settings
+  getPlatformEncodingSettings(platform, customBitrate = null) {
+    const presets = {
+      facebook: {
+        videoBitrate: '4000k',
+        audioBitrate: '128k',
+        maxrate: '4500k',
+        bufsize: '8000k',
+        fps: 30,
+        profile: 'main',
+        level: '4.1',
+      },
+      youtube: {
+        videoBitrate: '6000k',
+        audioBitrate: '128k',
+        maxrate: '6500k',
+        bufsize: '12000k',
+        fps: 30,
+        profile: 'high',
+        level: '4.2',
+      },
+      twitch: {
+        videoBitrate: '6000k',
+        audioBitrate: '160k',
+        maxrate: '6000k',
+        bufsize: '12000k',
+        fps: 30,
+        profile: 'main',
+        level: '4.1',
+      },
+      custom: {
+        videoBitrate: customBitrate || '4000k',
+        audioBitrate: '128k',
+        maxrate: customBitrate ? `${parseInt(customBitrate) * 1.1}k` : '4500k',
+        bufsize: customBitrate ? `${parseInt(customBitrate) * 2}k` : '8000k',
+        fps: 30,
+        profile: 'main',
+        level: '4.1',
+      },
+    };
+
+    return presets[platform] || presets.custom;
+  }
+
    // Start a stream for a channel
   async startStream(channelId) {
     try {
@@ -180,23 +224,55 @@ class StreamManager {
         outputPath
       );
 
-      // Add RTMP outputs
+      // Add RTMP outputs with platform-specific encoding
       if (rtmpDestinations.length > 0) {
         logger.info(`Adding ${rtmpDestinations.length} RTMP destination(s) for channel ${channelId}`);
 
         for (const dest of rtmpDestinations) {
           const rtmpUrl = `${dest.rtmp_url}${dest.stream_key}`;
-          ffmpegArgs.push(
-            '-f',
-            'flv', // FLV format for RTMP
-            '-c:v',
-            'copy',
-            '-c:a',
-            'copy',
-            rtmpUrl
+
+          // Get platform-specific settings
+          const encodingSettings = this.getPlatformEncodingSettings(
+            dest.platform,
+            dest.custom_bitrate
           );
-          logger.info(`Added ${dest.platform} RTMP output for channel ${channelId}`);
-          Channel.addLog(channelId, 'info', `Streaming to ${dest.platform}`);
+
+          // If watermark is already applied, video is already encoded, so we can copy
+          // Otherwise, we need to encode with platform-specific settings
+          if (hasWatermark) {
+            // Video already encoded with watermark, just copy
+            ffmpegArgs.push(
+              '-f', 'flv',
+              '-c:v', 'copy',
+              '-c:a', 'copy',
+              rtmpUrl
+            );
+          } else {
+            // Need to encode video with platform-specific settings
+            ffmpegArgs.push(
+              '-f', 'flv',
+              '-c:v', 'libx264',
+              '-preset', 'veryfast',
+              '-b:v', encodingSettings.videoBitrate,
+              '-maxrate', encodingSettings.maxrate,
+              '-bufsize', encodingSettings.bufsize,
+              '-g', '60',
+              '-keyint_min', '60',
+              '-sc_threshold', '0',
+              '-profile:v', encodingSettings.profile,
+              '-level', encodingSettings.level,
+              '-r', encodingSettings.fps.toString(),
+              '-c:a', 'aac',
+              '-b:a', encodingSettings.audioBitrate,
+              rtmpUrl
+            );
+          }
+
+          logger.info(`Added ${dest.platform} RTMP output for channel ${channelId}`, {
+            bitrate: encodingSettings.videoBitrate,
+            profile: encodingSettings.profile,
+          });
+          Channel.addLog(channelId, 'info', `Streaming to ${dest.platform} (${encodingSettings.videoBitrate})`);
         }
       }
 

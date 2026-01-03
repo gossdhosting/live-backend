@@ -105,7 +105,7 @@ router.post('/upload/:channelId', upload.single('watermark'), async (req, res) =
 router.put('/:channelId', async (req, res) => {
   try {
     const { channelId } = req.params;
-    const { watermark_enabled, watermark_path, watermark_position, watermark_opacity } = req.body;
+    const { watermark_enabled, watermark_path, watermark_position, watermark_opacity, watermark_scale } = req.body;
 
     // Verify channel exists
     const channel = Channel.findById(channelId);
@@ -123,6 +123,7 @@ router.put('/:channelId', async (req, res) => {
     if (watermark_path !== undefined) updateData.watermark_path = watermark_path;
     if (watermark_position !== undefined) updateData.watermark_position = watermark_position;
     if (watermark_opacity !== undefined) updateData.watermark_opacity = watermark_opacity;
+    if (watermark_scale !== undefined) updateData.watermark_scale = watermark_scale;
 
     const updated = Channel.update(channelId, updateData);
     logger.info(`Watermark settings updated for channel ${channelId}`, updateData);
