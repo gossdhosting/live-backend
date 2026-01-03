@@ -1,5 +1,5 @@
 import RtmpDestination from '../models/rtmpDestination.js';
-import Channel from '../models/channel.js';
+import Channel from '../models/Channel.js';
 import logger from '../utils/logger.js';
 
 export const getRtmpDestinations = async (req, res) => {
