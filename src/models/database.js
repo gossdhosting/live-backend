@@ -172,6 +172,14 @@ const initDatabase = () => {
       `);
       console.log('✅ Added quality_preset column to channels table');
     }
+
+    const hasStreamTitle = tableInfo.some(col => col.name === 'stream_title');
+    if (!hasStreamTitle) {
+      db.exec(`
+        ALTER TABLE channels ADD COLUMN stream_title TEXT;
+      `);
+      console.log('✅ Added stream_title column to channels table');
+    }
   } catch (error) {
     console.log('Watermark columns migration:', error.message);
   }

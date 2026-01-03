@@ -48,7 +48,7 @@ export const getChannel = (req, res) => {
 // Create channel
 export const createChannel = (req, res) => {
   try {
-    const { name, description, input_url, auto_restart } = req.body;
+    const { name, description, input_url, auto_restart, quality_preset, stream_title } = req.body;
 
     // Validation
     if (!name || !input_url) {
@@ -70,6 +70,8 @@ export const createChannel = (req, res) => {
       description,
       input_url,
       auto_restart: auto_restart ? 1 : 0,
+      quality_preset,
+      stream_title,
     });
 
     logger.info('Channel created', { channelId: channel.id, name });

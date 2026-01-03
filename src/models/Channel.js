@@ -2,13 +2,13 @@ import db from './database.js';
 
 class Channel {
   // Create a new channel
-  static create({ name, description, input_url, auto_restart = 1, quality_preset = '720p' }) {
+  static create({ name, description, input_url, auto_restart = 1, quality_preset = '720p', stream_title = '' }) {
     const stmt = db.prepare(`
-      INSERT INTO channels (name, description, input_url, auto_restart, quality_preset, status)
-      VALUES (?, ?, ?, ?, ?, 'stopped')
+      INSERT INTO channels (name, description, input_url, auto_restart, quality_preset, stream_title, status)
+      VALUES (?, ?, ?, ?, ?, ?, 'stopped')
     `);
 
-    const result = stmt.run(name, description, input_url, auto_restart, quality_preset);
+    const result = stmt.run(name, description, input_url, auto_restart, quality_preset, stream_title);
     return this.findById(result.lastInsertRowid);
   }
 
@@ -26,7 +26,7 @@ class Channel {
 
   // Update channel
   static update(id, data) {
-    const allowedFields = ['name', 'description', 'input_url', 'auto_restart', 'quality_preset', 'watermark_enabled', 'watermark_path', 'watermark_position', 'watermark_opacity', 'watermark_scale'];
+    const allowedFields = ['name', 'description', 'input_url', 'auto_restart', 'quality_preset', 'stream_title', 'watermark_enabled', 'watermark_path', 'watermark_position', 'watermark_opacity', 'watermark_scale'];
     const fields = [];
     const values = [];
 
