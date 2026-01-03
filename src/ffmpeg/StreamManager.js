@@ -111,16 +111,51 @@ class StreamManager {
       // Get enabled RTMP destinations
       const rtmpDestinations = RtmpDestination.getEnabledForChannel(channelId);
 
+      // Check if watermark is enabled
+      const hasWatermark = channel.watermark_enabled && channel.watermark_path && fs.existsSync(channel.watermark_path);
+
       // Build FFmpeg arguments
       const ffmpegArgs = [
         '-re',
         '-i',
          resolvedInputUrl,
-        '-c:v',
-        'copy', // Copy video codec (no transcoding)
-        '-c:a',
-        'copy', // Copy audio codec (no transcoding)
       ];
+
+      // Add watermark input if enabled
+      if (hasWatermark) {
+        ffmpegArgs.push('-i', channel.watermark_path);
+      }
+
+      // Add video filter for watermark
+      if (hasWatermark) {
+        const position = this.getWatermarkPosition(channel.watermark_position || 'top-left');
+        const opacity = channel.watermark_opacity || 1.0;
+        ffmpegArgs.push(
+          '-filter_complex',
+          `[1:v]format=rgba,colorchannelmixer=aa=${opacity}[logo];[0:v][logo]overlay=${position}`,
+          '-c:v',
+          'libx264', // Need to encode when applying overlay
+          '-preset',
+          'veryfast', // Fast encoding preset
+          '-c:a',
+          'copy', // Copy audio codec (no transcoding)
+        );
+      } else {
+        ffmpegArgs.push(
+          '-c:v',
+          'copy', // Copy video codec (no transcoding)
+          '-c:a',
+          'copy', // Copy audio codec (no transcoding)
+        );
+      }
+
+      if (hasWatermark) {
+        logger.info(`Watermark enabled for channel ${channelId}`, {
+          position: channel.watermark_position,
+          opacity: channel.watermark_opacity,
+        });
+        Channel.addLog(channelId, 'info', `Watermark applied at ${channel.watermark_position}`);
+      }
 
       // Add HLS output
       ffmpegArgs.push(
@@ -318,6 +353,22 @@ class StreamManager {
       });
       throw error;
     }
+  }
+
+  // Get watermark position for FFmpeg overlay filter
+  getWatermarkPosition(position) {
+    const positions = {
+      'top-left': '10:10',
+      'top-center': '(main_w-overlay_w)/2:10',
+      'top-right': 'main_w-overlay_w-10:10',
+      'center-left': '10:(main_h-overlay_h)/2',
+      'center': '(main_w-overlay_w)/2:(main_h-overlay_h)/2',
+      'center-right': 'main_w-overlay_w-10:(main_h-overlay_h)/2',
+      'bottom-left': '10:main_h-overlay_h-10',
+      'bottom-center': '(main_w-overlay_w)/2:main_h-overlay_h-10',
+      'bottom-right': 'main_w-overlay_w-10:main_h-overlay_h-10',
+    };
+    return positions[position] || positions['top-left'];
   }
 
   // Get stream status

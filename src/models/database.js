@@ -122,6 +122,24 @@ const initDatabase = () => {
     insertSetting.run(setting.key, setting.value, setting.description);
   });
 
+  // Add watermark columns if they don't exist (migration)
+  try {
+    const tableInfo = db.prepare('PRAGMA table_info(channels)').all();
+    const hasWatermarkEnabled = tableInfo.some(col => col.name === 'watermark_enabled');
+
+    if (!hasWatermarkEnabled) {
+      db.exec(`
+        ALTER TABLE channels ADD COLUMN watermark_enabled INTEGER DEFAULT 0;
+        ALTER TABLE channels ADD COLUMN watermark_path TEXT;
+        ALTER TABLE channels ADD COLUMN watermark_position TEXT DEFAULT 'top-left';
+        ALTER TABLE channels ADD COLUMN watermark_opacity REAL DEFAULT 1.0;
+      `);
+      console.log('✅ Added watermark columns to channels table');
+    }
+  } catch (error) {
+    console.log('Watermark columns migration:', error.message);
+  }
+
   console.log('✅ Database initialized successfully');
 };
 
