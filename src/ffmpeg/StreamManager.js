@@ -301,38 +301,38 @@ class StreamManager {
         ffmpegArgs.push('-c:a', 'copy');
       }
 
-      // Build tee muxer output for HLS + all RTMP destinations
+      // Output to HLS first (primary output)
+      ffmpegArgs.push(
+        '-f', 'hls',
+        '-hls_time', hlsSegmentDuration,
+        '-hls_list_size', hlsListSize,
+        '-hls_flags', 'delete_segments+append_list',
+        '-hls_segment_filename', path.join(outputDir, 'segment_%03d.ts'),
+        outputPath
+      );
+
+      // Add RTMP outputs using separate output specifications
+      // FFmpeg will use the same encoded stream for all outputs (stream copy)
       if (rtmpDestinations.length > 0) {
-        // Use tee muxer to output to HLS and multiple RTMP simultaneously
-        const outputs = [];
+        logger.info(`Adding ${rtmpDestinations.length} RTMP destination(s) using optimized stream copy for channel ${channelId}`);
 
-        // HLS output
-        outputs.push(`[f=hls:hls_time=${hlsSegmentDuration}:hls_list_size=${hlsListSize}:hls_flags=delete_segments+append_list:hls_segment_filename=${path.join(outputDir, 'segment_%03d.ts').replace(/\\/g, '/')}]${outputPath.replace(/\\/g, '/')}`);
-
-        // RTMP outputs
         for (const dest of rtmpDestinations) {
           const rtmpUrl = `${dest.rtmp_url}${dest.stream_key}`;
-          outputs.push(`[f=flv]${rtmpUrl}`);
 
-          logger.info(`Added ${dest.platform} RTMP output for channel ${channelId} (using shared encoder)`);
-          Channel.addLog(channelId, 'info', `Streaming to ${dest.platform} (shared encoder)`);
+          // For each RTMP output, copy the already-encoded video and audio
+          ffmpegArgs.push(
+            '-c:v', 'copy', // Copy already-encoded video
+            '-c:a', 'copy', // Copy already-encoded audio
+            '-f', 'flv',
+            rtmpUrl
+          );
+
+          logger.info(`Added ${dest.platform} RTMP output for channel ${channelId} (stream copy mode)`);
+          Channel.addLog(channelId, 'info', `Streaming to ${dest.platform} (optimized copy mode)`);
         }
 
-        // Join all outputs with tee muxer
-        ffmpegArgs.push('-f', 'tee', '-map', '0:v', '-map', '0:a', outputs.join('|'));
-
-        logger.info(`Using optimized single-encoder mode with ${rtmpDestinations.length + 1} outputs for channel ${channelId}`);
-        Channel.addLog(channelId, 'info', `Optimized mode: 1 encoder → ${rtmpDestinations.length + 1} outputs (70% less CPU)`);
-      } else {
-        // No RTMP destinations, just HLS
-        ffmpegArgs.push(
-          '-f', 'hls',
-          '-hls_time', hlsSegmentDuration,
-          '-hls_list_size', hlsListSize,
-          '-hls_flags', 'delete_segments+append_list',
-          '-hls_segment_filename', path.join(outputDir, 'segment_%03d.ts'),
-          outputPath
-        );
+        logger.info(`Using optimized stream copy mode with ${rtmpDestinations.length + 1} outputs for channel ${channelId}`);
+        Channel.addLog(channelId, 'info', `Optimized: 1 encoder → ${rtmpDestinations.length + 1} outputs (70% less CPU)`);
       }
 
       // Create log file for this channel
