@@ -341,15 +341,29 @@ class StreamManager {
         ffmpegArgs.push('-i', channel.watermark_path);
       }
 
+      // Calculate total outputs: 1 for HLS + number of RTMP destinations
+      const totalOutputs = 1 + rtmpDestinations.length;
+
       // Build filter complex for video processing
       if (hasWatermark) {
         const position = this.getWatermarkPosition(channel.watermark_position || 'top-left');
         const opacity = channel.watermark_opacity || 1.0;
         const scale = channel.watermark_scale || 1.0;
 
-        // Build watermark filter - scale, then apply watermark (single output, no split)
+        // Build watermark filter - scale, apply watermark, then split for multiple outputs
         let watermarkFilter = `[0:v]scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=decrease,pad=${resolution.width}:${resolution.height}:(ow-iw)/2:(oh-ih)/2[scaled];`;
-        watermarkFilter += `[1:v]scale=iw*${scale}:ih*${scale},format=rgba,colorchannelmixer=aa=${opacity}[logo];[scaled][logo]overlay=${position}[vout]`;
+        watermarkFilter += `[1:v]scale=iw*${scale}:ih*${scale},format=rgba,colorchannelmixer=aa=${opacity}[logo];`;
+        watermarkFilter += `[scaled][logo]overlay=${position}`;
+
+        // Split output into unique labels for each destination
+        if (totalOutputs > 1) {
+          watermarkFilter += `,split=${totalOutputs}`;
+          for (let i = 0; i < totalOutputs; i++) {
+            watermarkFilter += `[vout${i}]`;
+          }
+        } else {
+          watermarkFilter += `[vout0]`;
+        }
 
         ffmpegArgs.push('-filter_complex', watermarkFilter);
 
@@ -357,15 +371,28 @@ class StreamManager {
           position: channel.watermark_position,
           opacity: channel.watermark_opacity,
           scale: channel.watermark_scale,
+          outputs: totalOutputs,
         });
         Channel.addLog(channelId, 'info', `Watermark applied at ${channel.watermark_position}`);
       } else if (rtmpDestinations.length > 0) {
-        // No watermark but have RTMP destinations - just scale
-        let scaleFilter = `[0:v]scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=decrease,pad=${resolution.width}:${resolution.height}:(ow-iw)/2:(oh-ih)/2[vout]`;
+        // No watermark but have RTMP destinations - scale and split
+        let scaleFilter = `[0:v]scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=decrease,pad=${resolution.width}:${resolution.height}:(ow-iw)/2:(oh-ih)/2`;
+
+        // Split output into unique labels for each destination
+        if (totalOutputs > 1) {
+          scaleFilter += `,split=${totalOutputs}`;
+          for (let i = 0; i < totalOutputs; i++) {
+            scaleFilter += `[vout${i}]`;
+          }
+        } else {
+          scaleFilter += `[vout0]`;
+        }
 
         ffmpegArgs.push('-filter_complex', scaleFilter);
 
-        logger.info(`Quality preset ${qualityPreset} (${resolution.width}x${resolution.height}) applied for channel ${channelId}`);
+        logger.info(`Quality preset ${qualityPreset} (${resolution.width}x${resolution.height}) applied for channel ${channelId}`, {
+          outputs: totalOutputs,
+        });
         Channel.addLog(channelId, 'info', `Output quality: ${qualityPreset} (${resolution.width}x${resolution.height})`);
       }
 
@@ -397,10 +424,10 @@ class StreamManager {
         ffmpegArgs.push('-c:a', 'copy');
       }
 
-      // Output to HLS (primary output)
+      // Output to HLS (primary output - uses [vout0])
       // Add map commands for HLS output
       if (hasWatermark || rtmpDestinations.length > 0) {
-        ffmpegArgs.push('-map', '[vout]');
+        ffmpegArgs.push('-map', '[vout0]');
       } else {
         ffmpegArgs.push('-map', '0:v');
       }
@@ -415,17 +442,18 @@ class StreamManager {
         outputPath
       );
 
-      // Add RTMP outputs using separate maps to prevent one failure from affecting others
+      // Add RTMP outputs using split filter outputs ([vout1], [vout2], etc.)
       if (rtmpDestinations.length > 0) {
         logger.info(`Adding ${rtmpDestinations.length} RTMP destination(s) for channel ${channelId}`);
 
-        for (const dest of rtmpDestinations) {
+        rtmpDestinations.forEach((dest, index) => {
           const rtmpUrl = `${dest.rtmp_url}${dest.stream_key}`;
+          const outputIndex = index + 1; // HLS uses vout0, RTMP uses vout1, vout2, etc.
 
-          // Map the filtered video and audio for each RTMP output independently
-          // This prevents one RTMP failure from crashing the entire stream
+          // Map the split filter output for this RTMP destination
+          // Each RTMP output gets its own unique label from the split filter
           if (hasWatermark || rtmpDestinations.length > 0) {
-            ffmpegArgs.push('-map', '[vout]');
+            ffmpegArgs.push('-map', `[vout${outputIndex}]`);
           } else {
             ffmpegArgs.push('-map', '0:v');
           }
@@ -438,9 +466,9 @@ class StreamManager {
             rtmpUrl
           );
 
-          logger.info(`Added ${dest.platform} RTMP output for channel ${channelId}`);
+          logger.info(`Added ${dest.platform} RTMP output [vout${outputIndex}] for channel ${channelId}`);
           Channel.addLog(channelId, 'info', `Streaming to ${dest.platform}`);
-        }
+        });
 
         logger.info(`Streaming to ${rtmpDestinations.length + 1} outputs for channel ${channelId}`);
         Channel.addLog(channelId, 'info', `Multi-output: HLS + ${rtmpDestinations.length} RTMP destination(s)`);
