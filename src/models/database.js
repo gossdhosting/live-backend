@@ -109,6 +109,20 @@ const initDatabase = () => {
     )
   `);
 
+  // Media files table (for pre-recorded videos)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS media_files (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      filename TEXT NOT NULL,
+      original_name TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      file_size INTEGER NOT NULL,
+      duration REAL,
+      mime_type TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
   // Insert default settings
   const defaultSettings = [
     {
@@ -179,6 +193,16 @@ const initDatabase = () => {
         ALTER TABLE channels ADD COLUMN stream_title TEXT;
       `);
       console.log('✅ Added stream_title column to channels table');
+    }
+
+    const hasInputType = tableInfo.some(col => col.name === 'input_type');
+    if (!hasInputType) {
+      db.exec(`
+        ALTER TABLE channels ADD COLUMN input_type TEXT DEFAULT 'youtube';
+        ALTER TABLE channels ADD COLUMN media_file_id INTEGER;
+        ALTER TABLE channels ADD COLUMN loop_video INTEGER DEFAULT 0;
+      `);
+      console.log('✅ Added input_type, media_file_id, and loop_video columns to channels table');
     }
   } catch (error) {
     console.log('Watermark columns migration:', error.message);

@@ -2,13 +2,13 @@ import db from './database.js';
 
 class Channel {
   // Create a new channel
-  static create({ name, description, input_url, auto_restart = 1, quality_preset = '720p', stream_title = '' }) {
+  static create({ name, description, input_url, auto_restart = 1, quality_preset = '720p', stream_title = '', input_type = 'youtube', media_file_id = null, loop_video = 0 }) {
     const stmt = db.prepare(`
-      INSERT INTO channels (name, description, input_url, auto_restart, quality_preset, stream_title, status)
-      VALUES (?, ?, ?, ?, ?, ?, 'stopped')
+      INSERT INTO channels (name, description, input_url, auto_restart, quality_preset, stream_title, input_type, media_file_id, loop_video, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'stopped')
     `);
 
-    const result = stmt.run(name, description, input_url, auto_restart, quality_preset, stream_title);
+    const result = stmt.run(name, description, input_url, auto_restart, quality_preset, stream_title, input_type, media_file_id, loop_video);
     return this.findById(result.lastInsertRowid);
   }
 
@@ -26,7 +26,7 @@ class Channel {
 
   // Update channel
   static update(id, data) {
-    const allowedFields = ['name', 'description', 'input_url', 'auto_restart', 'quality_preset', 'stream_title', 'watermark_enabled', 'watermark_path', 'watermark_position', 'watermark_opacity', 'watermark_scale'];
+    const allowedFields = ['name', 'description', 'input_url', 'auto_restart', 'quality_preset', 'stream_title', 'input_type', 'media_file_id', 'loop_video', 'watermark_enabled', 'watermark_path', 'watermark_position', 'watermark_opacity', 'watermark_scale'];
     const fields = [];
     const values = [];
 
