@@ -188,8 +188,7 @@ class StreamManager {
         logger.info(`Using video file for channel ${channelId}: ${mediaFile.original_name}`);
       } else if (resolvedInputUrl.includes('youtube.com') || resolvedInputUrl.includes('youtu.be')) {
         logger.info(`Resolving YouTube URL for channel ${channelId}`);
-        
-        const { execSync } = await import('child_process');
+
         try {
           // Get cookie path from environment variable or use default
           const cookiePath = process.env.YOUTUBE_COOKIES_PATH || '/var/www/live-admin/cookies.txt';
@@ -199,17 +198,52 @@ class StreamManager {
             throw new Error(`Cookies file not found at ${cookiePath}. Please ensure cookies.txt exists.`);
           }
 
-          // Command to get the direct stream URL with cookies
+          // Use spawn instead of execSync to avoid signal issues
           const ytdlpPath = process.env.YTDLP_PATH || 'yt-dlp';
-          const cmd = `${ytdlpPath} --cookies "${cookiePath}" --user-agent "facebookexternalhit/1.1" -g "${resolvedInputUrl}"`;
+          const ytdlpArgs = [
+            '--cookies', cookiePath,
+            '--user-agent', 'facebookexternalhit/1.1',
+            '-g',
+            resolvedInputUrl
+          ];
 
           logger.info(`Executing yt-dlp with cookies from ${cookiePath}`);
 
-          resolvedInputUrl = execSync(cmd, {
-            encoding: 'utf8',
-            timeout: 30000, // 30 second timeout
-            env: { ...process.env, PATH: `${process.env.PATH}:/usr/local/bin:/root/.deno/bin` }
-          }).trim();
+          // Create promise to handle spawn
+          resolvedInputUrl = await new Promise((resolve, reject) => {
+            const ytdlp = spawn(ytdlpPath, ytdlpArgs, {
+              env: { ...process.env, PATH: `${process.env.PATH}:/usr/local/bin:/root/.deno/bin` }
+            });
+
+            let stdout = '';
+            let stderr = '';
+
+            ytdlp.stdout.on('data', (data) => {
+              stdout += data.toString();
+            });
+
+            ytdlp.stderr.on('data', (data) => {
+              stderr += data.toString();
+            });
+
+            ytdlp.on('close', (code) => {
+              if (code === 0 && stdout.trim()) {
+                resolve(stdout.trim());
+              } else {
+                reject(new Error(`yt-dlp exited with code ${code}: ${stderr}`));
+              }
+            });
+
+            ytdlp.on('error', (err) => {
+              reject(new Error(`Failed to spawn yt-dlp: ${err.message}`));
+            });
+
+            // Timeout after 45 seconds
+            setTimeout(() => {
+              ytdlp.kill('SIGTERM');
+              reject(new Error('yt-dlp timed out after 45 seconds'));
+            }, 45000);
+          });
 
           if (!resolvedInputUrl) {
             throw new Error('yt-dlp returned empty URL');
