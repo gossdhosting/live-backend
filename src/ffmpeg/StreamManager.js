@@ -60,7 +60,7 @@ class StreamManager {
   // Clean up channels marked as running but not actually tracked
   async cleanupOrphanedStreams() {
     try {
-      const channels = Channel.getAll();
+      const channels = Channel.findAll();
       let cleanedCount = 0;
 
       for (const channel of channels) {
