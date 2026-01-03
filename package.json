@@ -29,6 +29,7 @@
     "express-rate-limit": "^7.1.5",
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.2",
+    "systeminformation": "^5.28.10",
     "winston": "^3.11.0"
   },
   "devDependencies": {

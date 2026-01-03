@@ -147,6 +147,7 @@ const initDatabase = () => {
     const tableInfo = db.prepare('PRAGMA table_info(channels)').all();
     const hasWatermarkEnabled = tableInfo.some(col => col.name === 'watermark_enabled');
     const hasWatermarkScale = tableInfo.some(col => col.name === 'watermark_scale');
+    const hasQualityPreset = tableInfo.some(col => col.name === 'quality_preset');
 
     if (!hasWatermarkEnabled) {
       db.exec(`
@@ -163,6 +164,13 @@ const initDatabase = () => {
         ALTER TABLE channels ADD COLUMN watermark_scale REAL DEFAULT 1.0;
       `);
       console.log('✅ Added watermark_scale column to channels table');
+    }
+
+    if (!hasQualityPreset) {
+      db.exec(`
+        ALTER TABLE channels ADD COLUMN quality_preset TEXT DEFAULT '720p';
+      `);
+      console.log('✅ Added quality_preset column to channels table');
     }
   } catch (error) {
     console.log('Watermark columns migration:', error.message);

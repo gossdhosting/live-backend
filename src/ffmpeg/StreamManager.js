@@ -17,6 +17,13 @@ class StreamManager {
     // Stream health metrics
     this.healthMetrics = new Map();
 
+    // Track manual stops to prevent auto-restart
+    this.manualStops = new Set();
+
+    // Track RTMP destination connection status
+    // Map<channelId, Map<destinationId, {status: 'connecting'|'connected'|'disconnected', lastUpdate: Date}>>
+    this.rtmpConnectionStatus = new Map();
+
     // Ensure HLS base directory exists
     this.hlsBasePath = process.env.HLS_BASE_PATH || path.join(process.cwd(), 'var', 'hls');
     if (!fs.existsSync(this.hlsBasePath)) {
@@ -66,6 +73,16 @@ class StreamManager {
   }
 
   // Get platform-specific encoding settings
+  // Get resolution from quality preset
+  getResolutionFromPreset(preset) {
+    const resolutions = {
+      '480p': { width: 854, height: 480, bitrate: '2500k' },
+      '720p': { width: 1280, height: 720, bitrate: '4000k' },
+      '1080p': { width: 1920, height: 1080, bitrate: '6000k' },
+    };
+    return resolutions[preset] || resolutions['720p'];
+  }
+
   getPlatformEncodingSettings(platform, customBitrate = null) {
     const presets = {
       facebook: {
@@ -112,6 +129,9 @@ class StreamManager {
    // Start a stream for a channel
   async startStream(channelId) {
     try {
+      // Clear manual stop flag when starting a new stream
+      this.manualStops.delete(channelId);
+
       const channel = Channel.findById(channelId);
       if (!channel) {
         throw new Error('Channel not found');
@@ -187,8 +207,23 @@ class StreamManager {
       // Get enabled RTMP destinations
       const rtmpDestinations = RtmpDestination.getEnabledForChannel(channelId);
 
+      // Initialize RTMP connection status for this channel
+      const rtmpStatusMap = new Map();
+      rtmpDestinations.forEach(dest => {
+        rtmpStatusMap.set(dest.id, {
+          status: 'connecting',
+          platform: dest.platform,
+          lastUpdate: new Date()
+        });
+      });
+      this.rtmpConnectionStatus.set(channelId, rtmpStatusMap);
+
       // Check if watermark is enabled
       const hasWatermark = channel.watermark_enabled && channel.watermark_path && fs.existsSync(channel.watermark_path);
+
+      // Get quality preset resolution
+      const qualityPreset = channel.quality_preset || '720p';
+      const resolution = this.getResolutionFromPreset(qualityPreset);
 
       // Build FFmpeg arguments with improved error handling and quality
       const ffmpegArgs = [
@@ -218,7 +253,9 @@ class StreamManager {
         const numOutputs = 1 + rtmpDestinations.length;
 
         // Build watermark filter with split for multiple outputs
-        let watermarkFilter = `[1:v]scale=iw*${scale}:ih*${scale},format=rgba,colorchannelmixer=aa=${opacity}[logo];[0:v][logo]overlay=${position}`;
+        // Scale input video to quality preset resolution, then apply watermark
+        let watermarkFilter = `[0:v]scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=decrease,pad=${resolution.width}:${resolution.height}:(ow-iw)/2:(oh-ih)/2[scaled];`;
+        watermarkFilter += `[1:v]scale=iw*${scale}:ih*${scale},format=rgba,colorchannelmixer=aa=${opacity}[logo];[scaled][logo]overlay=${position}`;
 
         // If we have multiple outputs, split the watermarked video
         if (numOutputs > 1) {
@@ -239,25 +276,44 @@ class StreamManager {
           outputs: numOutputs,
         });
         Channel.addLog(channelId, 'info', `Watermark applied at ${channel.watermark_position}`);
+      } else if (rtmpDestinations.length > 0) {
+        // No watermark but have RTMP destinations - need to scale and split
+        const numOutputs = 1 + rtmpDestinations.length;
+        let scaleFilter = `[0:v]scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=decrease,pad=${resolution.width}:${resolution.height}:(ow-iw)/2:(oh-ih)/2`;
+
+        if (numOutputs > 1) {
+          scaleFilter += `[scaled];[scaled]split=${numOutputs}`;
+          for (let i = 0; i < numOutputs; i++) {
+            scaleFilter += `[v${i}]`;
+          }
+        } else {
+          scaleFilter += `[v0]`;
+        }
+
+        ffmpegArgs.push('-filter_complex', scaleFilter);
+        logger.info(`Quality preset ${qualityPreset} (${resolution.width}x${resolution.height}) applied for channel ${channelId}`);
+        Channel.addLog(channelId, 'info', `Output quality: ${qualityPreset} (${resolution.width}x${resolution.height})`);
       }
 
       // Add HLS output
-      if (hasWatermark) {
+      if (hasWatermark || rtmpDestinations.length > 0) {
         ffmpegArgs.push(
-          '-map', '[v0]', // Use first split output
+          '-map', '[v0]', // Use first split output or scaled output
           '-map', '0:a', // Use original audio
         );
       }
 
       // Add HLS encoding settings
-      ffmpegArgs.push('-c:v', hasWatermark ? 'libx264' : 'copy');
+      const needsEncoding = hasWatermark || rtmpDestinations.length > 0;
+      ffmpegArgs.push('-c:v', needsEncoding ? 'libx264' : 'copy');
       ffmpegArgs.push('-c:a', 'copy');
 
-      if (hasWatermark) {
+      if (needsEncoding) {
         ffmpegArgs.push('-preset', 'veryfast');
         ffmpegArgs.push('-g', '60');
         ffmpegArgs.push('-keyint_min', '60');
         ffmpegArgs.push('-sc_threshold', '0');
+        ffmpegArgs.push('-b:v', resolution.bitrate);
       }
 
       ffmpegArgs.push(
@@ -433,6 +489,47 @@ class StreamManager {
           }
           logger.info(`Stream established for channel ${channelId}`);
         }
+
+        // Detect RTMP connection status
+        const rtmpStatusMap = this.rtmpConnectionStatus.get(channelId);
+        if (rtmpStatusMap) {
+          // Match patterns like "Opening 'rtmp://..." or "rtmp://... for writing"
+          if (message.includes('rtmp://') && (message.includes('Opening') || message.includes('for writing'))) {
+            // Extract the RTMP URL to identify which destination
+            rtmpDestinations.forEach(dest => {
+              const baseUrl = dest.rtmp_url.replace(/\/$/, ''); // Remove trailing slash
+              if (message.includes(baseUrl)) {
+                const status = rtmpStatusMap.get(dest.id);
+                if (status) {
+                  status.status = 'connected';
+                  status.lastUpdate = new Date();
+                  logger.info(`RTMP connection established for ${dest.platform} (channel ${channelId})`);
+                  Channel.addLog(channelId, 'info', `${dest.platform}: Connected`);
+                }
+              }
+            });
+          }
+
+          // Detect RTMP disconnections or errors
+          if (message.toLowerCase().includes('rtmp') &&
+              (message.includes('Connection refused') ||
+               message.includes('Connection timed out') ||
+               message.includes('Failed to update') ||
+               message.includes('Server error'))) {
+            rtmpDestinations.forEach(dest => {
+              const baseUrl = dest.rtmp_url.replace(/\/$/, '');
+              if (message.includes(baseUrl) || message.includes(dest.platform)) {
+                const status = rtmpStatusMap.get(dest.id);
+                if (status) {
+                  status.status = 'disconnected';
+                  status.lastUpdate = new Date();
+                  logger.warn(`RTMP connection failed for ${dest.platform} (channel ${channelId})`);
+                  Channel.addLog(channelId, 'warning', `${dest.platform}: Connection failed`);
+                }
+              }
+            });
+          }
+        }
       });
 
       // Handle process exit
@@ -448,16 +545,32 @@ class StreamManager {
           this.processes.delete(channelId);
         }
 
-        // Clean up health metrics
+        // Clean up health metrics and RTMP connection status
         this.healthMetrics.delete(channelId);
+        this.rtmpConnectionStatus.delete(channelId);
 
         const currentChannel = Channel.findById(channelId);
         if (!currentChannel) return;
 
-        if (code === 0 || signal === 'SIGTERM') {
-          // Normal exit
+        // Check if this was a manual stop
+        const wasManualStop = this.manualStops.has(channelId);
+        if (wasManualStop) {
+          this.manualStops.delete(channelId);
+        }
+
+        if (code === 0 || signal === 'SIGTERM' || wasManualStop) {
+          // Normal exit or manual stop
           Channel.updateStatus(channelId, 'stopped', null, null);
-          Channel.addLog(channelId, 'info', 'Stream stopped normally');
+          if (wasManualStop) {
+            Channel.addLog(channelId, 'info', 'Stream stopped by user');
+            logger.info(`Stream stopped manually by user for channel ${channelId}`);
+          } else if (signal === 'SIGTERM') {
+            Channel.addLog(channelId, 'info', 'Stream stopped gracefully');
+            logger.info(`Stream terminated gracefully for channel ${channelId}`);
+          } else {
+            Channel.addLog(channelId, 'info', 'Stream stopped normally');
+            logger.info(`Stream exited normally for channel ${channelId}`);
+          }
           this.reconnectAttempts.delete(channelId);
         } else {
           // Error exit - determine if we should restart
@@ -548,9 +661,10 @@ class StreamManager {
       if (!processInfo) {
         // Update status even if process not found
         Channel.updateStatus(channelId, 'stopped', null, null);
-        // Clear reconnect attempts
+        // Clear reconnect attempts and manual stop flag
         this.reconnectAttempts.delete(channelId);
         this.healthMetrics.delete(channelId);
+        this.manualStops.delete(channelId);
         return {
           success: true,
           message: 'Stream was not running',
@@ -561,7 +675,10 @@ class StreamManager {
         pid: processInfo.process.pid,
       });
 
-      // Clear reconnect attempts to prevent auto-restart
+      // Mark as manual stop to prevent auto-restart
+      this.manualStops.add(channelId);
+
+      // Clear reconnect attempts
       this.reconnectAttempts.delete(channelId);
 
       // Kill the FFmpeg process gracefully
@@ -594,11 +711,26 @@ class StreamManager {
     const processInfo = this.processes.get(channelId);
     const metrics = this.healthMetrics.get(channelId);
     const reconnectAttempts = this.reconnectAttempts.get(channelId) || 0;
+    const rtmpStatusMap = this.rtmpConnectionStatus.get(channelId);
+
+    // Convert RTMP status Map to array for API response
+    const rtmpConnections = [];
+    if (rtmpStatusMap) {
+      for (const [destId, status] of rtmpStatusMap.entries()) {
+        rtmpConnections.push({
+          destinationId: destId,
+          platform: status.platform,
+          status: status.status,
+          lastUpdate: status.lastUpdate
+        });
+      }
+    }
 
     if (!processInfo) {
       return {
         running: false,
         status: 'stopped',
+        rtmpConnections: []
       };
     }
 
@@ -606,6 +738,7 @@ class StreamManager {
       running: true,
       pid: processInfo.process.pid,
       uptime: Math.floor((Date.now() - processInfo.startTime) / 1000),
+      rtmpConnections,
       errorCount: processInfo.errorCount || 0,
       lastError: processInfo.lastError,
       reconnectAttempts,
