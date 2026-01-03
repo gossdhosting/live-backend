@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import Channel from '../models/Channel.js';
 import Settings from '../models/Settings.js';
+import RtmpDestination from '../models/rtmpDestination.js';
 import logger from '../utils/logger.js';
 
 class StreamManager {
@@ -107,13 +108,22 @@ class StreamManager {
         Settings.get('hls_segment_duration')?.value || '4';
       const hlsListSize = Settings.get('hls_list_size')?.value || '6';
 
+      // Get enabled RTMP destinations
+      const rtmpDestinations = RtmpDestination.getEnabledForChannel(channelId);
+
       // Build FFmpeg arguments
       const ffmpegArgs = [
         '-re',
         '-i',
          resolvedInputUrl,
-        '-c',
-        'copy', // Copy codec (no transcoding)
+        '-c:v',
+        'copy', // Copy video codec (no transcoding)
+        '-c:a',
+        'copy', // Copy audio codec (no transcoding)
+      ];
+
+      // Add HLS output
+      ffmpegArgs.push(
         '-f',
         'hls', // HLS format
         '-hls_time',
@@ -124,8 +134,28 @@ class StreamManager {
         'delete_segments+append_list', // Delete old segments
         '-hls_segment_filename',
         path.join(outputDir, 'segment_%03d.ts'),
-        outputPath,
-      ];
+        outputPath
+      );
+
+      // Add RTMP outputs
+      if (rtmpDestinations.length > 0) {
+        logger.info(`Adding ${rtmpDestinations.length} RTMP destination(s) for channel ${channelId}`);
+
+        for (const dest of rtmpDestinations) {
+          const rtmpUrl = `${dest.rtmp_url}${dest.stream_key}`;
+          ffmpegArgs.push(
+            '-f',
+            'flv', // FLV format for RTMP
+            '-c:v',
+            'copy',
+            '-c:a',
+            'copy',
+            rtmpUrl
+          );
+          logger.info(`Added ${dest.platform} RTMP output for channel ${channelId}`);
+          Channel.addLog(channelId, 'info', `Streaming to ${dest.platform}`);
+        }
+      }
 
       // Create log file for this channel
       const logFilePath = path.join(
