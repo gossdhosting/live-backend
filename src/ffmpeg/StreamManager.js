@@ -373,6 +373,27 @@ class StreamManager {
       Channel.updateOutputPath(channelId, outputPath);
       Channel.addLog(channelId, 'info', 'Stream started successfully');
 
+      // Auto-update RTMP connection status to "connected" after 5 seconds if no errors
+      if (rtmpDestinations.length > 0) {
+        setTimeout(() => {
+          const processStillRunning = this.processes.has(channelId);
+          const rtmpStatusMap = this.rtmpConnectionStatus.get(channelId);
+
+          if (processStillRunning && rtmpStatusMap) {
+            // Update all RTMP destinations to connected if process is still running
+            rtmpDestinations.forEach(dest => {
+              const status = rtmpStatusMap.get(dest.id);
+              if (status && status.status === 'connecting') {
+                status.status = 'connected';
+                status.lastUpdate = new Date();
+                logger.info(`RTMP connection established for ${dest.platform} (channel ${channelId})`);
+                Channel.addLog(channelId, 'info', `${dest.platform}: Connected`);
+              }
+            });
+          }
+        }, 5000); // Wait 5 seconds for stream to stabilize
+      }
+
       // Handle FFmpeg stdout
       ffmpegProcess.stdout.on('data', (data) => {
         const message = data.toString();
