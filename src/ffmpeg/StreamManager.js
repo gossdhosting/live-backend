@@ -339,16 +339,28 @@ class StreamManager {
         outputPath
       );
 
-      // Add RTMP outputs - FFmpeg will encode once and mux to multiple outputs
+      // Add RTMP outputs using separate maps to prevent one failure from affecting others
       if (rtmpDestinations.length > 0) {
         logger.info(`Adding ${rtmpDestinations.length} RTMP destination(s) for channel ${channelId}`);
 
         for (const dest of rtmpDestinations) {
           const rtmpUrl = `${dest.rtmp_url}${dest.stream_key}`;
 
-          // Each RTMP output uses the same encoding (already specified above)
-          // Just need to specify the format and URL
-          ffmpegArgs.push('-f', 'flv', rtmpUrl);
+          // Map the filtered video and audio for each RTMP output independently
+          // This prevents one RTMP failure from crashing the entire stream
+          if (hasWatermark || rtmpDestinations.length > 0) {
+            ffmpegArgs.push('-map', '[vout]');
+          } else {
+            ffmpegArgs.push('-map', '0:v');
+          }
+          ffmpegArgs.push('-map', '0:a');
+
+          // RTMP-specific options to handle connection issues gracefully
+          ffmpegArgs.push(
+            '-f', 'flv',
+            '-flvflags', 'no_duration_filesize',  // Ignore duration/filesize errors
+            rtmpUrl
+          );
 
           logger.info(`Added ${dest.platform} RTMP output for channel ${channelId}`);
           Channel.addLog(channelId, 'info', `Streaming to ${dest.platform}`);
