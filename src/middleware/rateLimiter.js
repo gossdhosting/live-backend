@@ -1,19 +1,19 @@
 import rateLimit from 'express-rate-limit';
 
-// General API rate limiter
+// General API rate limiter - Very high limit for internal use
 export const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
+  max: 10000, // Limit each IP to 10000 requests per windowMs (very high)
   message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
   validate: { trustProxy: false }, // Disable validation since we handle trust proxy in server.js
 });
 
-// Strict rate limiter for stream control
+// Strict rate limiter for stream control - High limit
 export const streamControlLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 10, // Limit each IP to 10 stream control requests per minute
+  max: 1000, // Limit each IP to 1000 stream control requests per minute (very high)
   message: 'Too many stream control requests, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
