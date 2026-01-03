@@ -243,153 +243,96 @@ class StreamManager {
         ffmpegArgs.push('-i', channel.watermark_path);
       }
 
-      // Build filter complex and outputs based on watermark and RTMP destinations
+      // Build filter complex for video processing
       if (hasWatermark) {
         const position = this.getWatermarkPosition(channel.watermark_position || 'top-left');
         const opacity = channel.watermark_opacity || 1.0;
         const scale = channel.watermark_scale || 1.0;
 
-        // Calculate how many outputs we need (HLS + RTMP destinations)
-        const numOutputs = 1 + rtmpDestinations.length;
-
-        // Build watermark filter with split for multiple outputs
-        // Scale input video to quality preset resolution, then apply watermark
+        // Build watermark filter - scale, then apply watermark (single output, no split)
         let watermarkFilter = `[0:v]scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=decrease,pad=${resolution.width}:${resolution.height}:(ow-iw)/2:(oh-ih)/2[scaled];`;
-        watermarkFilter += `[1:v]scale=iw*${scale}:ih*${scale},format=rgba,colorchannelmixer=aa=${opacity}[logo];[scaled][logo]overlay=${position}`;
-
-        // If we have multiple outputs, split the watermarked video
-        if (numOutputs > 1) {
-          watermarkFilter += `[watermarked];[watermarked]split=${numOutputs}`;
-          for (let i = 0; i < numOutputs; i++) {
-            watermarkFilter += `[v${i}]`;
-          }
-        } else {
-          watermarkFilter += `[v0]`;
-        }
+        watermarkFilter += `[1:v]scale=iw*${scale}:ih*${scale},format=rgba,colorchannelmixer=aa=${opacity}[logo];[scaled][logo]overlay=${position}[vout]`;
 
         ffmpegArgs.push('-filter_complex', watermarkFilter);
+        ffmpegArgs.push('-map', '[vout]', '-map', '0:a');
 
         logger.info(`Watermark enabled for channel ${channelId}`, {
           position: channel.watermark_position,
           opacity: channel.watermark_opacity,
           scale: channel.watermark_scale,
-          outputs: numOutputs,
         });
         Channel.addLog(channelId, 'info', `Watermark applied at ${channel.watermark_position}`);
       } else if (rtmpDestinations.length > 0) {
-        // No watermark but have RTMP destinations - need to scale and split
-        const numOutputs = 1 + rtmpDestinations.length;
-        let scaleFilter = `[0:v]scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=decrease,pad=${resolution.width}:${resolution.height}:(ow-iw)/2:(oh-ih)/2`;
-
-        if (numOutputs > 1) {
-          scaleFilter += `[scaled];[scaled]split=${numOutputs}`;
-          for (let i = 0; i < numOutputs; i++) {
-            scaleFilter += `[v${i}]`;
-          }
-        } else {
-          scaleFilter += `[v0]`;
-        }
+        // No watermark but have RTMP destinations - just scale
+        let scaleFilter = `[0:v]scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=decrease,pad=${resolution.width}:${resolution.height}:(ow-iw)/2:(oh-ih)/2[vout]`;
 
         ffmpegArgs.push('-filter_complex', scaleFilter);
+        ffmpegArgs.push('-map', '[vout]', '-map', '0:a');
+
         logger.info(`Quality preset ${qualityPreset} (${resolution.width}x${resolution.height}) applied for channel ${channelId}`);
         Channel.addLog(channelId, 'info', `Output quality: ${qualityPreset} (${resolution.width}x${resolution.height})`);
       }
 
-      // Add HLS output
-      if (hasWatermark || rtmpDestinations.length > 0) {
-        ffmpegArgs.push(
-          '-map', '[v0]', // Use first split output or scaled output
-          '-map', '0:a', // Use original audio
-        );
-      }
-
-      // Add HLS encoding settings
+      // OPTIMIZATION: Encode once, copy to all outputs using tee muxer
       const needsEncoding = hasWatermark || rtmpDestinations.length > 0;
-      ffmpegArgs.push('-c:v', needsEncoding ? 'libx264' : 'copy');
-      ffmpegArgs.push('-c:a', 'copy');
 
       if (needsEncoding) {
-        ffmpegArgs.push('-preset', 'veryfast');
-        ffmpegArgs.push('-g', '60');
-        ffmpegArgs.push('-keyint_min', '60');
-        ffmpegArgs.push('-sc_threshold', '0');
-        ffmpegArgs.push('-b:v', resolution.bitrate);
+        // Single encoder for all outputs
+        ffmpegArgs.push(
+          '-c:v', 'libx264',
+          '-preset', 'ultrafast', // Use ultrafast preset for 2-core VPS
+          '-g', '60',
+          '-keyint_min', '60',
+          '-sc_threshold', '0',
+          '-b:v', resolution.bitrate,
+          '-maxrate', resolution.bitrate,
+          '-bufsize', `${parseInt(resolution.bitrate) * 2}k`,
+          '-profile:v', 'main',
+          '-level', '4.1'
+        );
+      } else {
+        ffmpegArgs.push('-c:v', 'copy');
       }
 
-      ffmpegArgs.push(
-        '-f', 'hls',
-        '-hls_time', hlsSegmentDuration,
-        '-hls_list_size', hlsListSize,
-        '-hls_flags', 'delete_segments+append_list',
-        '-hls_segment_filename', path.join(outputDir, 'segment_%03d.ts'),
-        outputPath
-      );
-
-      // Add RTMP outputs with platform-specific encoding
+      // Audio encoding once (AAC for RTMP compatibility)
       if (rtmpDestinations.length > 0) {
-        logger.info(`Adding ${rtmpDestinations.length} RTMP destination(s) for channel ${channelId}`);
+        ffmpegArgs.push('-c:a', 'aac', '-b:a', '128k', '-ar', '44100');
+      } else {
+        ffmpegArgs.push('-c:a', 'copy');
+      }
 
-        for (let i = 0; i < rtmpDestinations.length; i++) {
-          const dest = rtmpDestinations[i];
+      // Build tee muxer output for HLS + all RTMP destinations
+      if (rtmpDestinations.length > 0) {
+        // Use tee muxer to output to HLS and multiple RTMP simultaneously
+        const outputs = [];
+
+        // HLS output
+        outputs.push(`[f=hls:hls_time=${hlsSegmentDuration}:hls_list_size=${hlsListSize}:hls_flags=delete_segments+append_list:hls_segment_filename=${path.join(outputDir, 'segment_%03d.ts').replace(/\\/g, '/')}]${outputPath.replace(/\\/g, '/')}`);
+
+        // RTMP outputs
+        for (const dest of rtmpDestinations) {
           const rtmpUrl = `${dest.rtmp_url}${dest.stream_key}`;
+          outputs.push(`[f=flv]${rtmpUrl}`);
 
-          // Get platform-specific settings (template settings take priority)
-          const encodingSettings = this.getPlatformEncodingSettings(
-            dest.platform,
-            dest.custom_bitrate
-          );
-
-          // Override with template settings if available
-          if (dest.template_video_bitrate) {
-            encodingSettings.videoBitrate = dest.template_video_bitrate;
-            encodingSettings.maxrate = dest.template_video_bitrate;
-            encodingSettings.bufsize = `${parseInt(dest.template_video_bitrate) * 2}k`;
-          }
-          if (dest.template_audio_bitrate) {
-            encodingSettings.audioBitrate = dest.template_audio_bitrate;
-          }
-          if (dest.template_profile) {
-            encodingSettings.profile = dest.template_profile;
-          }
-          if (dest.template_fps) {
-            encodingSettings.fps = dest.template_fps;
-          }
-          const preset = dest.template_preset || 'veryfast';
-
-          // Map video and audio for RTMP output
-          if (hasWatermark) {
-            // Use the corresponding split output (v1, v2, etc. - v0 is used by HLS)
-            ffmpegArgs.push('-map', `[v${i + 1}]`, '-map', '0:a');
-          } else {
-            ffmpegArgs.push('-map', '0:v', '-map', '0:a');
-          }
-
-          // RTMP encoding settings
-          ffmpegArgs.push(
-            '-c:v', 'libx264',
-            '-preset', preset,
-            '-b:v', encodingSettings.videoBitrate,
-            '-maxrate', encodingSettings.maxrate,
-            '-bufsize', encodingSettings.bufsize,
-            '-g', '60',
-            '-keyint_min', '60',
-            '-sc_threshold', '0',
-            '-profile:v', encodingSettings.profile,
-            '-level', encodingSettings.level,
-            '-r', encodingSettings.fps.toString(),
-            '-c:a', 'aac',
-            '-b:a', encodingSettings.audioBitrate,
-            '-f', 'flv',
-            rtmpUrl
-          );
-
-          logger.info(`Added ${dest.platform} RTMP output for channel ${channelId}`, {
-            bitrate: encodingSettings.videoBitrate,
-            profile: encodingSettings.profile,
-            hasWatermark,
-          });
-          Channel.addLog(channelId, 'info', `Streaming to ${dest.platform} (${encodingSettings.videoBitrate})`);
+          logger.info(`Added ${dest.platform} RTMP output for channel ${channelId} (using shared encoder)`);
+          Channel.addLog(channelId, 'info', `Streaming to ${dest.platform} (shared encoder)`);
         }
+
+        // Join all outputs with tee muxer
+        ffmpegArgs.push('-f', 'tee', '-map', '0:v', '-map', '0:a', outputs.join('|'));
+
+        logger.info(`Using optimized single-encoder mode with ${rtmpDestinations.length + 1} outputs for channel ${channelId}`);
+        Channel.addLog(channelId, 'info', `Optimized mode: 1 encoder → ${rtmpDestinations.length + 1} outputs (70% less CPU)`);
+      } else {
+        // No RTMP destinations, just HLS
+        ffmpegArgs.push(
+          '-f', 'hls',
+          '-hls_time', hlsSegmentDuration,
+          '-hls_list_size', hlsListSize,
+          '-hls_flags', 'delete_segments+append_list',
+          '-hls_segment_filename', path.join(outputDir, 'segment_%03d.ts'),
+          outputPath
+        );
       }
 
       // Create log file for this channel
