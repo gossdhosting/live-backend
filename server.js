@@ -17,6 +17,8 @@ import rtmpTemplateRoutes from './src/routes/rtmpTemplates.js';
 import watermarkRoutes from './src/routes/watermark.js';
 import serverStatsRoutes from './src/routes/serverStats.js';
 import mediaRoutes from './src/routes/media.js';
+import platformAuthRoutes from './src/routes/platformAuth.js';
+import platformRoutes from './src/routes/platforms.js';
 
 // Middleware
 import { apiLimiter } from './src/middleware/rateLimiter.js';
@@ -57,6 +59,8 @@ app.use('/api/rtmp', rtmpTemplateRoutes);
 app.use('/api/watermark', watermarkRoutes);
 app.use('/api/server-stats', serverStatsRoutes);
 app.use('/api/media', mediaRoutes);
+app.use('/api/platforms/auth', platformAuthRoutes);
+app.use('/api/platforms', platformRoutes);
 
 // Public API (for Flutter app)
 app.use('/api/public', publicRoutes);

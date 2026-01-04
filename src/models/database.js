@@ -269,6 +269,49 @@ const initDatabase = () => {
     console.log('RTMP migrations:', error.message);
   }
 
+  // Platform connections table for OAuth2 integrations
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS platform_connections (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      platform TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      access_token TEXT NOT NULL,
+      refresh_token TEXT,
+      token_expires_at DATETIME,
+      platform_user_id TEXT,
+      platform_user_name TEXT,
+      platform_user_email TEXT,
+      platform_page_id TEXT,
+      platform_page_name TEXT,
+      platform_channel_id TEXT,
+      platform_channel_name TEXT,
+      scopes TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Platform streams table for tracking created streams
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS platform_streams (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      channel_id INTEGER NOT NULL,
+      platform_connection_id INTEGER NOT NULL,
+      platform TEXT NOT NULL,
+      platform_stream_id TEXT,
+      platform_broadcast_id TEXT,
+      rtmp_url TEXT NOT NULL,
+      stream_key TEXT NOT NULL,
+      stream_title TEXT,
+      stream_description TEXT,
+      status TEXT DEFAULT 'created',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE,
+      FOREIGN KEY (platform_connection_id) REFERENCES platform_connections(id) ON DELETE CASCADE
+    )
+  `);
+
   console.log('✅ Database initialized successfully');
 };
 
