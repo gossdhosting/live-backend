@@ -942,6 +942,7 @@ class StreamManager {
 
     // Calculate position based on settings
     let x, y;
+    const bottomPadding = 70; // Increased padding for bottom positions
 
     if (position === 'top-left') {
       x = padding;
@@ -954,17 +955,17 @@ class StreamManager {
       y = padding;
     } else if (position === 'bottom-left') {
       x = padding;
-      y = `h-text_h-${padding}`;
+      y = `h-text_h-${bottomPadding}`;
     } else if (position === 'bottom-center') {
       x = '(w-text_w)/2';
-      y = `h-text_h-${padding}`;
+      y = `h-text_h-${bottomPadding}`;
     } else if (position === 'bottom-right') {
-      x = `w-text_w-${padding}`;
-      y = `h-text_h-${padding}`;
+      x = `w-text_w-${bottomPadding}`;
+      y = `h-text_h-${bottomPadding}`;
     } else {
       // Default to bottom-left
       x = padding;
-      y = `h-text_h-${padding}`;
+      y = `h-text_h-${bottomPadding}`;
     }
 
     // OPTIMIZED: Text is pre-wrapped with line breaks (\n) and truncated to max lines
