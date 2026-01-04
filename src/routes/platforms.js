@@ -147,11 +147,19 @@ router.post('/facebook/create-stream', authenticateToken, async (req, res) => {
       userId: req.user.id,
     });
 
+    // Check if channel is running
+    const channelStatus = await Channel.findById(channelId);
+    const needsRestart = channelStatus && channelStatus.status === 'running';
+
     res.json({
       success: true,
       platformStream,
       rtmpDestination,
       liveVideo,
+      needsRestart,
+      message: needsRestart
+        ? 'Facebook stream created successfully. Please restart your channel stream to start broadcasting to Facebook.'
+        : 'Facebook stream created successfully. Start your channel to begin broadcasting.'
     });
   } catch (error) {
     logger.error('Failed to create Facebook live stream', { error: error.message });
@@ -227,11 +235,19 @@ router.post('/youtube/create-broadcast', authenticateToken, async (req, res) => 
       userId: req.user.id,
     });
 
+    // Check if channel is running
+    const channelStatus = await Channel.findById(channelId);
+    const needsRestart = channelStatus && channelStatus.status === 'running';
+
     res.json({
       success: true,
       platformStream,
       rtmpDestination,
       broadcast,
+      needsRestart,
+      message: needsRestart
+        ? 'YouTube stream created successfully. Please restart your channel stream to start broadcasting to YouTube.'
+        : 'YouTube stream created successfully. Start your channel to begin broadcasting.'
     });
   } catch (error) {
     logger.error('Failed to create YouTube live broadcast', { error: error.message });
@@ -303,11 +319,19 @@ router.post('/twitch/setup-stream', authenticateToken, async (req, res) => {
       userId: req.user.id,
     });
 
+    // Check if channel is running
+    const channelStatus = await Channel.findById(channelId);
+    const needsRestart = channelStatus && channelStatus.status === 'running';
+
     res.json({
       success: true,
       platformStream,
       rtmpDestination,
       stream,
+      needsRestart,
+      message: needsRestart
+        ? 'Twitch stream created successfully. Please restart your channel stream to start broadcasting to Twitch.'
+        : 'Twitch stream created successfully. Start your channel to begin broadcasting.'
     });
   } catch (error) {
     logger.error('Failed to setup Twitch stream', { error: error.message });
