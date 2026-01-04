@@ -910,18 +910,18 @@ class StreamManager {
 
   // Build drawtext filter for title overlay
   buildDrawtextFilter(text, bgColor, bgOpacity, position, textColor, fontSize, boxPadding = '5') {
+    // Word wrap text to prevent overflow - approximately 60 chars per line for 720p/1080p
+    const maxCharsPerLine = 60;
+    const wrappedText = this.wrapText(text, maxCharsPerLine);
+
     // Escape text for FFmpeg (single quotes and colons need escaping)
-    const escapedText = text.replace(/'/g, "'\\''").replace(/:/g, '\\:');
+    const escapedText = wrappedText.replace(/'/g, "'\\''").replace(/:/g, '\\:');
 
     // Calculate position based on settings
     let x, y;
     const padding = 20; // Padding from edges
     const parsedBoxPadding = parseInt(boxPadding) || 5; // Parse box padding (lower = less CPU)
     const parsedFontSize = parseInt(fontSize) || 32;
-
-    // Calculate maximum text width based on video resolution (85% of video width)
-    // This allows text to wrap to multiple lines if it's too long
-    const maxTextWidth = 'w*0.85';
 
     if (position === 'top-left') {
       x = padding;
@@ -947,12 +947,42 @@ class StreamManager {
       y = `h-text_h-${padding}`;
     }
 
-    // OPTIMIZED: Using text_w parameter to enable text wrapping
-    // If text exceeds max width, it will wrap to next line
+    // OPTIMIZED: Text is pre-wrapped with line breaks (\n)
     // Lower box padding = less CPU overhead on each frame
-    const drawtextFilter = `,drawtext=text='${escapedText}':fontsize=${parsedFontSize}:fontcolor=${textColor}:x=${x}:y=${y}:text_w=${maxTextWidth}:box=1:boxcolor=${bgColor}@${bgOpacity}:boxborderw=${parsedBoxPadding}`;
+    const drawtextFilter = `,drawtext=text='${escapedText}':fontsize=${parsedFontSize}:fontcolor=${textColor}:x=${x}:y=${y}:box=1:boxcolor=${bgColor}@${bgOpacity}:boxborderw=${parsedBoxPadding}`;
 
     return drawtextFilter;
+  }
+
+  // Helper function to wrap text at word boundaries
+  wrapText(text, maxCharsPerLine) {
+    if (text.length <= maxCharsPerLine) {
+      return text;
+    }
+
+    const words = text.split(' ');
+    const lines = [];
+    let currentLine = '';
+
+    for (const word of words) {
+      const testLine = currentLine ? `${currentLine} ${word}` : word;
+
+      if (testLine.length <= maxCharsPerLine) {
+        currentLine = testLine;
+      } else {
+        if (currentLine) {
+          lines.push(currentLine);
+        }
+        currentLine = word;
+      }
+    }
+
+    if (currentLine) {
+      lines.push(currentLine);
+    }
+
+    // Join with newline character that FFmpeg understands
+    return lines.join('\\n');
   }
 
   // Get stream status (backward compatible, uses health metrics)
