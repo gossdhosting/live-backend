@@ -2,13 +2,13 @@ import db from './database.js';
 
 class Channel {
   // Create a new channel
-  static create({ name, description, input_url, auto_restart = 1, quality_preset = '720p', stream_title = '', input_type = 'youtube', media_file_id = null, loop_video = 0 }) {
+  static create({ name, description, input_url, auto_restart = 1, quality_preset = '720p', stream_title = '', input_type = 'youtube', media_file_id = null, loop_video = 0, title_enabled = 0 }) {
     const stmt = db.prepare(`
-      INSERT INTO channels (name, description, input_url, auto_restart, quality_preset, stream_title, input_type, media_file_id, loop_video, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'stopped')
+      INSERT INTO channels (name, description, input_url, auto_restart, quality_preset, stream_title, input_type, media_file_id, loop_video, title_enabled, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'stopped')
     `);
 
-    const result = stmt.run(name, description, input_url, auto_restart, quality_preset, stream_title, input_type, media_file_id, loop_video);
+    const result = stmt.run(name, description, input_url, auto_restart, quality_preset, stream_title, input_type, media_file_id, loop_video, title_enabled);
     return this.findById(result.lastInsertRowid);
   }
 
