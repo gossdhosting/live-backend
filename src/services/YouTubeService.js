@@ -40,18 +40,43 @@ class YouTubeService {
     }
   }
 
-  // Set credentials on OAuth2 client
-  static setCredentials(oauth2Client, accessToken, refreshToken) {
+  // Set credentials on OAuth2 client with automatic refresh
+  static async setCredentials(oauth2Client, accessToken, refreshToken, connectionId = null) {
     oauth2Client.setCredentials({
       access_token: accessToken,
       refresh_token: refreshToken,
     });
+
+    // Set up automatic token refresh handler
+    if (connectionId) {
+      oauth2Client.on('tokens', async (tokens) => {
+        if (tokens.refresh_token) {
+          // We have a new refresh token, save it
+          logger.info('YouTube: Received new refresh token');
+        }
+
+        if (tokens.access_token) {
+          // Update the access token in database
+          const expiresAt = new Date(Date.now() + (tokens.expiry_date || 3600 * 1000));
+          try {
+            await PlatformConnection.update(connectionId, {
+              access_token: tokens.access_token,
+              refresh_token: tokens.refresh_token || refreshToken,
+              token_expires_at: expiresAt.toISOString(),
+            });
+            logger.info('YouTube: Access token auto-refreshed and saved');
+          } catch (error) {
+            logger.error('YouTube: Failed to save auto-refreshed token', { error: error.message });
+          }
+        }
+      });
+    }
   }
 
   // Get user's channel info
-  static async getChannelInfo(accessToken, refreshToken) {
+  static async getChannelInfo(accessToken, refreshToken, connectionId = null) {
     const oauth2Client = this.getOAuth2Client();
-    this.setCredentials(oauth2Client, accessToken, refreshToken);
+    await this.setCredentials(oauth2Client, accessToken, refreshToken, connectionId);
 
     const youtube = google.youtube({ version: 'v3', auth: oauth2Client });
 
@@ -85,9 +110,9 @@ class YouTubeService {
   }
 
   // Get user info
-  static async getUserInfo(accessToken, refreshToken) {
+  static async getUserInfo(accessToken, refreshToken, connectionId = null) {
     const oauth2Client = this.getOAuth2Client();
-    this.setCredentials(oauth2Client, accessToken, refreshToken);
+    await this.setCredentials(oauth2Client, accessToken, refreshToken, connectionId);
 
     const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
 
@@ -101,9 +126,9 @@ class YouTubeService {
   }
 
   // Create live broadcast
-  static async createLiveBroadcast(accessToken, refreshToken, title, description, scheduledStartTime = null) {
+  static async createLiveBroadcast(accessToken, refreshToken, title, description, scheduledStartTime = null, connectionId = null) {
     const oauth2Client = this.getOAuth2Client();
-    this.setCredentials(oauth2Client, accessToken, refreshToken);
+    await this.setCredentials(oauth2Client, accessToken, refreshToken, connectionId);
 
     const youtube = google.youtube({ version: 'v3', auth: oauth2Client });
 
@@ -179,9 +204,9 @@ class YouTubeService {
   }
 
   // End live broadcast
-  static async endLiveBroadcast(accessToken, refreshToken, broadcastId) {
+  static async endLiveBroadcast(accessToken, refreshToken, broadcastId, connectionId = null) {
     const oauth2Client = this.getOAuth2Client();
-    this.setCredentials(oauth2Client, accessToken, refreshToken);
+    await this.setCredentials(oauth2Client, accessToken, refreshToken, connectionId);
 
     const youtube = google.youtube({ version: 'v3', auth: oauth2Client });
 
@@ -200,9 +225,9 @@ class YouTubeService {
   }
 
   // Get broadcast status
-  static async getBroadcastStatus(accessToken, refreshToken, broadcastId) {
+  static async getBroadcastStatus(accessToken, refreshToken, broadcastId, connectionId = null) {
     const oauth2Client = this.getOAuth2Client();
-    this.setCredentials(oauth2Client, accessToken, refreshToken);
+    await this.setCredentials(oauth2Client, accessToken, refreshToken, connectionId);
 
     const youtube = google.youtube({ version: 'v3', auth: oauth2Client });
 

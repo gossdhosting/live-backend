@@ -201,7 +201,9 @@ router.post('/youtube/create-broadcast', authenticateToken, async (req, res) => 
       accessToken,
       connection.refresh_token,
       title,
-      description
+      description,
+      null, // scheduledStartTime
+      connection.id // connectionId for automatic token refresh
     );
 
     // Add RTMP destination to channel first

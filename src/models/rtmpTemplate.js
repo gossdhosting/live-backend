@@ -2,10 +2,10 @@ import db from './database.js';
 
 class RtmpTemplate {
   // Create a new RTMP template
-  static create({ name, platform, rtmp_url, stream_key, video_bitrate, audio_bitrate, profile, preset, fps }) {
+  static create({ name, platform, rtmp_url, stream_key, video_bitrate, audio_bitrate, profile, preset, fps, enabled = 1 }) {
     const stmt = db.prepare(`
-      INSERT INTO rtmp_templates (name, platform, rtmp_url, stream_key, video_bitrate, audio_bitrate, profile, preset, fps)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO rtmp_templates (name, platform, rtmp_url, stream_key, video_bitrate, audio_bitrate, profile, preset, fps, enabled)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
@@ -17,7 +17,8 @@ class RtmpTemplate {
       audio_bitrate || null,
       profile || null,
       preset || null,
-      fps || null
+      fps || null,
+      enabled ? 1 : 0
     );
     return this.getById(result.lastInsertRowid);
   }
@@ -34,8 +35,14 @@ class RtmpTemplate {
     return stmt.all();
   }
 
+  // Get only enabled templates
+  static getEnabled() {
+    const stmt = db.prepare('SELECT * FROM rtmp_templates WHERE enabled = 1 ORDER BY created_at DESC');
+    return stmt.all();
+  }
+
   // Update template
-  static update(id, { name, platform, rtmp_url, stream_key, video_bitrate, audio_bitrate, profile, preset, fps }) {
+  static update(id, { name, platform, rtmp_url, stream_key, video_bitrate, audio_bitrate, profile, preset, fps, enabled }) {
     const fields = [];
     const values = [];
 
@@ -74,6 +81,10 @@ class RtmpTemplate {
     if (fps !== undefined) {
       fields.push('fps = ?');
       values.push(fps || null);
+    }
+    if (enabled !== undefined) {
+      fields.push('enabled = ?');
+      values.push(enabled ? 1 : 0);
     }
 
     if (fields.length === 0) return null;
