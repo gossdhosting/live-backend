@@ -169,7 +169,7 @@ export const updateChannel = (req, res) => {
     const updateData = {};
     if (name) updateData.name = name;
     if (description !== undefined) updateData.description = description;
-    if (input_url) updateData.input_url = input_url;
+    if (input_url !== undefined) updateData.input_url = input_url;
     if (auto_restart !== undefined) updateData.auto_restart = auto_restart ? 1 : 0;
     if (quality_preset) updateData.quality_preset = quality_preset;
     if (stream_title !== undefined) updateData.stream_title = stream_title;
@@ -177,6 +177,8 @@ export const updateChannel = (req, res) => {
     if (media_file_id !== undefined) updateData.media_file_id = media_file_id;
     if (loop_video !== undefined) updateData.loop_video = loop_video ? 1 : 0;
     if (title_enabled !== undefined) updateData.title_enabled = title_enabled ? 1 : 0;
+
+    logger.info('Updating channel with data', { channelId: id, updateData });
 
     const updatedChannel = Channel.update(id, updateData);
 

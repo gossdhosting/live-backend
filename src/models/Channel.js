@@ -26,7 +26,7 @@ class Channel {
 
   // Update channel
   static update(id, data) {
-    const allowedFields = ['name', 'description', 'input_url', 'auto_restart', 'quality_preset', 'stream_title', 'input_type', 'media_file_id', 'loop_video', 'watermark_enabled', 'watermark_path', 'watermark_position', 'watermark_opacity', 'watermark_scale'];
+    const allowedFields = ['name', 'description', 'input_url', 'auto_restart', 'quality_preset', 'stream_title', 'input_type', 'media_file_id', 'loop_video', 'title_enabled', 'watermark_enabled', 'watermark_path', 'watermark_position', 'watermark_opacity', 'watermark_scale'];
     const fields = [];
     const values = [];
 
