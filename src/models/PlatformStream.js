@@ -7,8 +7,8 @@ class PlatformStream {
       INSERT INTO platform_streams (
         channel_id, platform_connection_id, platform, platform_stream_id,
         platform_broadcast_id, rtmp_url, stream_key, stream_title,
-        stream_description, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        stream_description, status, rtmp_destination_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const info = stmt.run(
@@ -21,7 +21,8 @@ class PlatformStream {
       data.stream_key,
       data.stream_title || null,
       data.stream_description || null,
-      data.status || 'created'
+      data.status || 'created',
+      data.rtmp_destination_id || null
     );
 
     return this.getById(info.lastInsertRowid);
@@ -68,7 +69,7 @@ class PlatformStream {
 
     const allowedFields = [
       'platform_stream_id', 'platform_broadcast_id', 'rtmp_url', 'stream_key',
-      'stream_title', 'stream_description', 'status'
+      'stream_title', 'stream_description', 'status', 'rtmp_destination_id'
     ];
 
     for (const field of allowedFields) {

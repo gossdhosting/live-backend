@@ -6,6 +6,7 @@ import TwitchService from '../services/TwitchService.js';
 import PlatformConnection from '../models/PlatformConnection.js';
 import PlatformStream from '../models/PlatformStream.js';
 import RtmpDestination from '../models/RtmpDestination.js';
+import Channel from '../models/Channel.js';
 import logger from '../utils/logger.js';
 
 const router = express.Router();
@@ -43,11 +44,14 @@ router.delete('/connections/:id', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Connection not found' });
     }
 
-    // Use loose equality to handle string/number comparison
-    if (connection.user_id != req.user.id) {
+    // Normalize IDs to numbers for strict comparison
+    const connectionUserId = Number(connection.user_id);
+    const requestUserId = Number(req.user.id);
+
+    if (connectionUserId !== requestUserId) {
       logger.warn('Unauthorized connection delete attempt', {
-        connectionUserId: connection.user_id,
-        requestUserId: req.user.id,
+        connectionUserId,
+        requestUserId,
         connectionId: req.params.id
       });
       return res.status(403).json({ error: 'Unauthorized' });
@@ -88,8 +92,14 @@ router.post('/facebook/create-stream', authenticateToken, async (req, res) => {
   try {
     const { channelId, pageId, pageAccessToken, title, description } = req.body;
 
-    if (!pageId || !pageAccessToken || !title) {
+    if (!channelId || !pageId || !pageAccessToken || !title) {
       return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    // Validate channel exists
+    const channel = await Channel.findById(channelId);
+    if (!channel) {
+      return res.status(404).json({ error: 'Channel not found' });
     }
 
     const connection = await PlatformConnection.getByPlatformAndUser('facebook', req.user.id);
@@ -101,7 +111,16 @@ router.post('/facebook/create-stream', authenticateToken, async (req, res) => {
     // Create live video
     const liveVideo = await FacebookService.createLiveVideo(pageId, pageAccessToken, title, description);
 
-    // Save platform stream
+    // Add RTMP destination to channel first
+    const rtmpDestination = await RtmpDestination.create({
+      channel_id: channelId,
+      platform: 'facebook',
+      rtmp_url: liveVideo.rtmp_url,
+      stream_key: '', // Facebook uses full RTMP URL
+      enabled: 1,
+    });
+
+    // Save platform stream with rtmp_destination_id for precise tracking
     const platformStream = await PlatformStream.create({
       channel_id: channelId,
       platform_connection_id: connection.id,
@@ -112,15 +131,7 @@ router.post('/facebook/create-stream', authenticateToken, async (req, res) => {
       stream_title: title,
       stream_description: description,
       status: 'created',
-    });
-
-    // Add RTMP destination to channel
-    const rtmpDestination = await RtmpDestination.create({
-      channel_id: channelId,
-      platform: 'facebook',
-      rtmp_url: liveVideo.rtmp_url,
-      stream_key: '', // Facebook uses full RTMP URL
-      enabled: 1,
+      rtmp_destination_id: rtmpDestination.id,
     });
 
     logger.info('Facebook live stream created and RTMP destination added', {
@@ -147,8 +158,14 @@ router.post('/youtube/create-broadcast', authenticateToken, async (req, res) => 
   try {
     const { channelId, title, description } = req.body;
 
-    if (!title) {
-      return res.status(400).json({ error: 'Title is required' });
+    if (!channelId || !title) {
+      return res.status(400).json({ error: 'Channel ID and title are required' });
+    }
+
+    // Validate channel exists
+    const channel = await Channel.findById(channelId);
+    if (!channel) {
+      return res.status(404).json({ error: 'Channel not found' });
     }
 
     const connection = await PlatformConnection.getByPlatformAndUser('youtube', req.user.id);
@@ -167,7 +184,16 @@ router.post('/youtube/create-broadcast', authenticateToken, async (req, res) => 
       description
     );
 
-    // Save platform stream
+    // Add RTMP destination to channel first
+    const rtmpDestination = await RtmpDestination.create({
+      channel_id: channelId,
+      platform: 'youtube',
+      rtmp_url: broadcast.rtmp_url,
+      stream_key: broadcast.stream_key,
+      enabled: 1,
+    });
+
+    // Save platform stream with rtmp_destination_id for precise tracking
     const platformStream = await PlatformStream.create({
       channel_id: channelId,
       platform_connection_id: connection.id,
@@ -179,15 +205,7 @@ router.post('/youtube/create-broadcast', authenticateToken, async (req, res) => 
       stream_title: title,
       stream_description: description,
       status: 'created',
-    });
-
-    // Add RTMP destination to channel
-    const rtmpDestination = await RtmpDestination.create({
-      channel_id: channelId,
-      platform: 'youtube',
-      rtmp_url: broadcast.rtmp_url,
-      stream_key: broadcast.stream_key,
-      enabled: 1,
+      rtmp_destination_id: rtmpDestination.id,
     });
 
     logger.info('YouTube live broadcast created and RTMP destination added', {
@@ -214,8 +232,14 @@ router.post('/twitch/setup-stream', authenticateToken, async (req, res) => {
   try {
     const { channelId, title, categoryId } = req.body;
 
-    if (!title) {
-      return res.status(400).json({ error: 'Title is required' });
+    if (!channelId || !title) {
+      return res.status(400).json({ error: 'Channel ID and title are required' });
+    }
+
+    // Validate channel exists
+    const channel = await Channel.findById(channelId);
+    if (!channel) {
+      return res.status(404).json({ error: 'Channel not found' });
     }
 
     const connection = await PlatformConnection.getByPlatformAndUser('twitch', req.user.id);
@@ -234,7 +258,16 @@ router.post('/twitch/setup-stream', authenticateToken, async (req, res) => {
       categoryId
     );
 
-    // Save platform stream
+    // Add RTMP destination to channel first
+    const rtmpDestination = await RtmpDestination.create({
+      channel_id: channelId,
+      platform: 'twitch',
+      rtmp_url: stream.rtmp_url,
+      stream_key: stream.stream_key,
+      enabled: 1,
+    });
+
+    // Save platform stream with rtmp_destination_id for precise tracking
     const platformStream = await PlatformStream.create({
       channel_id: channelId,
       platform_connection_id: connection.id,
@@ -243,15 +276,7 @@ router.post('/twitch/setup-stream', authenticateToken, async (req, res) => {
       stream_key: stream.stream_key,
       stream_title: title,
       status: 'created',
-    });
-
-    // Add RTMP destination to channel
-    const rtmpDestination = await RtmpDestination.create({
-      channel_id: channelId,
-      platform: 'twitch',
-      rtmp_url: stream.rtmp_url,
-      stream_key: stream.stream_key,
-      enabled: 1,
+      rtmp_destination_id: rtmpDestination.id,
     });
 
     logger.info('Twitch stream setup and RTMP destination added', {
@@ -292,16 +317,26 @@ router.delete('/streams/:id', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Stream not found' });
     }
 
-    // Find and delete associated RTMP destination
-    const rtmpDestinations = await RtmpDestination.getAll(stream.channel_id);
-    const rtmpDest = rtmpDestinations.find(dest =>
-      dest.platform === stream.platform &&
-      dest.rtmp_url === stream.rtmp_url
-    );
+    // Delete associated RTMP destination using FK for precise deletion
+    if (stream.rtmp_destination_id) {
+      await RtmpDestination.delete(stream.rtmp_destination_id);
+      logger.info('RTMP destination deleted', { rtmpDestId: stream.rtmp_destination_id });
+    } else {
+      // Fallback for old streams without rtmp_destination_id
+      logger.warn('Platform stream missing rtmp_destination_id, attempting fallback deletion', {
+        streamId: stream.id,
+        platform: stream.platform,
+      });
+      const rtmpDestinations = await RtmpDestination.getAll(stream.channel_id);
+      const rtmpDest = rtmpDestinations.find(dest =>
+        dest.platform === stream.platform &&
+        dest.rtmp_url === stream.rtmp_url
+      );
 
-    if (rtmpDest) {
-      await RtmpDestination.delete(rtmpDest.id);
-      logger.info('RTMP destination deleted', { rtmpDestId: rtmpDest.id });
+      if (rtmpDest) {
+        await RtmpDestination.delete(rtmpDest.id);
+        logger.info('RTMP destination deleted via fallback', { rtmpDestId: rtmpDest.id });
+      }
     }
 
     await PlatformStream.delete(req.params.id);

@@ -312,6 +312,21 @@ const initDatabase = () => {
     )
   `);
 
+  // Add rtmp_destination_id column if it doesn't exist (migration for precise deletion tracking)
+  try {
+    const platformStreamsInfo = db.prepare('PRAGMA table_info(platform_streams)').all();
+    const hasRtmpDestId = platformStreamsInfo.some(col => col.name === 'rtmp_destination_id');
+
+    if (!hasRtmpDestId) {
+      db.exec(`
+        ALTER TABLE platform_streams ADD COLUMN rtmp_destination_id INTEGER REFERENCES rtmp_destinations(id) ON DELETE SET NULL;
+      `);
+      console.log('✅ Added rtmp_destination_id column to platform_streams table');
+    }
+  } catch (error) {
+    console.log('Platform streams migration:', error.message);
+  }
+
   console.log('✅ Database initialized successfully');
 };
 
