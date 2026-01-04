@@ -43,6 +43,8 @@ class RtmpTemplate {
 
   // Update template
   static update(id, { name, platform, rtmp_url, stream_key, video_bitrate, audio_bitrate, profile, preset, fps, enabled }) {
+    console.log('[RtmpTemplate.update] Called with:', { id, name, platform, rtmp_url, stream_key, video_bitrate, audio_bitrate, profile, preset, fps, enabled });
+
     const fields = [];
     const values = [];
 
@@ -87,17 +89,28 @@ class RtmpTemplate {
       values.push(enabled ? 1 : 0);
     }
 
-    if (fields.length === 0) return null;
+    console.log('[RtmpTemplate.update] Fields to update:', fields);
+    console.log('[RtmpTemplate.update] Values:', values);
+
+    if (fields.length === 0) {
+      console.log('[RtmpTemplate.update] No fields to update, returning null');
+      return null;
+    }
 
     fields.push('updated_at = CURRENT_TIMESTAMP');
     values.push(id);
 
-    const stmt = db.prepare(`
-      UPDATE rtmp_templates SET ${fields.join(', ')} WHERE id = ?
-    `);
+    const sql = `UPDATE rtmp_templates SET ${fields.join(', ')} WHERE id = ?`;
+    console.log('[RtmpTemplate.update] SQL:', sql);
+    console.log('[RtmpTemplate.update] Final values:', values);
 
-    stmt.run(...values);
-    return this.getById(id);
+    const stmt = db.prepare(sql);
+    const result = stmt.run(...values);
+    console.log('[RtmpTemplate.update] Update result:', result);
+
+    const updated = this.getById(id);
+    console.log('[RtmpTemplate.update] Retrieved updated template:', updated);
+    return updated;
   }
 
   // Delete template
