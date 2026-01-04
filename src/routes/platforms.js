@@ -5,6 +5,7 @@ import YouTubeService from '../services/YouTubeService.js';
 import TwitchService from '../services/TwitchService.js';
 import PlatformConnection from '../models/PlatformConnection.js';
 import PlatformStream from '../models/PlatformStream.js';
+import RtmpDestination from '../models/RtmpDestination.js';
 import logger from '../utils/logger.js';
 
 const router = express.Router();
@@ -113,15 +114,26 @@ router.post('/facebook/create-stream', authenticateToken, async (req, res) => {
       status: 'created',
     });
 
-    logger.info('Facebook live stream created', {
+    // Add RTMP destination to channel
+    const rtmpDestination = await RtmpDestination.create({
+      channel_id: channelId,
+      platform: 'facebook',
+      rtmp_url: liveVideo.rtmp_url,
+      stream_key: '', // Facebook uses full RTMP URL
+      enabled: 1,
+    });
+
+    logger.info('Facebook live stream created and RTMP destination added', {
       channelId,
       streamId: liveVideo.stream_id,
+      rtmpDestinationId: rtmpDestination.id,
       userId: req.user.id,
     });
 
     res.json({
       success: true,
       platformStream,
+      rtmpDestination,
       liveVideo,
     });
   } catch (error) {
@@ -169,15 +181,26 @@ router.post('/youtube/create-broadcast', authenticateToken, async (req, res) => 
       status: 'created',
     });
 
-    logger.info('YouTube live broadcast created', {
+    // Add RTMP destination to channel
+    const rtmpDestination = await RtmpDestination.create({
+      channel_id: channelId,
+      platform: 'youtube',
+      rtmp_url: broadcast.rtmp_url,
+      stream_key: broadcast.stream_key,
+      enabled: 1,
+    });
+
+    logger.info('YouTube live broadcast created and RTMP destination added', {
       channelId,
       broadcastId: broadcast.broadcast_id,
+      rtmpDestinationId: rtmpDestination.id,
       userId: req.user.id,
     });
 
     res.json({
       success: true,
       platformStream,
+      rtmpDestination,
       broadcast,
     });
   } catch (error) {
@@ -222,14 +245,25 @@ router.post('/twitch/setup-stream', authenticateToken, async (req, res) => {
       status: 'created',
     });
 
-    logger.info('Twitch stream setup', {
+    // Add RTMP destination to channel
+    const rtmpDestination = await RtmpDestination.create({
+      channel_id: channelId,
+      platform: 'twitch',
+      rtmp_url: stream.rtmp_url,
+      stream_key: stream.stream_key,
+      enabled: 1,
+    });
+
+    logger.info('Twitch stream setup and RTMP destination added', {
       channelId,
+      rtmpDestinationId: rtmpDestination.id,
       userId: req.user.id,
     });
 
     res.json({
       success: true,
       platformStream,
+      rtmpDestination,
       stream,
     });
   } catch (error) {
@@ -256,6 +290,18 @@ router.delete('/streams/:id', authenticateToken, async (req, res) => {
 
     if (!stream) {
       return res.status(404).json({ error: 'Stream not found' });
+    }
+
+    // Find and delete associated RTMP destination
+    const rtmpDestinations = await RtmpDestination.getAll(stream.channel_id);
+    const rtmpDest = rtmpDestinations.find(dest =>
+      dest.platform === stream.platform &&
+      dest.rtmp_url === stream.rtmp_url
+    );
+
+    if (rtmpDest) {
+      await RtmpDestination.delete(rtmpDest.id);
+      logger.info('RTMP destination deleted', { rtmpDestId: rtmpDest.id });
     }
 
     await PlatformStream.delete(req.params.id);
