@@ -58,7 +58,8 @@ export const createChannel = (req, res) => {
       stream_title,
       input_type,
       media_file_id,
-      loop_video
+      loop_video,
+      title_enabled
     } = req.body;
 
     // Validation
@@ -105,6 +106,7 @@ export const createChannel = (req, res) => {
       input_type: finalInputType,
       media_file_id: media_file_id || null,
       loop_video: loop_video ? 1 : 0,
+      title_enabled: title_enabled ? 1 : 0,
     });
 
     logger.info('Channel created', {
@@ -126,7 +128,18 @@ export const createChannel = (req, res) => {
 export const updateChannel = (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, input_url, auto_restart } = req.body;
+    const {
+      name,
+      description,
+      input_url,
+      auto_restart,
+      quality_preset,
+      stream_title,
+      input_type,
+      media_file_id,
+      loop_video,
+      title_enabled
+    } = req.body;
 
     const channel = Channel.findById(id);
 
@@ -156,8 +169,13 @@ export const updateChannel = (req, res) => {
     if (name) updateData.name = name;
     if (description !== undefined) updateData.description = description;
     if (input_url) updateData.input_url = input_url;
-    if (auto_restart !== undefined)
-      updateData.auto_restart = auto_restart ? 1 : 0;
+    if (auto_restart !== undefined) updateData.auto_restart = auto_restart ? 1 : 0;
+    if (quality_preset) updateData.quality_preset = quality_preset;
+    if (stream_title !== undefined) updateData.stream_title = stream_title;
+    if (input_type) updateData.input_type = input_type;
+    if (media_file_id !== undefined) updateData.media_file_id = media_file_id;
+    if (loop_video !== undefined) updateData.loop_video = loop_video ? 1 : 0;
+    if (title_enabled !== undefined) updateData.title_enabled = title_enabled ? 1 : 0;
 
     const updatedChannel = Channel.update(id, updateData);
 
