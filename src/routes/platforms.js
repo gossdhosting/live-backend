@@ -102,6 +102,12 @@ router.post('/facebook/create-stream', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Channel not found' });
     }
 
+    // TODO: Add channel ownership check when multi-user support is added
+    // Currently channels table does not have user_id column
+    // For multi-user: if (Number(channel.user_id) !== Number(req.user.id)) {
+    //   return res.status(403).json({ error: 'Unauthorized access to this channel' });
+    // }
+
     const connection = await PlatformConnection.getByPlatformAndUser('facebook', req.user.id);
 
     if (!connection) {
@@ -167,6 +173,12 @@ router.post('/youtube/create-broadcast', authenticateToken, async (req, res) => 
     if (!channel) {
       return res.status(404).json({ error: 'Channel not found' });
     }
+
+    // TODO: Add channel ownership check when multi-user support is added
+    // Currently channels table does not have user_id column
+    // For multi-user: if (Number(channel.user_id) !== Number(req.user.id)) {
+    //   return res.status(403).json({ error: 'Unauthorized access to this channel' });
+    // }
 
     const connection = await PlatformConnection.getByPlatformAndUser('youtube', req.user.id);
 
@@ -241,6 +253,12 @@ router.post('/twitch/setup-stream', authenticateToken, async (req, res) => {
     if (!channel) {
       return res.status(404).json({ error: 'Channel not found' });
     }
+
+    // TODO: Add channel ownership check when multi-user support is added
+    // Currently channels table does not have user_id column
+    // For multi-user: if (Number(channel.user_id) !== Number(req.user.id)) {
+    //   return res.status(403).json({ error: 'Unauthorized access to this channel' });
+    // }
 
     const connection = await PlatformConnection.getByPlatformAndUser('twitch', req.user.id);
 

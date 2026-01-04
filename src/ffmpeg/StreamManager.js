@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import Channel from '../models/Channel.js';
 import Settings from '../models/Settings.js';
-import RtmpDestination from '../models/rtmpDestination.js';
+import RtmpDestination from '../models/RtmpDestination.js';
 import logger from '../utils/logger.js';
 
 class StreamManager {

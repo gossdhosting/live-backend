@@ -1,5 +1,5 @@
-import RtmpDestination from '../models/rtmpDestination.js';
-import RtmpTemplate from '../models/rtmpTemplate.js';
+import RtmpDestination from '../models/RtmpDestination.js';
+import RtmpTemplate from '../models/RtmpTemplate.js';
 import Channel from '../models/Channel.js';
 import logger from '../utils/logger.js';
 
