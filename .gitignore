@@ -6,3 +6,4 @@ logs/
 *.pid
 .DS_Store
 /var/
+ecosystem.config.cjs

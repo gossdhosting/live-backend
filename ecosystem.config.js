@@ -1,4 +1,4 @@
-export default {
+module.exports = {
   apps: [
     {
       name: 'streaming-backend',
@@ -10,6 +10,31 @@ export default {
       max_memory_restart: '1G',
       env: {
         NODE_ENV: 'production',
+        PORT: '5000',
+        JWT_SECRET: 'your-super-secret-jwt-key-change-this-in-production',
+        HLS_BASE_PATH: '/var/www/hls',
+        HLS_SEGMENT_DURATION: '4',
+        HLS_LIST_SIZE: '6',
+        HLS_FLAGS: 'delete_segments',
+        MAX_CONCURRENT_STREAMS: '10',
+        AUTO_RESTART_ENABLED: 'true',
+        FFMPEG_PATH: 'ffmpeg',
+        FFMPEG_LOG_PATH: './logs/ffmpeg',
+        YOUTUBE_COOKIES_PATH: '/var/www/live-admin/cookies.txt',
+        YTDLP_PATH: 'yt-dlp',
+        DATABASE_PATH: './data/streaming.db',
+        ADMIN_EMAIL: 'admin@example.com',
+        ADMIN_PASSWORD: 'admin123',
+        FRONTEND_URL: 'https://live.telanganatribune.com',
+        FACEBOOK_CLIENT_ID: 'your_facebook_app_id',
+        FACEBOOK_CLIENT_SECRET: 'your_facebook_app_secret',
+        FACEBOOK_REDIRECT_URI: 'https://live.telanganatribune.com/api/platforms/auth/facebook/callback',
+        YOUTUBE_CLIENT_ID: 'your_youtube_client_id.apps.googleusercontent.com',
+        YOUTUBE_CLIENT_SECRET: 'your_youtube_client_secret',
+        YOUTUBE_REDIRECT_URI: 'https://live.telanganatribune.com/api/platforms/auth/youtube/callback',
+        TWITCH_CLIENT_ID: 'your_twitch_client_id',
+        TWITCH_CLIENT_SECRET: 'your_twitch_client_secret',
+        TWITCH_REDIRECT_URI: 'https://live.telanganatribune.com/api/platforms/auth/twitch/callback',
       },
       error_file: './logs/pm2-error.log',
       out_file: './logs/pm2-out.log',
