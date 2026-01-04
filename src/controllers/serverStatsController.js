@@ -26,7 +26,10 @@ export const getServerStats = async (req, res) => {
     const osInfo = await si.osInfo();
 
     // Calculate percentages
-    const memoryUsedPercent = ((mem.used / mem.total) * 100).toFixed(2);
+    // Use mem.active (actual used memory) instead of mem.used (which includes buffers/cache)
+    // Or calculate as: total - available for accurate "in use" memory
+    const actualUsed = mem.total - mem.available;
+    const memoryUsedPercent = ((actualUsed / mem.total) * 100).toFixed(2);
     const diskUsedPercent = fsSize.length > 0
       ? ((fsSize[0].used / fsSize[0].size) * 100).toFixed(2)
       : 0;
@@ -40,12 +43,14 @@ export const getServerStats = async (req, res) => {
       },
       memory: {
         total: mem.total,
-        used: mem.used,
+        used: actualUsed,
         free: mem.free,
+        available: mem.available,
         usedPercent: memoryUsedPercent,
         totalGB: (mem.total / 1024 / 1024 / 1024).toFixed(2),
-        usedGB: (mem.used / 1024 / 1024 / 1024).toFixed(2),
+        usedGB: (actualUsed / 1024 / 1024 / 1024).toFixed(2),
         freeGB: (mem.free / 1024 / 1024 / 1024).toFixed(2),
+        availableGB: (mem.available / 1024 / 1024 / 1024).toFixed(2),
       },
       disk: fsSize.length > 0 ? {
         total: fsSize[0].size,
