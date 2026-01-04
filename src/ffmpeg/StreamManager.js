@@ -901,9 +901,9 @@ class StreamManager {
       'center-left': '10:(main_h-overlay_h)/2',
       'center': '(main_w-overlay_w)/2:(main_h-overlay_h)/2',
       'center-right': 'main_w-overlay_w-10:(main_h-overlay_h)/2',
-      'bottom-left': '10:main_h-overlay_h-40',
-      'bottom-center': '(main_w-overlay_w)/2:main_h-overlay_h-40',
-      'bottom-right': 'main_w-overlay_w-10:main_h-overlay_h-40',
+      'bottom-left': '10:main_h-overlay_h-70',
+      'bottom-center': '(main_w-overlay_w)/2:main_h-overlay_h-70',
+      'bottom-right': 'main_w-overlay_w-10:main_h-overlay_h-70',
     };
     return positions[position] || positions['top-left'];
   }
