@@ -45,6 +45,17 @@ const templates = [
     fps: 30,
   },
   {
+    name: 'Instagram Live',
+    platform: 'custom',
+    rtmp_url: 'rtmps://edgetee-upload-hyd1-1.xx.fbcdn.net:443/rtmp/',
+    stream_key: 'your-instagram-stream-key',
+    video_bitrate: '4000k',
+    audio_bitrate: '128k',
+    profile: 'main',
+    preset: 'veryfast',
+    fps: 30,
+  },
+  {
     name: 'Custom RTMP Server',
     platform: 'custom',
     rtmp_url: 'rtmp://your-server/live',
