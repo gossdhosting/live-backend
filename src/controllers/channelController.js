@@ -147,13 +147,7 @@ export const updateChannel = (req, res) => {
       return res.status(404).json({ error: 'Channel not found' });
     }
 
-    // Prevent updating running channel
-    if (channel.status === 'running') {
-      return res
-        .status(400)
-        .json({ error: 'Cannot update channel while streaming' });
-    }
-
+    // Note: Frontend handles stopping stream before update if needed
     // Validation
     if (name && !isValidChannelName(name)) {
       return res
