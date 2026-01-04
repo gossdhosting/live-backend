@@ -3,7 +3,9 @@ import logger from '../utils/logger.js';
 
 export const getRtmpTemplates = async (req, res) => {
   try {
-    const templates = RtmpTemplate.getAll();
+    // Check if we should only return enabled templates
+    const enabledOnly = req.query.enabled === 'true';
+    const templates = enabledOnly ? RtmpTemplate.getEnabled() : RtmpTemplate.getAll();
     res.json({ templates });
   } catch (error) {
     logger.error('Failed to fetch RTMP templates', { error: error.message });
@@ -44,7 +46,7 @@ export const createRtmpTemplate = async (req, res) => {
 export const updateRtmpTemplate = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, platform, rtmp_url, stream_key } = req.body;
+    const { name, platform, rtmp_url, stream_key, enabled } = req.body;
 
     // Check if template exists
     const existing = RtmpTemplate.getById(id);
@@ -65,9 +67,10 @@ export const updateRtmpTemplate = async (req, res) => {
       platform: platform?.toLowerCase(),
       rtmp_url,
       stream_key,
+      enabled,
     });
 
-    logger.info(`RTMP template updated`, { id, name, platform });
+    logger.info(`RTMP template updated`, { id, name, platform, enabled });
     res.json({ template });
   } catch (error) {
     logger.error('Failed to update RTMP template', { error: error.message });

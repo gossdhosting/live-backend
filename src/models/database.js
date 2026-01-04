@@ -269,6 +269,21 @@ const initDatabase = () => {
     console.log('RTMP migrations:', error.message);
   }
 
+  // Add enabled column to rtmp_templates if it doesn't exist (migration)
+  try {
+    const templatesTableInfo = db.prepare('PRAGMA table_info(rtmp_templates)').all();
+    const hasEnabled = templatesTableInfo.some(col => col.name === 'enabled');
+
+    if (!hasEnabled) {
+      db.exec(`
+        ALTER TABLE rtmp_templates ADD COLUMN enabled INTEGER DEFAULT 1;
+      `);
+      console.log('✅ Added enabled column to rtmp_templates table');
+    }
+  } catch (error) {
+    console.log('RTMP templates enabled migration:', error.message);
+  }
+
   // Platform connections table for OAuth2 integrations
   db.exec(`
     CREATE TABLE IF NOT EXISTS platform_connections (
