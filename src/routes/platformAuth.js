@@ -87,21 +87,31 @@ router.get('/youtube', authenticateToken, (req, res) => {
 router.get('/youtube/callback', async (req, res) => {
   const { code, state } = req.query;
 
+  logger.info('YouTube OAuth callback received', { hasCode: !!code, hasState: !!state });
+
   if (!code) {
+    logger.warn('YouTube OAuth callback - no code provided');
     return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?error=youtube_auth_failed`);
   }
 
   try {
     const { userId } = JSON.parse(state);
+    logger.info('YouTube OAuth - parsed state', { userId });
 
     // Exchange code for tokens
+    logger.info('YouTube OAuth - exchanging code for tokens');
     const tokens = await YouTubeService.getTokens(code);
+    logger.info('YouTube OAuth - tokens received', { hasAccessToken: !!tokens.access_token, hasRefreshToken: !!tokens.refresh_token });
 
     // Get user info
+    logger.info('YouTube OAuth - getting user info');
     const userInfo = await YouTubeService.getUserInfo(tokens.access_token, tokens.refresh_token);
+    logger.info('YouTube OAuth - user info received', { userId: userInfo.id, userName: userInfo.name });
 
     // Get channel info
+    logger.info('YouTube OAuth - getting channel info');
     const channelInfo = await YouTubeService.getChannelInfo(tokens.access_token, tokens.refresh_token);
+    logger.info('YouTube OAuth - channel info received', { channelId: channelInfo.id, channelName: channelInfo.title });
 
     // Calculate token expiry
     const expiresAt = new Date(tokens.expiry_date || Date.now() + 3600 * 1000);
@@ -110,6 +120,7 @@ router.get('/youtube/callback', async (req, res) => {
     await PlatformConnection.deleteByPlatformAndUser('youtube', userId);
 
     // Save connection
+    logger.info('YouTube OAuth - saving connection to database');
     await PlatformConnection.create({
       platform: 'youtube',
       user_id: userId,
@@ -124,11 +135,11 @@ router.get('/youtube/callback', async (req, res) => {
       scopes: tokens.scope ? tokens.scope.split(' ') : [],
     });
 
-    logger.info('YouTube account connected', { userId, channelId: channelInfo.id });
+    logger.info('YouTube account connected successfully', { userId, channelId: channelInfo.id });
 
     res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?tab=platforms&success=youtube_connected`);
   } catch (error) {
-    logger.error('YouTube OAuth callback failed', { error: error.message });
+    logger.error('YouTube OAuth callback failed', { error: error.message, stack: error.stack });
     res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?tab=platforms&error=youtube_auth_failed`);
   }
 });

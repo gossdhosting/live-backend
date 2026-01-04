@@ -42,7 +42,13 @@ router.delete('/connections/:id', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Connection not found' });
     }
 
-    if (connection.user_id !== req.user.id) {
+    // Use loose equality to handle string/number comparison
+    if (connection.user_id != req.user.id) {
+      logger.warn('Unauthorized connection delete attempt', {
+        connectionUserId: connection.user_id,
+        requestUserId: req.user.id,
+        connectionId: req.params.id
+      });
       return res.status(403).json({ error: 'Unauthorized' });
     }
 

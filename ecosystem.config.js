@@ -10,7 +10,7 @@ module.exports = {
       max_memory_restart: '1G',
       env: {
         NODE_ENV: 'production',
-        PORT: '5000',
+        PORT: '3000',
         JWT_SECRET: 'your-super-secret-jwt-key-change-this-in-production',
         HLS_BASE_PATH: '/var/www/hls',
         HLS_SEGMENT_DURATION: '4',
