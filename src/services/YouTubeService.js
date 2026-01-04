@@ -73,8 +73,14 @@ class YouTubeService {
         customUrl: channel.snippet.customUrl,
       };
     } catch (error) {
-      logger.error('YouTube: Failed to get channel info', { error: error.message });
-      throw new Error('Failed to get YouTube channel info');
+      console.error('YouTube: Failed to get channel info - DETAILED ERROR:', {
+        message: error.message,
+        response: error.response?.data,
+        code: error.code,
+        status: error.response?.status
+      });
+      logger.error('YouTube: Failed to get channel info', { error: error.message, details: error.response?.data });
+      throw new Error(`Failed to get YouTube channel info: ${error.message}`);
     }
   }
 
