@@ -141,6 +141,13 @@ export const updateChannel = (req, res) => {
       title_enabled
     } = req.body;
 
+    logger.info('Update channel request', {
+      channelId: id,
+      title_enabled,
+      stream_title,
+      body: req.body
+    });
+
     const channel = Channel.findById(id);
 
     if (!channel) {
