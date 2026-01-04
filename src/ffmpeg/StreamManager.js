@@ -829,6 +829,12 @@ class StreamManager {
         }
       }, 5000);
 
+      // Clean up HLS files after stopping to prevent stale content
+      setTimeout(() => {
+        this.cleanupChannel(channelId);
+        logger.info(`Cleaned up HLS files for stopped channel ${channelId}`);
+      }, 6000); // Wait 6s to ensure FFmpeg has fully stopped
+
       Channel.addLog(channelId, 'info', 'Stream stop requested');
 
       return {
