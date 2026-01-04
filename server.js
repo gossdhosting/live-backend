@@ -52,15 +52,15 @@ app.get('/health', (req, res) => {
 
 // API Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/platforms/auth', platformAuthRoutes);
+app.use('/api/platforms', platformRoutes);
 app.use('/api/channels', channelRoutes);
 app.use('/api/settings', settingsRoutes);
-app.use('/api', rtmpRoutes);
 app.use('/api/rtmp', rtmpTemplateRoutes);
 app.use('/api/watermark', watermarkRoutes);
 app.use('/api/server-stats', serverStatsRoutes);
 app.use('/api/media', mediaRoutes);
-app.use('/api/platforms/auth', platformAuthRoutes);
-app.use('/api/platforms', platformRoutes);
+app.use('/api', rtmpRoutes);
 
 // Public API (for Flutter app)
 app.use('/api/public', publicRoutes);
