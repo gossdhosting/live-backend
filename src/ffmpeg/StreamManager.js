@@ -307,11 +307,15 @@ class StreamManager {
       const qualityPreset = channel.quality_preset || '720p';
       const resolution = this.getResolutionFromPreset(qualityPreset);
 
+      // Get threading setting from database
+      const threadingSetting = Settings.get('ffmpeg_threading');
+      const threads = threadingSetting?.value || 'auto'; // Default to auto if not set
+
       // Build FFmpeg arguments with improved error handling and quality
       const ffmpegArgs = [
         '-loglevel', 'warning', // Only show warnings and errors
         '-err_detect', 'ignore_err', // Continue on non-critical errors
-        '-threads', '1', // OPTIMIZATION: Limit to 1 thread to prevent CPU spikes on low-core VPS
+        '-threads', threads === 'auto' ? '0' : threads, // 0 = auto-detect, or specific number
       ];
 
       // Add loop for video files if enabled
