@@ -105,8 +105,30 @@ try {
   });
   console.log('✅ Default plans inserted\n');
 
-  // 3. Update users table - add new columns
-  console.log('👤 Updating users table...');
+  // 3. Create or update users table
+  console.log('👤 Creating/Updating users table...');
+
+  // First, create the users table if it doesn't exist
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      name TEXT,
+      role TEXT DEFAULT 'user',
+      plan_id INTEGER REFERENCES plans(id),
+      subscription_type TEXT DEFAULT 'monthly',
+      subscription_status TEXT DEFAULT 'active',
+      subscription_started_at DATETIME,
+      subscription_expires_at DATETIME,
+      status TEXT DEFAULT 'active',
+      last_login_at DATETIME,
+      last_login_ip TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
   const usersTableInfo = db.prepare('PRAGMA table_info(users)').all();
   const columnNames = usersTableInfo.map(col => col.name);
 
