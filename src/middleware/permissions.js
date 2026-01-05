@@ -196,6 +196,7 @@ export const checkPlanLimit = (limitType) => {
           break;
 
         case 'storage':
+        case 'media':
           if (!limits.canCreate.media) {
             return res.status(403).json({
               error: 'Storage limit reached',

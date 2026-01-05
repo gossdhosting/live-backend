@@ -234,11 +234,15 @@ export const getUserStats = async (req, res) => {
       : req.user.id;
 
     const stats = User.getUserStats(userId);
-    const limits = await User.checkPlanLimits(userId);
+    const planLimits = await User.checkPlanLimits(userId);
 
+    // Flatten the structure for easier frontend access
     res.json({
-      stats,
-      limits
+      ...stats,
+      limits: planLimits.limits,
+      usage: planLimits.usage,
+      canCreate: planLimits.canCreate,
+      plan: { name: planLimits.user_plan }
     });
   } catch (error) {
     logger.error('Failed to fetch user stats', { error: error.message });
