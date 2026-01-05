@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -267,7 +268,6 @@ const initDatabase = () => {
 
       // Generate unique stream keys for existing channels
       const channels = db.prepare('SELECT id FROM channels WHERE stream_key IS NULL').all();
-      const crypto = require('crypto');
       for (const channel of channels) {
         const streamKey = crypto.randomBytes(5).toString('hex').substring(0, 9).toUpperCase();
         db.prepare('UPDATE channels SET stream_key = ? WHERE id = ?').run(streamKey, channel.id);
