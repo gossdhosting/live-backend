@@ -5,7 +5,8 @@ import {
   getUserById,
   updateUser,
   deleteUser,
-  getUserStats
+  getUserStats,
+  getUserDetails
 } from '../controllers/userController.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { requireAdmin } from '../middleware/permissions.js';
@@ -23,6 +24,7 @@ router.get('/stats/:id', authenticateToken, requireAdmin, getUserStats);
 
 // Admin only routes
 router.get('/', authenticateToken, requireAdmin, getAllUsers);
+router.get('/:id/details', authenticateToken, requireAdmin, getUserDetails);
 router.get('/:id', authenticateToken, getUserById); // Self or admin
 router.put('/:id', authenticateToken, updateUser); // Self or admin
 router.delete('/:id', authenticateToken, requireAdmin, deleteUser);

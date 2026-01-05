@@ -4,8 +4,10 @@ import {
   getCurrentUser,
   updateProfile,
   changePassword,
+  adminLoginAsUser
 } from '../controllers/authController.js';
 import { authenticateToken } from '../middleware/auth.js';
+import { requireAdmin } from '../middleware/permissions.js';
 import { loginLimiter } from '../middleware/rateLimiter.js';
 
 const router = express.Router();
@@ -17,5 +19,8 @@ router.post('/login', loginLimiter, login);
 router.get('/me', authenticateToken, getCurrentUser);
 router.put('/profile', authenticateToken, updateProfile);
 router.post('/change-password', authenticateToken, changePassword);
+
+// Admin only routes
+router.post('/admin-login-as/:userId', authenticateToken, requireAdmin, adminLoginAsUser);
 
 export default router;

@@ -249,3 +249,67 @@ export const getUserStats = async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch statistics' });
   }
 };
+
+// Get detailed user information (admin only)
+export const getUserDetails = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = parseInt(id);
+
+    const user = User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Get user stats and plan information
+    const stats = User.getUserStats(userId);
+    const planLimits = await User.checkPlanLimits(userId);
+
+    // Get platform connections
+    const PlatformConnection = (await import('../models/PlatformConnection.js')).default;
+    const platforms = await PlatformConnection.getByUserId(userId);
+
+    // Get RTMP destinations across all channels
+    const Channel = (await import('../models/Channel.js')).default;
+    const RtmpDestination = (await import('../models/RtmpDestination.js')).default;
+    const userChannels = Channel.findByUserId(userId);
+    let allRtmpDestinations = [];
+    for (const channel of userChannels) {
+      const destinations = RtmpDestination.getByChannelId(channel.id);
+      allRtmpDestinations = allRtmpDestinations.concat(
+        destinations.map(d => ({ ...d, channel_name: channel.name }))
+      );
+    }
+
+    // Remove sensitive data from user object
+    const { password, ...safeUser } = user;
+
+    res.json({
+      user: safeUser,
+      stats: {
+        total_channels: stats.total_channels,
+        running_channels: stats.running_channels,
+        total_media: stats.total_media_files,
+        storage_used_mb: stats.storage_used_mb
+      },
+      plan: {
+        name: planLimits.user_plan,
+        max_concurrent_streams: planLimits.limits.max_concurrent_streams,
+        max_stream_duration: planLimits.limits.max_stream_duration,
+        max_bitrate: planLimits.limits.max_bitrate,
+        storage_limit_mb: planLimits.limits.storage_limit_mb
+      },
+      platforms: platforms.map(p => ({
+        platform: p.platform,
+        platform_user_name: p.platform_user_name,
+        platform_user_email: p.platform_user_email,
+        platform_channel_name: p.platform_channel_name,
+        created_at: p.created_at
+      })),
+      rtmp_destinations: allRtmpDestinations
+    });
+  } catch (error) {
+    logger.error('Failed to fetch user details', { error: error.message });
+    res.status(500).json({ error: 'Failed to fetch user details' });
+  }
+};

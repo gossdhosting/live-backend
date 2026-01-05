@@ -168,3 +168,58 @@ export const changePassword = async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 };
+
+// Admin login as user
+export const adminLoginAsUser = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const targetUserId = parseInt(userId);
+
+    // Verify target user exists
+    const targetUser = User.findById(targetUserId);
+    if (!targetUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Prevent admin from logging into another admin account
+    if (targetUser.role === 'admin') {
+      return res.status(403).json({ error: 'Cannot login as another admin' });
+    }
+
+    // Generate JWT for target user
+    const token = jwt.sign(
+      {
+        id: targetUser.id,
+        email: targetUser.email,
+        role: targetUser.role,
+        plan_id: targetUser.plan_id,
+        isAdminSession: true, // Flag to indicate this is an admin session
+        adminId: req.user.id // Store the admin's ID
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    logger.info('Admin logged in as user', {
+      adminId: req.user.id,
+      adminEmail: req.user.email,
+      targetUserId: targetUser.id,
+      targetUserEmail: targetUser.email
+    });
+
+    res.json({
+      token,
+      user: {
+        id: targetUser.id,
+        email: targetUser.email,
+        name: targetUser.name,
+        role: targetUser.role,
+        plan_id: targetUser.plan_id,
+        isAdminSession: true
+      }
+    });
+  } catch (error) {
+    logger.error('Admin login as user error', { error: error.message });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
