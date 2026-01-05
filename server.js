@@ -27,7 +27,6 @@ import { apiLimiter } from './src/middleware/rateLimiter.js';
 
 // Utils
 import logger from './src/utils/logger.js';
-import { initAdminUser } from './src/utils/initAdmin.js';
 
 // Initialize database (imported for side effects)
 import './src/models/database.js';
@@ -115,9 +114,6 @@ app.use((err, req, res, next) => {
 // Start server
 const startServer = async () => {
   try {
-    // Initialize default admin user
-    await initAdminUser();
-
     app.listen(PORT, () => {
       logger.info(`Server started on port ${PORT}`, {
         nodeEnv: process.env.NODE_ENV,
