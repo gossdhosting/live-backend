@@ -275,7 +275,7 @@ export const getUserDetails = async (req, res) => {
     const userChannels = Channel.findByUserId(userId);
     let allRtmpDestinations = [];
     for (const channel of userChannels) {
-      const destinations = RtmpDestination.getByChannelId(channel.id);
+      const destinations = RtmpDestination.getAll(channel.id);
       allRtmpDestinations = allRtmpDestinations.concat(
         destinations.map(d => ({ ...d, channel_name: channel.name }))
       );
