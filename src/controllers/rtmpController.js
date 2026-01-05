@@ -13,6 +13,11 @@ export const getRtmpDestinations = async (req, res) => {
       return res.status(404).json({ error: 'Channel not found' });
     }
 
+    // Check ownership (admins can view all, users only their own)
+    if (req.user.role !== 'admin' && channel.user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
     const destinations = RtmpDestination.getAll(channelId);
     res.json({ destinations });
   } catch (error) {
@@ -35,6 +40,11 @@ export const createRtmpDestination = async (req, res) => {
     const channel = Channel.findById(channelId);
     if (!channel) {
       return res.status(404).json({ error: 'Channel not found' });
+    }
+
+    // Check ownership (admins can modify all, users only their own)
+    if (req.user.role !== 'admin' && channel.user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied' });
     }
 
     // Validate platform
@@ -71,6 +81,12 @@ export const updateRtmpDestination = async (req, res) => {
       return res.status(404).json({ error: 'RTMP destination not found' });
     }
 
+    // Check ownership via channel
+    const channel = Channel.findById(existing.channel_id);
+    if (channel && req.user.role !== 'admin' && channel.user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
     // Validate platform if provided
     if (platform) {
       const validPlatforms = ['facebook', 'youtube', 'twitch', 'custom'];
@@ -105,6 +121,12 @@ export const deleteRtmpDestination = async (req, res) => {
       return res.status(404).json({ error: 'RTMP destination not found' });
     }
 
+    // Check ownership via channel
+    const channel = Channel.findById(existing.channel_id);
+    if (channel && req.user.role !== 'admin' && channel.user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
     RtmpDestination.delete(id);
     logger.info(`RTMP destination deleted`, { id });
     res.json({ message: 'RTMP destination deleted successfully' });
@@ -124,6 +146,11 @@ export const toggleTemplateForChannel = async (req, res) => {
     const channel = Channel.findById(channelId);
     if (!channel) {
       return res.status(404).json({ error: 'Channel not found' });
+    }
+
+    // Check ownership (admins can modify all, users only their own)
+    if (req.user.role !== 'admin' && channel.user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied' });
     }
 
     // Verify template exists

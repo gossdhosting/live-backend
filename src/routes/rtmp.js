@@ -12,9 +12,8 @@ const router = express.Router();
 
 // All routes require authentication
 router.use(authenticateToken);
-router.use(requireAdmin);
 
-// RTMP destination management
+// RTMP destination management (users can manage their own channels)
 router.get('/channels/:channelId/rtmp', getRtmpDestinations);
 router.post('/channels/:channelId/rtmp', createRtmpDestination);
 router.put('/rtmp/:id', updateRtmpDestination);
