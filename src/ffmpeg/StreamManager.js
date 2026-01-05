@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import Channel from '../models/Channel.js';
 import Settings from '../models/Settings.js';
+import UserSettings from '../models/UserSettings.js';
 import RtmpDestination from '../models/RtmpDestination.js';
 import logger from '../utils/logger.js';
 
@@ -422,15 +423,16 @@ class StreamManager {
       // Build filter complex for video processing
       // NO SPLIT needed - Tee muxer handles distribution after encoding
 
-      // Get title overlay settings
+      // Get title overlay settings from user settings (with global defaults)
       const titleEnabled = channel.title_enabled || 0;
       const streamTitle = channel.stream_title || '';
-      const titleBgColor = Settings.get('title_bg_color')?.value || '#000000';
-      const titleOpacity = parseFloat(Settings.get('title_opacity')?.value || '80') / 100;
-      const titlePosition = Settings.get('title_position')?.value || 'bottom-left';
-      const titleTextColor = Settings.get('title_text_color')?.value || '#FFFFFF';
-      const titleFontSize = Settings.get('title_font_size')?.value || '32';
-      const titleBoxPadding = Settings.get('title_box_padding')?.value || '5';
+      const userSettings = UserSettings.getAllWithDefaults(channel.user_id);
+      const titleBgColor = userSettings.title_bg_color || '#000000';
+      const titleOpacity = parseFloat(userSettings.title_opacity || '80') / 100;
+      const titlePosition = userSettings.title_position || 'bottom-left';
+      const titleTextColor = userSettings.title_text_color || '#FFFFFF';
+      const titleFontSize = userSettings.title_font_size || '16';
+      const titleBoxPadding = userSettings.title_box_padding || '5';
 
       if (hasWatermark) {
         const position = this.getWatermarkPosition(channel.watermark_position || 'top-left');
