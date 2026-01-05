@@ -1119,14 +1119,17 @@ class StreamManager {
 
   // Clean up old HLS files for a channel
   cleanupChannel(channelId) {
-    const Channel = require('../models/Channel.js').default;
-    const channel = Channel.findById(channelId);
-    const streamKey = channel?.stream_key || `channel_${channelId}`;
-    const outputDir = path.join(this.hlsBasePath, streamKey);
+    try {
+      const channel = Channel.findById(channelId);
+      const streamKey = channel?.stream_key || `channel_${channelId}`;
+      const outputDir = path.join(this.hlsBasePath, streamKey);
 
-    if (fs.existsSync(outputDir)) {
-      fs.rmSync(outputDir, { recursive: true, force: true });
-      logger.info(`Cleaned up HLS files for channel ${channelId}`);
+      if (fs.existsSync(outputDir)) {
+        fs.rmSync(outputDir, { recursive: true, force: true });
+        logger.info(`Cleaned up HLS files for channel ${channelId}`);
+      }
+    } catch (error) {
+      logger.error(`Failed to cleanup channel ${channelId}`, { error: error.message });
     }
   }
 }
