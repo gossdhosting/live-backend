@@ -4,7 +4,8 @@ import logger from '../utils/logger.js';
 // Get all active plans (public endpoint)
 export const getAllPlans = async (req, res) => {
   try {
-    const plans = Plan.getAll();
+    // Use getAllWithStats to include subscriber counts
+    const plans = Plan.getAllWithStats();
     res.json({ plans });
   } catch (error) {
     logger.error('Failed to fetch plans', { error: error.message });
