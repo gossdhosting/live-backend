@@ -7,6 +7,22 @@ class Plan {
     return stmt.all();
   }
 
+  // Get all plans with subscriber statistics
+  static getAllWithStats() {
+    const stmt = db.prepare(`
+      SELECT
+        p.*,
+        COUNT(u.id) as subscriber_count,
+        COUNT(CASE WHEN u.subscription_status = 'active' THEN 1 END) as active_subscribers
+      FROM plans p
+      LEFT JOIN users u ON p.id = u.plan_id
+      WHERE p.is_active = 1
+      GROUP BY p.id
+      ORDER BY p.price_monthly ASC
+    `);
+    return stmt.all();
+  }
+
   // Get plan by ID
   static getById(id) {
     const stmt = db.prepare('SELECT * FROM plans WHERE id = ?');
