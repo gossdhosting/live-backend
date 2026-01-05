@@ -95,6 +95,29 @@ app.use('/hls', express.static(hlsBasePath, {
   },
 }));
 
+// Serve uploaded media files
+const uploadsPath = process.env.UPLOADS_PATH || path.join(process.cwd(), 'uploads');
+app.use('/uploads', express.static(uploadsPath, {
+  setHeaders: (res, filePath) => {
+    // Set CORS headers
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+    // Set appropriate content type for videos
+    if (filePath.endsWith('.mp4')) {
+      res.setHeader('Content-Type', 'video/mp4');
+    } else if (filePath.endsWith('.webm')) {
+      res.setHeader('Content-Type', 'video/webm');
+    } else if (filePath.endsWith('.mkv')) {
+      res.setHeader('Content-Type', 'video/x-matroska');
+    }
+
+    // Cache control for videos
+    res.setHeader('Cache-Control', 'public, max-age=86400'); // 1 day cache
+  },
+}));
+
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({ error: 'Not found' });
