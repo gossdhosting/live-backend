@@ -17,6 +17,7 @@ const router = express.Router();
 router.post('/register', loginLimiter, register);
 
 // Protected routes - require authentication
+router.get('/me/stats', authenticateToken, getUserStats);
 router.get('/stats', authenticateToken, getUserStats);
 router.get('/stats/:id', authenticateToken, requireAdmin, getUserStats);
 
