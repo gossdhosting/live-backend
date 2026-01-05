@@ -16,7 +16,6 @@ const router = express.Router();
 
 // All routes require authentication
 router.use(authenticateToken);
-router.use(requireAdmin);
 
 // Channel CRUD
 router.get('/', getAllChannels);
