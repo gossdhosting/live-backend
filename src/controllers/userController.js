@@ -1,5 +1,8 @@
 import User from '../models/User.js';
 import Plan from '../models/Plan.js';
+import Channel from '../models/Channel.js';
+import PlatformConnection from '../models/PlatformConnection.js';
+import RtmpDestination from '../models/RtmpDestination.js';
 import logger from '../utils/logger.js';
 import { isValidEmail } from '../utils/validation.js';
 
@@ -266,12 +269,9 @@ export const getUserDetails = async (req, res) => {
     const planLimits = await User.checkPlanLimits(userId);
 
     // Get platform connections
-    const PlatformConnection = (await import('../models/PlatformConnection.js')).default;
-    const platforms = await PlatformConnection.getByUserId(userId);
+    const platforms = PlatformConnection.getByUserId(userId);
 
     // Get RTMP destinations across all channels
-    const Channel = (await import('../models/Channel.js')).default;
-    const RtmpDestination = (await import('../models/RtmpDestination.js')).default;
     const userChannels = Channel.findByUserId(userId);
     let allRtmpDestinations = [];
     for (const channel of userChannels) {
