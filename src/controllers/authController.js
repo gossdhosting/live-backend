@@ -190,7 +190,7 @@ export const adminLoginAsUser = async (req, res) => {
     // Generate JWT for target user
     const token = jwt.sign(
       {
-        id: targetUser.id,
+        userId: targetUser.id,
         email: targetUser.email,
         role: targetUser.role,
         plan_id: targetUser.plan_id,
