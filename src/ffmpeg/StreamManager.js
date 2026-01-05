@@ -153,7 +153,7 @@ class StreamManager {
   }
 
    // Start a stream for a channel
-  async startStream(channelId) {
+  async startStream(channelId, user = null) {
     try {
       // Clear manual stop flag when starting a new stream
       this.manualStops.delete(channelId);
@@ -161,6 +161,45 @@ class StreamManager {
       const channel = Channel.findById(channelId);
       if (!channel) {
         throw new Error('Channel not found');
+      }
+
+      // Check user plan limits (skip for admins)
+      if (user && user.role !== 'admin') {
+        const User = (await import('../models/User.js')).default;
+        const limits = await User.checkPlanLimits(user.id);
+
+        if (!limits) {
+          throw new Error('Failed to check plan limits');
+        }
+
+        // Check concurrent stream limit
+        if (!limits.canCreate.stream) {
+          throw new Error(`Concurrent stream limit reached (${limits.limits.max_concurrent_streams}). Upgrade your plan to stream more.`);
+        }
+
+        // Check bitrate limit for channel quality
+        const qualityPreset = channel.quality_preset || '720p';
+        const bitrateMap = {
+          '480p': 2500,
+          '720p': 4000,
+          '1080p': 6000
+        };
+        const channelBitrate = bitrateMap[qualityPreset] || 4000;
+
+        if (channelBitrate > limits.limits.max_bitrate) {
+          throw new Error(`Quality preset ${qualityPreset} requires ${channelBitrate}k bitrate. Your plan allows up to ${limits.limits.max_bitrate}k. Please lower the quality or upgrade your plan.`);
+        }
+
+        // Store stream start time for duration tracking
+        this.streamStartTimes = this.streamStartTimes || new Map();
+        this.streamStartTimes.set(channelId, Date.now());
+
+        logger.info(`Plan limits checked for user ${user.id}:`, {
+          running: limits.usage.concurrent_streams,
+          max: limits.limits.max_concurrent_streams,
+          bitrate: channelBitrate,
+          maxBitrate: limits.limits.max_bitrate
+        });
       }
 
       // --- HANDLE INPUT TYPE (YOUTUBE VS VIDEO FILE) ---

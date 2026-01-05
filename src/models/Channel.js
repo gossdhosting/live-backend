@@ -2,13 +2,13 @@ import db from './database.js';
 
 class Channel {
   // Create a new channel
-  static create({ name, description, input_url, auto_restart = 1, quality_preset = '720p', stream_title = '', input_type = 'youtube', media_file_id = null, loop_video = 0, title_enabled = 0 }) {
+  static create({ user_id, name, description, input_url, auto_restart = 1, quality_preset = '720p', stream_title = '', input_type = 'youtube', media_file_id = null, loop_video = 0, title_enabled = 0 }) {
     const stmt = db.prepare(`
-      INSERT INTO channels (name, description, input_url, auto_restart, quality_preset, stream_title, input_type, media_file_id, loop_video, title_enabled, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'stopped')
+      INSERT INTO channels (user_id, name, description, input_url, auto_restart, quality_preset, stream_title, input_type, media_file_id, loop_video, title_enabled, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'stopped')
     `);
 
-    const result = stmt.run(name, description, input_url, auto_restart, quality_preset, stream_title, input_type, media_file_id, loop_video, title_enabled);
+    const result = stmt.run(user_id, name, description, input_url, auto_restart, quality_preset, stream_title, input_type, media_file_id, loop_video, title_enabled);
     return this.findById(result.lastInsertRowid);
   }
 
@@ -22,6 +22,12 @@ class Channel {
   static findAll() {
     const stmt = db.prepare('SELECT * FROM channels ORDER BY created_at DESC');
     return stmt.all();
+  }
+
+  // Find channels by user ID
+  static findByUserId(userId) {
+    const stmt = db.prepare('SELECT * FROM channels WHERE user_id = ? ORDER BY created_at DESC');
+    return stmt.all(userId);
   }
 
   // Update channel

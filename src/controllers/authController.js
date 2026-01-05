@@ -33,15 +33,30 @@ export const login = async (req, res) => {
 
     const token = generateToken(user.id);
 
+    // Update last login info
+    const ipAddress = req.ip || req.connection.remoteAddress;
+    User.updateLastLogin(user.id, ipAddress);
+
+    // Get full user with plan details
+    const userWithPlan = User.findById(user.id);
+
     logger.info('User logged in', { userId: user.id, email: user.email });
 
     res.json({
       token,
       user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
+        id: userWithPlan.id,
+        email: userWithPlan.email,
+        name: userWithPlan.name,
+        role: userWithPlan.role,
+        plan_name: userWithPlan.plan_name,
+        plan_id: userWithPlan.plan_id,
+        subscription_status: userWithPlan.subscription_status,
+        max_concurrent_streams: userWithPlan.max_concurrent_streams,
+        max_bitrate: userWithPlan.max_bitrate,
+        max_stream_duration: userWithPlan.max_stream_duration,
+        storage_limit_mb: userWithPlan.storage_limit_mb,
+        custom_watermark: userWithPlan.custom_watermark
       },
     });
   } catch (error) {

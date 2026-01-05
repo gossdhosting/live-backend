@@ -7,7 +7,14 @@ import logger from '../utils/logger.js';
 // Get all channels
 export const getAllChannels = (req, res) => {
   try {
-    const channels = Channel.findAll();
+    let channels;
+
+    // Admins can see all channels, users only see their own
+    if (req.user.role === 'admin') {
+      channels = Channel.findAll();
+    } else {
+      channels = Channel.findByUserId(req.user.id);
+    }
 
     // Enhance with real-time status
     const enhancedChannels = channels.map((channel) => ({
@@ -30,6 +37,11 @@ export const getChannel = (req, res) => {
 
     if (!channel) {
       return res.status(404).json({ error: 'Channel not found' });
+    }
+
+    // Check ownership (admins can view all, users only their own)
+    if (req.user.role !== 'admin' && channel.user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied' });
     }
 
     const runtimeStatus = streamManager.getStreamStatus(channel.id);
@@ -97,6 +109,7 @@ export const createChannel = (req, res) => {
     }
 
     const channel = Channel.create({
+      user_id: req.user.id,
       name,
       description,
       input_url: input_url || '',
@@ -154,6 +167,11 @@ export const updateChannel = (req, res) => {
       return res.status(404).json({ error: 'Channel not found' });
     }
 
+    // Check ownership (admins can update all, users only their own)
+    if (req.user.role !== 'admin' && channel.user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
     // Note: Frontend handles stopping stream before update if needed
     // Validation
     if (name && !isValidChannelName(name)) {
@@ -202,6 +220,11 @@ export const deleteChannel = async (req, res) => {
       return res.status(404).json({ error: 'Channel not found' });
     }
 
+    // Check ownership (admins can delete all, users only their own)
+    if (req.user.role !== 'admin' && channel.user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
     // Stop stream if running
     if (channel.status === 'running') {
       await streamManager.stopStream(id);
@@ -233,13 +256,18 @@ export const startStream = async (req, res) => {
       return res.status(404).json({ error: 'Channel not found' });
     }
 
+    // Check ownership (admins can start all, users only their own)
+    if (req.user.role !== 'admin' && channel.user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
     if (channel.status === 'running') {
       return res.status(400).json({ error: 'Stream is already running' });
     }
 
-    const result = await streamManager.startStream(id);
+    const result = await streamManager.startStream(id, req.user);
 
-    logger.info('Stream started', { channelId: id });
+    logger.info('Stream started', { channelId: id, userId: req.user.id });
 
     res.json({
       message: result.message,
@@ -262,9 +290,14 @@ export const stopStream = async (req, res) => {
       return res.status(404).json({ error: 'Channel not found' });
     }
 
+    // Check ownership (admins can stop all, users only their own)
+    if (req.user.role !== 'admin' && channel.user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
     const result = await streamManager.stopStream(id);
 
-    logger.info('Stream stopped', { channelId: id });
+    logger.info('Stream stopped', { channelId: id, userId: req.user.id });
 
     res.json({
       message: result.message,
@@ -286,6 +319,11 @@ export const getChannelLogs = (req, res) => {
 
     if (!channel) {
       return res.status(404).json({ error: 'Channel not found' });
+    }
+
+    // Check ownership (admins can view all logs, users only their own)
+    if (req.user.role !== 'admin' && channel.user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied' });
     }
 
     const logs = Channel.getLogs(id, limit);

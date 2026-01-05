@@ -9,6 +9,8 @@ dotenv.config();
 
 // Routes
 import authRoutes from './src/routes/auth.js';
+import userRoutes from './src/routes/users.js';
+import planRoutes from './src/routes/plans.js';
 import channelRoutes from './src/routes/channels.js';
 import settingsRoutes from './src/routes/settings.js';
 import publicRoutes from './src/routes/public.js';
@@ -52,6 +54,8 @@ app.get('/health', (req, res) => {
 
 // API Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/plans', planRoutes);
 app.use('/api/platforms/auth', platformAuthRoutes);
 app.use('/api/platforms', platformRoutes);
 app.use('/api/channels', channelRoutes);

@@ -2,10 +2,10 @@ import db from './database.js';
 
 class RtmpTemplate {
   // Create a new RTMP template
-  static create({ name, platform, rtmp_url, stream_key, video_bitrate, audio_bitrate, profile, preset, fps, enabled = 1 }) {
+  static create({ name, platform, rtmp_url, stream_key, enabled = 1 }) {
     const stmt = db.prepare(`
-      INSERT INTO rtmp_templates (name, platform, rtmp_url, stream_key, video_bitrate, audio_bitrate, profile, preset, fps, enabled)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO rtmp_templates (name, platform, rtmp_url, stream_key, enabled)
+      VALUES (?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
@@ -13,11 +13,6 @@ class RtmpTemplate {
       platform,
       rtmp_url,
       stream_key,
-      video_bitrate || null,
-      audio_bitrate || null,
-      profile || null,
-      preset || null,
-      fps || null,
       enabled ? 1 : 0
     );
     return this.getById(result.lastInsertRowid);
@@ -42,8 +37,8 @@ class RtmpTemplate {
   }
 
   // Update template
-  static update(id, { name, platform, rtmp_url, stream_key, video_bitrate, audio_bitrate, profile, preset, fps, enabled }) {
-    console.log('[RtmpTemplate.update] Called with:', { id, name, platform, rtmp_url, stream_key, video_bitrate, audio_bitrate, profile, preset, fps, enabled });
+  static update(id, { name, platform, rtmp_url, stream_key, enabled }) {
+    console.log('[RtmpTemplate.update] Called with:', { id, name, platform, rtmp_url, stream_key, enabled });
 
     const fields = [];
     const values = [];
@@ -63,26 +58,6 @@ class RtmpTemplate {
     if (stream_key !== undefined) {
       fields.push('stream_key = ?');
       values.push(stream_key);
-    }
-    if (video_bitrate !== undefined) {
-      fields.push('video_bitrate = ?');
-      values.push(video_bitrate || null);
-    }
-    if (audio_bitrate !== undefined) {
-      fields.push('audio_bitrate = ?');
-      values.push(audio_bitrate || null);
-    }
-    if (profile !== undefined) {
-      fields.push('profile = ?');
-      values.push(profile || null);
-    }
-    if (preset !== undefined) {
-      fields.push('preset = ?');
-      values.push(preset || null);
-    }
-    if (fps !== undefined) {
-      fields.push('fps = ?');
-      values.push(fps || null);
     }
     if (enabled !== undefined) {
       fields.push('enabled = ?');
