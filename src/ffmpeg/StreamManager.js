@@ -343,8 +343,9 @@ class StreamManager {
         throw new Error(`Maximum concurrent streams (${maxStreams}) reached`);
       }
 
-      // Create channel output directory
-      const outputDir = path.join(this.hlsBasePath, `channel_${channelId}`);
+      // Create channel output directory using stream_key for isolation
+      const streamKey = channel.stream_key || `channel_${channelId}`;
+      const outputDir = path.join(this.hlsBasePath, streamKey);
       if (!fs.existsSync(outputDir)) {
         fs.mkdirSync(outputDir, { recursive: true });
       }
@@ -1118,7 +1119,10 @@ class StreamManager {
 
   // Clean up old HLS files for a channel
   cleanupChannel(channelId) {
-    const outputDir = path.join(this.hlsBasePath, `channel_${channelId}`);
+    const Channel = require('../models/Channel.js').default;
+    const channel = Channel.findById(channelId);
+    const streamKey = channel?.stream_key || `channel_${channelId}`;
+    const outputDir = path.join(this.hlsBasePath, streamKey);
 
     if (fs.existsSync(outputDir)) {
       fs.rmSync(outputDir, { recursive: true, force: true });

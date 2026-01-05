@@ -1,14 +1,30 @@
 import db from './database.js';
+import crypto from 'crypto';
 
 class Channel {
+  // Generate a random 9-character stream key
+  static generateStreamKey() {
+    return crypto.randomBytes(5).toString('hex').substring(0, 9).toUpperCase();
+  }
+
   // Create a new channel
   static create({ user_id, name, description, input_url, auto_restart = 1, quality_preset = '720p', stream_title = '', input_type = 'youtube', media_file_id = null, loop_video = 0, title_enabled = 0 }) {
+    // Generate unique stream key
+    let streamKey;
+    let attempts = 0;
+    do {
+      streamKey = this.generateStreamKey();
+      const existing = db.prepare('SELECT id FROM channels WHERE stream_key = ?').get(streamKey);
+      if (!existing) break;
+      attempts++;
+    } while (attempts < 10);
+
     const stmt = db.prepare(`
-      INSERT INTO channels (user_id, name, description, input_url, auto_restart, quality_preset, stream_title, input_type, media_file_id, loop_video, title_enabled, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'stopped')
+      INSERT INTO channels (user_id, name, description, input_url, auto_restart, quality_preset, stream_title, input_type, media_file_id, loop_video, title_enabled, stream_key, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'stopped')
     `);
 
-    const result = stmt.run(user_id, name, description, input_url, auto_restart, quality_preset, stream_title, input_type, media_file_id, loop_video, title_enabled);
+    const result = stmt.run(user_id, name, description, input_url, auto_restart, quality_preset, stream_title, input_type, media_file_id, loop_video, title_enabled, streamKey);
     return this.findById(result.lastInsertRowid);
   }
 

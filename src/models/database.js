@@ -256,6 +256,23 @@ const initDatabase = () => {
       `);
       console.log('✅ Added title_enabled column to channels table');
     }
+
+    const hasStreamKey = tableInfo.some(col => col.name === 'stream_key');
+    if (!hasStreamKey) {
+      db.exec(`
+        ALTER TABLE channels ADD COLUMN stream_key TEXT UNIQUE;
+      `);
+      console.log('✅ Added stream_key column to channels table');
+
+      // Generate unique stream keys for existing channels
+      const channels = db.prepare('SELECT id FROM channels WHERE stream_key IS NULL').all();
+      const crypto = await import('crypto');
+      for (const channel of channels) {
+        const streamKey = crypto.randomBytes(5).toString('hex').substring(0, 9).toUpperCase();
+        db.prepare('UPDATE channels SET stream_key = ? WHERE id = ?').run(streamKey, channel.id);
+      }
+      console.log(`✅ Generated stream keys for ${channels.length} existing channels`);
+    }
   } catch (error) {
     console.log('Watermark columns migration:', error.message);
   }
