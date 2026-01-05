@@ -2,6 +2,7 @@ import User from '../models/User.js';
 import { generateToken } from '../middleware/auth.js';
 import { isValidEmail } from '../utils/validation.js';
 import logger from '../utils/logger.js';
+import jwt from 'jsonwebtoken';
 
 // Login
 export const login = async (req, res) => {
