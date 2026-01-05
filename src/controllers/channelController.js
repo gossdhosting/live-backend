@@ -15,14 +15,8 @@ const QUALITY_BITRATES = {
 // Get all channels
 export const getAllChannels = (req, res) => {
   try {
-    let channels;
-
-    // Admins can see all channels, users only see their own
-    if (req.user.role === 'admin') {
-      channels = Channel.findAll();
-    } else {
-      channels = Channel.findByUserId(req.user.id);
-    }
+    // All users (including admins) only see their own channels
+    const channels = Channel.findByUserId(req.user.id);
 
     // Enhance with real-time status
     const enhancedChannels = channels.map((channel) => ({
