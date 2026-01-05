@@ -259,8 +259,9 @@ const initDatabase = () => {
 
     const hasStreamKey = tableInfo.some(col => col.name === 'stream_key');
     if (!hasStreamKey) {
+      // Add column without UNIQUE constraint (SQLite limitation)
       db.exec(`
-        ALTER TABLE channels ADD COLUMN stream_key TEXT UNIQUE;
+        ALTER TABLE channels ADD COLUMN stream_key TEXT;
       `);
       console.log('✅ Added stream_key column to channels table');
 
@@ -272,6 +273,14 @@ const initDatabase = () => {
         db.prepare('UPDATE channels SET stream_key = ? WHERE id = ?').run(streamKey, channel.id);
       }
       console.log(`✅ Generated stream keys for ${channels.length} existing channels`);
+
+      // Create unique index on stream_key
+      try {
+        db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_channels_stream_key ON channels(stream_key);`);
+        console.log('✅ Created unique index on stream_key');
+      } catch (err) {
+        console.log('Note: Unique index on stream_key:', err.message);
+      }
     }
   } catch (error) {
     console.log('Watermark columns migration:', error.message);
