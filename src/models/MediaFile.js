@@ -20,9 +20,17 @@ class MediaFile {
     return stmt.get(id);
   }
 
-  // Get all media files
+  // Get all media files (with user info for admin)
   static findAll() {
-    const stmt = db.prepare('SELECT * FROM media_files ORDER BY created_at DESC');
+    const stmt = db.prepare(`
+      SELECT
+        m.*,
+        u.email as user_email,
+        u.name as user_name
+      FROM media_files m
+      LEFT JOIN users u ON m.user_id = u.id
+      ORDER BY m.created_at DESC
+    `);
     return stmt.all();
   }
 
