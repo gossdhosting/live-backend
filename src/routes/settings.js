@@ -9,9 +9,9 @@ const router = express.Router();
 
 // All routes require authentication
 router.use(authenticateToken);
-router.use(requireAdmin);
 
+// Settings routes - users can view, only admins can update
 router.get('/', getAllSettings);
-router.put('/', updateSettings);
+router.put('/', requireAdmin, updateSettings);
 
 export default router;
