@@ -335,14 +335,8 @@ class StreamManager {
         throw new Error('Stream is already running');
       }
 
-
-      // Check max concurrent streams
-      const maxStreams = parseInt(
-        Settings.get('max_concurrent_streams')?.value || '10'
-      );
-      if (this.processes.size >= maxStreams) {
-        throw new Error(`Maximum concurrent streams (${maxStreams}) reached`);
-      }
+      // Note: Per-user concurrent stream limits are checked above (lines 177-179)
+      // No need for global limit - each user has their own plan limits
 
       // Create channel output directory using stream_key for isolation
       const streamKey = channel.stream_key || `channel_${channelId}`;
@@ -793,11 +787,8 @@ class StreamManager {
           Channel.updateStatus(channelId, 'error', null, errorMsg);
           Channel.addLog(channelId, 'error', errorMsg);
 
-          // Auto-restart logic with exponential backoff
-          if (
-            currentChannel.auto_restart &&
-            Settings.get('auto_restart_enabled')?.value === 'true'
-          ) {
+          // Auto-restart logic with exponential backoff (per-channel setting)
+          if (currentChannel.auto_restart) {
             const attempts = this.reconnectAttempts.get(channelId) || 0;
 
             if (attempts < this.maxReconnectAttempts) {
