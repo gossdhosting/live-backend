@@ -21,7 +21,7 @@ router.use(authenticateToken);
 // Channel CRUD
 router.get('/', getAllChannels);
 router.get('/:id', getChannel);
-router.post('/', checkPlanLimit('stream'), createChannel);
+router.post('/', createChannel); // No limit check - channels start stopped
 router.put('/:id', updateChannel);
 router.delete('/:id', deleteChannel);
 
