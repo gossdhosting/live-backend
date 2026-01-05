@@ -33,7 +33,15 @@ export const getPlanById = async (req, res) => {
 // Get plan statistics (admin only)
 export const getPlanStats = async (req, res) => {
   try {
-    const stats = Plan.getPlanStats();
+    const statsArray = Plan.getPlanStats();
+    // Convert array to object keyed by plan ID for easier frontend access
+    const stats = {};
+    statsArray.forEach(stat => {
+      stats[stat.id] = {
+        subscriber_count: stat.subscriber_count,
+        active_subscribers: stat.active_subscribers
+      };
+    });
     res.json({ stats });
   } catch (error) {
     logger.error('Failed to fetch plan stats', { error: error.message });
