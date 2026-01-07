@@ -4,7 +4,7 @@ import fs from 'fs';
 import Channel from '../models/Channel.js';
 import Settings from '../models/Settings.js';
 import UserSettings from '../models/UserSettings.js';
-import RtmpDestination from '../models/RtmpDestination.js';
+import PlatformStream from '../models/PlatformStream.js';
 import User from '../models/User.js';
 import Plan from '../models/Plan.js';
 import logger from '../utils/logger.js';
@@ -354,8 +354,17 @@ class StreamManager {
         Settings.get('hls_segment_duration')?.value || '4';
       const hlsListSize = Settings.get('hls_list_size')?.value || '6';
 
-      // Get enabled RTMP destinations
-      const rtmpDestinations = RtmpDestination.getEnabledForChannel(channelId);
+      // Get platform streams for this channel
+      const platformStreams = PlatformStream.getByChannelId(channelId);
+
+      // Convert platform streams to rtmpDestinations format for compatibility
+      const rtmpDestinations = platformStreams.map(stream => ({
+        id: stream.id,
+        platform: stream.platform,
+        rtmp_url: stream.rtmp_url,
+        stream_key: stream.stream_key,
+        enabled: 1  // All platform_streams are enabled if they exist
+      }));
 
       // Initialize RTMP connection status for this channel
       const rtmpStatusMap = new Map();
