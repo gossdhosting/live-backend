@@ -717,11 +717,14 @@ class StreamManager {
           }
 
           // Detect RTMP disconnections or errors
-          if (message.toLowerCase().includes('rtmp') &&
+          if ((message.toLowerCase().includes('rtmp') || message.includes('Slave muxer')) &&
               (message.includes('Connection refused') ||
                message.includes('Connection timed out') ||
                message.includes('Failed to update') ||
-               message.includes('Server error'))) {
+               message.includes('Server error') ||
+               message.includes('Input/output error') ||
+               message.includes('error opening') ||
+               message.includes('Slave muxer #') && message.includes('failed'))) {
             rtmpDestinations.forEach(dest => {
               const baseUrl = dest.rtmp_url.replace(/\/$/, '');
               if (message.includes(baseUrl) || message.includes(dest.platform)) {
