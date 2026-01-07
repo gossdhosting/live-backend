@@ -4,6 +4,8 @@ import PlatformConnection from '../models/PlatformConnection.js';
 import logger from '../utils/logger.js';
 
 class TwitchService {
+  // Token refresh locks to prevent concurrent refreshes
+  static tokenRefreshLocks = new Map();
   // Generate OAuth2 authorization URL
   static getAuthUrl(state = '') {
     const config = platformConfig.twitch;
@@ -255,17 +257,39 @@ class TwitchService {
       throw new Error('No refresh token available. Please reconnect your account.');
     }
 
-    const newTokens = await this.refreshAccessToken(connection.refresh_token);
+    // Check if refresh is already in progress for this connection
+    const lockKey = `twitch-${connection.id}`;
+    if (this.tokenRefreshLocks.has(lockKey)) {
+      // Wait for the in-progress refresh to complete
+      logger.info('Twitch: Waiting for in-progress token refresh', { connectionId: connection.id });
+      await this.tokenRefreshLocks.get(lockKey);
+      // Re-fetch the connection to get the updated token
+      const updatedConnection = PlatformConnection.getById(connection.id);
+      return updatedConnection.access_token;
+    }
 
-    // Update connection with new tokens
-    const expiresAt = new Date(Date.now() + newTokens.expires_in * 1000);
-    await PlatformConnection.update(connection.id, {
-      access_token: newTokens.access_token,
-      refresh_token: newTokens.refresh_token,
-      token_expires_at: expiresAt.toISOString(),
-    });
+    // Create a lock promise for this refresh
+    let resolveLock;
+    const lockPromise = new Promise((resolve) => { resolveLock = resolve; });
+    this.tokenRefreshLocks.set(lockKey, lockPromise);
 
-    return newTokens.access_token;
+    try {
+      const newTokens = await this.refreshAccessToken(connection.refresh_token);
+
+      // Update connection with new tokens
+      const expiresAt = new Date(Date.now() + newTokens.expires_in * 1000);
+      await PlatformConnection.update(connection.id, {
+        access_token: newTokens.access_token,
+        refresh_token: newTokens.refresh_token,
+        token_expires_at: expiresAt.toISOString(),
+      });
+
+      return newTokens.access_token;
+    } finally {
+      // Release the lock
+      this.tokenRefreshLocks.delete(lockKey);
+      resolveLock();
+    }
   }
 
   // Validate token

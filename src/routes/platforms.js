@@ -113,36 +113,40 @@ router.post('/facebook/create-stream', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Facebook account not connected' });
     }
 
+    // Check for duplicate Facebook stream
+    const existingStreams = PlatformStream.getByChannelId(channelId);
+    const existingFacebookStream = existingStreams.find(s => s.platform === 'facebook' && s.enabled === 1);
+    if (existingFacebookStream) {
+      return res.status(400).json({
+        error: 'A Facebook stream already exists for this channel. Please delete the existing one first.'
+      });
+    }
+
+    // Refresh token if needed
+    await FacebookService.refreshTokenIfNeeded(connection);
+
     // Create live video
     const liveVideo = await FacebookService.createLiveVideo(pageId, pageAccessToken, title, description);
 
-    // Add RTMP destination to channel first
-    const rtmpDestination = await RtmpDestination.create({
-      channel_id: channelId,
-      platform: 'facebook',
-      rtmp_url: liveVideo.rtmp_url,
-      stream_key: '', // Facebook uses full RTMP URL
-      enabled: 1,
-    });
-
-    // Save platform stream with rtmp_destination_id for precise tracking
+    // Save platform stream (single source of truth)
     const platformStream = await PlatformStream.create({
       channel_id: channelId,
       platform_connection_id: connection.id,
       platform: 'facebook',
       platform_stream_id: liveVideo.stream_id,
+      platform_broadcast_id: liveVideo.stream_id,
       rtmp_url: liveVideo.rtmp_url,
       stream_key: '', // Facebook combines URL and key
       stream_title: title,
       stream_description: description,
       status: 'created',
-      rtmp_destination_id: rtmpDestination.id,
+      enabled: 1,
     });
 
-    logger.info('Facebook live stream created and RTMP destination added', {
+    logger.info('Facebook live stream created', {
       channelId,
       streamId: liveVideo.stream_id,
-      rtmpDestinationId: rtmpDestination.id,
+      platformStreamId: platformStream.id,
       userId: req.user.id,
     });
 
@@ -153,7 +157,6 @@ router.post('/facebook/create-stream', authenticateToken, async (req, res) => {
     res.json({
       success: true,
       platformStream,
-      rtmpDestination,
       liveVideo,
       needsRestart,
       message: needsRestart
@@ -192,6 +195,15 @@ router.post('/youtube/create-broadcast', authenticateToken, async (req, res) => 
       return res.status(404).json({ error: 'YouTube account not connected' });
     }
 
+    // Check for duplicate YouTube stream
+    const existingStreams = PlatformStream.getByChannelId(channelId);
+    const existingYouTubeStream = existingStreams.find(s => s.platform === 'youtube' && s.enabled === 1);
+    if (existingYouTubeStream) {
+      return res.status(400).json({
+        error: 'A YouTube stream already exists for this channel. Please delete the existing one first.'
+      });
+    }
+
     const accessToken = await YouTubeService.refreshTokenIfNeeded(connection);
 
     // Create live broadcast
@@ -204,16 +216,7 @@ router.post('/youtube/create-broadcast', authenticateToken, async (req, res) => 
       connection.id // connectionId for automatic token refresh
     );
 
-    // Add RTMP destination to channel first
-    const rtmpDestination = await RtmpDestination.create({
-      channel_id: channelId,
-      platform: 'youtube',
-      rtmp_url: broadcast.rtmp_url,
-      stream_key: broadcast.stream_key,
-      enabled: 1,
-    });
-
-    // Save platform stream with rtmp_destination_id for precise tracking
+    // Save platform stream (single source of truth)
     const platformStream = await PlatformStream.create({
       channel_id: channelId,
       platform_connection_id: connection.id,
@@ -225,13 +228,13 @@ router.post('/youtube/create-broadcast', authenticateToken, async (req, res) => 
       stream_title: title,
       stream_description: description,
       status: 'created',
-      rtmp_destination_id: rtmpDestination.id,
+      enabled: 1,
     });
 
-    logger.info('YouTube live broadcast created and RTMP destination added', {
+    logger.info('YouTube live broadcast created', {
       channelId,
       broadcastId: broadcast.broadcast_id,
-      rtmpDestinationId: rtmpDestination.id,
+      platformStreamId: platformStream.id,
       userId: req.user.id,
     });
 
@@ -242,7 +245,6 @@ router.post('/youtube/create-broadcast', authenticateToken, async (req, res) => 
     res.json({
       success: true,
       platformStream,
-      rtmpDestination,
       broadcast,
       needsRestart,
       message: needsRestart
@@ -281,6 +283,15 @@ router.post('/twitch/setup-stream', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Twitch account not connected' });
     }
 
+    // Check for duplicate Twitch stream
+    const existingStreams = PlatformStream.getByChannelId(channelId);
+    const existingTwitchStream = existingStreams.find(s => s.platform === 'twitch' && s.enabled === 1);
+    if (existingTwitchStream) {
+      return res.status(400).json({
+        error: 'A Twitch stream already exists for this channel. Please delete the existing one first.'
+      });
+    }
+
     const accessToken = await TwitchService.refreshTokenIfNeeded(connection);
 
     // Setup stream
@@ -291,16 +302,7 @@ router.post('/twitch/setup-stream', authenticateToken, async (req, res) => {
       categoryId
     );
 
-    // Add RTMP destination to channel first
-    const rtmpDestination = await RtmpDestination.create({
-      channel_id: channelId,
-      platform: 'twitch',
-      rtmp_url: stream.rtmp_url,
-      stream_key: stream.stream_key,
-      enabled: 1,
-    });
-
-    // Save platform stream with rtmp_destination_id for precise tracking
+    // Save platform stream (single source of truth)
     const platformStream = await PlatformStream.create({
       channel_id: channelId,
       platform_connection_id: connection.id,
@@ -309,12 +311,12 @@ router.post('/twitch/setup-stream', authenticateToken, async (req, res) => {
       stream_key: stream.stream_key,
       stream_title: title,
       status: 'created',
-      rtmp_destination_id: rtmpDestination.id,
+      enabled: 1,
     });
 
-    logger.info('Twitch stream setup and RTMP destination added', {
+    logger.info('Twitch stream setup', {
       channelId,
-      rtmpDestinationId: rtmpDestination.id,
+      platformStreamId: platformStream.id,
       userId: req.user.id,
     });
 
@@ -325,7 +327,6 @@ router.post('/twitch/setup-stream', authenticateToken, async (req, res) => {
     res.json({
       success: true,
       platformStream,
-      rtmpDestination,
       stream,
       needsRestart,
       message: needsRestart
@@ -358,33 +359,36 @@ router.delete('/streams/:id', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Stream not found' });
     }
 
-    // Delete associated RTMP destination using FK for precise deletion
-    if (stream.rtmp_destination_id) {
-      await RtmpDestination.delete(stream.rtmp_destination_id);
-      logger.info('RTMP destination deleted', { rtmpDestId: stream.rtmp_destination_id });
-    } else {
-      // Fallback for old streams without rtmp_destination_id
-      logger.warn('Platform stream missing rtmp_destination_id, attempting fallback deletion', {
-        streamId: stream.id,
-        platform: stream.platform,
-      });
-      const rtmpDestinations = await RtmpDestination.getAll(stream.channel_id);
-      const rtmpDest = rtmpDestinations.find(dest =>
-        dest.platform === stream.platform &&
-        dest.rtmp_url === stream.rtmp_url
-      );
-
-      if (rtmpDest) {
-        await RtmpDestination.delete(rtmpDest.id);
-        logger.info('RTMP destination deleted via fallback', { rtmpDestId: rtmpDest.id });
-      }
+    // Validate ownership
+    const channel = await Channel.findById(stream.channel_id);
+    if (!channel) {
+      return res.status(404).json({ error: 'Channel not found' });
     }
 
+    if (req.user.role !== 'admin' && Number(channel.user_id) !== Number(req.user.id)) {
+      return res.status(403).json({ error: 'Unauthorized access to this stream' });
+    }
+
+    // Delete platform stream - CASCADE will handle rtmp_destination if it exists
     await PlatformStream.delete(req.params.id);
 
-    logger.info('Platform stream deleted', { streamId: req.params.id, userId: req.user.id });
+    logger.info('Platform stream deleted', {
+      streamId: req.params.id,
+      channelId: stream.channel_id,
+      platform: stream.platform,
+      userId: req.user.id
+    });
 
-    res.json({ message: 'Stream deleted successfully' });
+    // Check if channel is running and notify user to restart
+    const needsRestart = channel.status === 'running';
+
+    res.json({
+      message: 'Stream deleted successfully',
+      needsRestart,
+      restartMessage: needsRestart
+        ? 'Please restart your channel stream to apply changes.'
+        : null
+    });
   } catch (error) {
     logger.error('Failed to delete platform stream', { error: error.message });
     res.status(500).json({ error: 'Failed to delete stream' });

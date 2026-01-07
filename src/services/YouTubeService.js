@@ -4,6 +4,8 @@ import PlatformConnection from '../models/PlatformConnection.js';
 import logger from '../utils/logger.js';
 
 class YouTubeService {
+  // Token refresh locks to prevent concurrent refreshes
+  static tokenRefreshLocks = new Map();
   // Create OAuth2 client
   static getOAuth2Client() {
     const config = platformConfig.youtube;
@@ -272,16 +274,38 @@ class YouTubeService {
       throw new Error('No refresh token available. Please reconnect your account.');
     }
 
-    const newTokens = await this.refreshAccessToken(connection.refresh_token);
+    // Check if refresh is already in progress for this connection
+    const lockKey = `youtube-${connection.id}`;
+    if (this.tokenRefreshLocks.has(lockKey)) {
+      // Wait for the in-progress refresh to complete
+      logger.info('YouTube: Waiting for in-progress token refresh', { connectionId: connection.id });
+      await this.tokenRefreshLocks.get(lockKey);
+      // Re-fetch the connection to get the updated token
+      const updatedConnection = PlatformConnection.getById(connection.id);
+      return updatedConnection.access_token;
+    }
 
-    // Update connection with new tokens
-    const expiresAt = new Date(Date.now() + (newTokens.expiry_date || 3600 * 1000));
-    await PlatformConnection.update(connection.id, {
-      access_token: newTokens.access_token,
-      token_expires_at: expiresAt.toISOString(),
-    });
+    // Create a lock promise for this refresh
+    let resolveLock;
+    const lockPromise = new Promise((resolve) => { resolveLock = resolve; });
+    this.tokenRefreshLocks.set(lockKey, lockPromise);
 
-    return newTokens.access_token;
+    try {
+      const newTokens = await this.refreshAccessToken(connection.refresh_token);
+
+      // Update connection with new tokens
+      const expiresAt = new Date(Date.now() + (newTokens.expiry_date || 3600 * 1000));
+      await PlatformConnection.update(connection.id, {
+        access_token: newTokens.access_token,
+        token_expires_at: expiresAt.toISOString(),
+      });
+
+      return newTokens.access_token;
+    } finally {
+      // Release the lock
+      this.tokenRefreshLocks.delete(lockKey);
+      resolveLock();
+    }
   }
 }
 

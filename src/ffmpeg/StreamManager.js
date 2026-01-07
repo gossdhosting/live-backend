@@ -357,14 +357,16 @@ class StreamManager {
       // Get platform streams for this channel
       const platformStreams = PlatformStream.getByChannelId(channelId);
 
-      // Convert platform streams to rtmpDestinations format for compatibility
-      const rtmpDestinations = platformStreams.map(stream => ({
-        id: stream.id,
-        platform: stream.platform,
-        rtmp_url: stream.rtmp_url,
-        stream_key: stream.stream_key,
-        enabled: 1  // All platform_streams are enabled if they exist
-      }));
+      // Convert platform streams to rtmpDestinations format, respecting enabled state
+      const rtmpDestinations = platformStreams
+        .filter(stream => stream.enabled === 1 || stream.enabled === true)  // Only include enabled streams
+        .map(stream => ({
+          id: stream.id,
+          platform: stream.platform,
+          rtmp_url: stream.rtmp_url,
+          stream_key: stream.stream_key,
+          enabled: stream.enabled || 1
+        }));
 
       // Initialize RTMP connection status for this channel
       const rtmpStatusMap = new Map();
@@ -401,13 +403,16 @@ class StreamManager {
         watermarkOpacity = channel.watermark_opacity || 1.0;
         watermarkScale = channel.watermark_scale || 1.0;
         logger.info(`Using custom watermark for channel ${channelId}`, { path: watermarkPath });
-      } else if (defaultWatermarkEnabled && defaultWatermarkPath && fs.existsSync(defaultWatermarkPath)) {
-        // Use default watermark if user doesn't have custom watermark permission
+      } else if (!hasCustomWatermark && defaultWatermarkEnabled && defaultWatermarkPath && fs.existsSync(defaultWatermarkPath)) {
+        // Use default watermark ONLY if user doesn't have custom watermark permission
         watermarkPath = defaultWatermarkPath;
         watermarkPosition = Settings.get('default_watermark_position')?.value || 'bottom-right';
         watermarkOpacity = parseFloat(Settings.get('default_watermark_opacity')?.value) || 0.7;
         watermarkScale = parseFloat(Settings.get('default_watermark_scale')?.value) || 0.15;
-        logger.info(`Using default watermark for channel ${channelId}`, { path: watermarkPath });
+        logger.info(`Using default watermark for channel ${channelId} (no custom watermark permission)`, { path: watermarkPath });
+      } else if (hasCustomWatermark) {
+        // User has custom watermark permission but hasn't enabled it - no watermark at all
+        logger.info(`No watermark for channel ${channelId} (custom watermark permission, watermark not enabled)`);
       }
 
       const hasWatermark = watermarkPath !== null;
@@ -979,31 +984,48 @@ class StreamManager {
     }
   }
 
-  // End platform broadcasts (YouTube, Facebook) when stopping stream
+  // End platform broadcasts (YouTube, Facebook, Twitch) when stopping stream
   async endPlatformBroadcasts(channelId) {
     try {
       const platformStreams = PlatformStream.getByChannelId(channelId);
 
       for (const stream of platformStreams) {
         try {
-          if (stream.platform === 'youtube' && stream.platform_broadcast_id) {
-            // Get platform connection to get access tokens
-            const PlatformConnection = (await import('../models/PlatformConnection.js')).default;
-            const connection = PlatformConnection.getById(stream.platform_connection_id);
+          // Get platform connection to get access tokens
+          const PlatformConnection = (await import('../models/PlatformConnection.js')).default;
+          const connection = PlatformConnection.getById(stream.platform_connection_id);
 
-            if (connection && connection.access_token) {
-              const YouTubeService = (await import('../services/YouTubeService.js')).default;
-              await YouTubeService.endLiveBroadcast(
-                connection.access_token,
-                connection.refresh_token,
-                stream.platform_broadcast_id,
-                connection.id
-              );
-              logger.info(`Ended YouTube broadcast ${stream.platform_broadcast_id} for channel ${channelId}`);
-              Channel.addLog(channelId, 'info', 'YouTube broadcast ended');
-            }
+          if (!connection || !connection.access_token) {
+            logger.warn(`No valid connection found for ${stream.platform} stream ${stream.id}`);
+            continue;
           }
-          // Facebook doesn't need explicit broadcast end - it auto-detects stream stop
+
+          // End broadcast based on platform
+          if (stream.platform === 'youtube' && stream.platform_broadcast_id) {
+            const YouTubeService = (await import('../services/YouTubeService.js')).default;
+            await YouTubeService.endLiveBroadcast(
+              connection.access_token,
+              connection.refresh_token,
+              stream.platform_broadcast_id,
+              connection.id
+            );
+            logger.info(`Ended YouTube broadcast ${stream.platform_broadcast_id} for channel ${channelId}`);
+            Channel.addLog(channelId, 'info', 'YouTube broadcast ended');
+          } else if (stream.platform === 'facebook' && stream.platform_broadcast_id) {
+            const FacebookService = (await import('../services/FacebookService.js')).default;
+            await FacebookService.endLiveVideo(
+              stream.platform_broadcast_id,
+              connection.access_token
+            );
+            logger.info(`Ended Facebook live video ${stream.platform_broadcast_id} for channel ${channelId}`);
+            Channel.addLog(channelId, 'info', 'Facebook live video ended');
+          } else if (stream.platform === 'twitch') {
+            // Twitch doesn't require explicit stream end - stream automatically goes offline when FFmpeg stops
+            logger.info(`Twitch stream for channel ${channelId} will auto-end when FFmpeg stops`);
+          } else if (stream.platform === 'custom') {
+            // Custom RTMP destinations don't need explicit end calls
+            logger.info(`Custom RTMP stream for channel ${channelId} will disconnect when FFmpeg stops`);
+          }
         } catch (error) {
           logger.error(`Failed to end ${stream.platform} broadcast for channel ${channelId}`, {
             error: error.message,

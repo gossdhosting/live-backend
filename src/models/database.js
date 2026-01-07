@@ -396,12 +396,27 @@ const initDatabase = () => {
 
     if (!hasRtmpDestId) {
       db.exec(`
-        ALTER TABLE platform_streams ADD COLUMN rtmp_destination_id INTEGER REFERENCES rtmp_destinations(id) ON DELETE SET NULL;
+        ALTER TABLE platform_streams ADD COLUMN rtmp_destination_id INTEGER REFERENCES rtmp_destinations(id) ON DELETE CASCADE;
       `);
       console.log('✅ Added rtmp_destination_id column to platform_streams table');
     }
   } catch (error) {
     console.log('Platform streams migration:', error.message);
+  }
+
+  // Add enabled column to platform_streams if it doesn't exist
+  try {
+    const platformStreamsInfo = db.prepare('PRAGMA table_info(platform_streams)').all();
+    const hasEnabled = platformStreamsInfo.some(col => col.name === 'enabled');
+
+    if (!hasEnabled) {
+      db.exec(`
+        ALTER TABLE platform_streams ADD COLUMN enabled INTEGER DEFAULT 1;
+      `);
+      console.log('✅ Added enabled column to platform_streams table');
+    }
+  } catch (error) {
+    console.log('Platform streams enabled migration:', error.message);
   }
 
   console.log('✅ Database initialized successfully');
