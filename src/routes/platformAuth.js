@@ -42,13 +42,17 @@ router.get('/facebook/callback', async (req, res) => {
     // Get user info
     const userInfo = await FacebookService.getUserInfo(longLivedToken.access_token);
 
+    // Get user's pages
+    const pages = await FacebookService.getPages(longLivedToken.access_token);
+    const firstPage = pages.length > 0 ? pages[0] : null;
+
     // Calculate token expiry (Facebook long-lived tokens last ~60 days)
     const expiresAt = new Date(Date.now() + (longLivedToken.expires_in || 5184000) * 1000);
 
     // Delete existing Facebook connection for this user
     await PlatformConnection.deleteByPlatformAndUser('facebook', userId);
 
-    // Save connection
+    // Save connection with page information
     await PlatformConnection.create({
       platform: 'facebook',
       user_id: userId,
@@ -57,6 +61,8 @@ router.get('/facebook/callback', async (req, res) => {
       platform_user_id: userInfo.id,
       platform_user_name: userInfo.name,
       platform_user_email: userInfo.email,
+      platform_page_id: firstPage?.id,
+      platform_page_name: firstPage?.name,
       scopes: ['public_profile', 'pages_show_list', 'pages_manage_posts', 'publish_video'],
     });
 
