@@ -538,7 +538,13 @@ class StreamManager {
 
         // Add RTMP outputs
         rtmpDestinations.forEach((dest) => {
-          const rtmpUrl = `${dest.rtmp_url}${dest.stream_key}`;
+          // Construct full RTMP URL, adding / separator if needed
+          let rtmpUrl = dest.rtmp_url;
+          if (dest.stream_key) {
+            // Add separator if rtmp_url doesn't end with / and stream_key doesn't start with /
+            const separator = (!rtmpUrl.endsWith('/') && !dest.stream_key.startsWith('/')) ? '/' : '';
+            rtmpUrl = `${rtmpUrl}${separator}${dest.stream_key}`;
+          }
           // onfail=ignore ensures one RTMP failure doesn't kill the whole stream
           teeOutputs.push(`[f=flv:flvflags=no_duration_filesize:onfail=ignore]${rtmpUrl}`);
 
