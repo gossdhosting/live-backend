@@ -945,6 +945,9 @@ class StreamManager {
         this.streamStartTimes.delete(channelId);
       }
 
+      // End platform broadcasts before killing FFmpeg
+      await this.endPlatformBroadcasts(channelId);
+
       // Kill the FFmpeg process gracefully
       processInfo.process.kill('SIGTERM');
 
@@ -973,6 +976,47 @@ class StreamManager {
         error: error.message,
       });
       throw error;
+    }
+  }
+
+  // End platform broadcasts (YouTube, Facebook) when stopping stream
+  async endPlatformBroadcasts(channelId) {
+    try {
+      const platformStreams = PlatformStream.getByChannelId(channelId);
+
+      for (const stream of platformStreams) {
+        try {
+          if (stream.platform === 'youtube' && stream.platform_broadcast_id) {
+            // Get platform connection to get access tokens
+            const PlatformConnection = (await import('../models/PlatformConnection.js')).default;
+            const connection = PlatformConnection.getById(stream.platform_connection_id);
+
+            if (connection && connection.access_token) {
+              const YouTubeService = (await import('../services/YouTubeService.js')).default;
+              await YouTubeService.endLiveBroadcast(
+                connection.access_token,
+                connection.refresh_token,
+                stream.platform_broadcast_id,
+                connection.id
+              );
+              logger.info(`Ended YouTube broadcast ${stream.platform_broadcast_id} for channel ${channelId}`);
+              Channel.addLog(channelId, 'info', 'YouTube broadcast ended');
+            }
+          }
+          // Facebook doesn't need explicit broadcast end - it auto-detects stream stop
+        } catch (error) {
+          logger.error(`Failed to end ${stream.platform} broadcast for channel ${channelId}`, {
+            error: error.message,
+            broadcastId: stream.platform_broadcast_id
+          });
+          // Don't throw - continue stopping other platforms
+        }
+      }
+    } catch (error) {
+      logger.error(`Error ending platform broadcasts for channel ${channelId}`, {
+        error: error.message
+      });
+      // Don't throw - stream should still stop even if broadcast end fails
     }
   }
 
