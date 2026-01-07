@@ -178,24 +178,38 @@ class User {
 
     const stats = this.getUserStats(userId);
 
+    // Get platform connection count (OAuth connections + RTMP templates count as platform connections)
+    const platformConnectionsStmt = db.prepare(`
+      SELECT COUNT(DISTINCT id) as count FROM platform_connections WHERE user_id = ?
+    `);
+    const platformConnectionCount = platformConnectionsStmt.get(userId)?.count || 0;
+
+    // Get max_platform_connections from user's plan
+    const planStmt = db.prepare('SELECT max_platform_connections FROM plans WHERE id = ?');
+    const planData = planStmt.get(user.plan_id);
+    const maxPlatformConnections = planData?.max_platform_connections || 1;
+
     const limits = {
       max_concurrent_streams: user.max_concurrent_streams,
       max_bitrate: user.max_bitrate,
       max_stream_duration: user.max_stream_duration,
       storage_limit_mb: user.storage_limit_mb,
-      custom_watermark: user.custom_watermark === 1
+      custom_watermark: user.custom_watermark === 1,
+      max_platform_connections: maxPlatformConnections
     };
 
     const usage = {
       concurrent_streams: stats.running_channels,
-      storage_mb: stats.storage_used_mb
+      storage_mb: stats.storage_used_mb,
+      platform_connections: platformConnectionCount
     };
 
     const canCreate = {
       channel: stats.total_channels < 100, // Global hard limit
       stream: usage.concurrent_streams < limits.max_concurrent_streams,
       media: usage.storage_mb < limits.storage_limit_mb,
-      watermark: limits.custom_watermark
+      watermark: limits.custom_watermark,
+      platform_connection: usage.platform_connections < limits.max_platform_connections
     };
 
     return {

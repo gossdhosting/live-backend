@@ -1,5 +1,6 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
+import { checkPlanLimit } from '../middleware/permissions.js';
 import FacebookService from '../services/FacebookService.js';
 import YouTubeService from '../services/YouTubeService.js';
 import TwitchService from '../services/TwitchService.js';
@@ -11,7 +12,7 @@ const router = express.Router();
 // ==================== FACEBOOK ====================
 
 // Initiate Facebook OAuth
-router.get('/facebook', authenticateToken, (req, res) => {
+router.get('/facebook', authenticateToken, checkPlanLimit('platform_connection'), (req, res) => {
   try {
     const state = JSON.stringify({ userId: req.user.id });
     const authUrl = FacebookService.getAuthUrl(state);
@@ -78,7 +79,7 @@ router.get('/facebook/callback', async (req, res) => {
 // ==================== YOUTUBE ====================
 
 // Initiate YouTube OAuth
-router.get('/youtube', authenticateToken, (req, res) => {
+router.get('/youtube', authenticateToken, checkPlanLimit('platform_connection'), (req, res) => {
   try {
     const state = JSON.stringify({ userId: req.user.id });
     const authUrl = YouTubeService.getAuthUrl(state);
@@ -165,7 +166,7 @@ router.get('/youtube/callback', async (req, res) => {
 // ==================== TWITCH ====================
 
 // Initiate Twitch OAuth
-router.get('/twitch', authenticateToken, (req, res) => {
+router.get('/twitch', authenticateToken, checkPlanLimit('platform_connection'), (req, res) => {
   try {
     const state = JSON.stringify({ userId: req.user.id });
     const authUrl = TwitchService.getAuthUrl(state);

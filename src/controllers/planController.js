@@ -61,7 +61,8 @@ export const createPlan = async (req, res) => {
       max_bitrate,
       max_stream_duration,
       storage_limit_mb,
-      custom_watermark
+      custom_watermark,
+      max_platform_connections
     } = req.body;
 
     // Validation
@@ -88,7 +89,8 @@ export const createPlan = async (req, res) => {
       max_bitrate,
       max_stream_duration: max_stream_duration || null,
       storage_limit_mb,
-      custom_watermark: custom_watermark || false
+      custom_watermark: custom_watermark || false,
+      max_platform_connections: max_platform_connections || 1
     });
 
     logger.info('Plan created', { planId: plan.id, name: plan.name, createdBy: req.user.id });
@@ -117,6 +119,7 @@ export const updatePlan = async (req, res) => {
       max_stream_duration,
       storage_limit_mb,
       custom_watermark,
+      max_platform_connections,
       is_active
     } = req.body;
 
@@ -144,6 +147,7 @@ export const updatePlan = async (req, res) => {
     if (max_stream_duration !== undefined) updateData.max_stream_duration = max_stream_duration;
     if (storage_limit_mb !== undefined) updateData.storage_limit_mb = storage_limit_mb;
     if (custom_watermark !== undefined) updateData.custom_watermark = custom_watermark;
+    if (max_platform_connections !== undefined) updateData.max_platform_connections = max_platform_connections;
     if (is_active !== undefined) updateData.is_active = is_active;
 
     const plan = Plan.update(id, updateData);

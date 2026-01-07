@@ -5,6 +5,8 @@ import Channel from '../models/Channel.js';
 import Settings from '../models/Settings.js';
 import UserSettings from '../models/UserSettings.js';
 import RtmpDestination from '../models/RtmpDestination.js';
+import User from '../models/User.js';
+import Plan from '../models/Plan.js';
 import logger from '../utils/logger.js';
 
 class StreamManager {
@@ -368,8 +370,38 @@ class StreamManager {
       this.rtmpConnectionStatus.set(channelId, rtmpStatusMap);
       logger.info(`[RTMP-INIT] Set rtmpConnectionStatus for channel ${channelId}, map size: ${rtmpStatusMap.size}`);
 
-      // Check if watermark is enabled
-      const hasWatermark = channel.watermark_enabled && channel.watermark_path && fs.existsSync(channel.watermark_path);
+      // Check watermark availability based on plan
+      const user = User.findById(channel.user_id);
+      const userPlan = user ? Plan.getById(user.plan_id) : null;
+      const hasCustomWatermark = userPlan && userPlan.custom_watermark === 1;
+
+      // Get default watermark settings
+      const defaultWatermarkEnabled = Settings.get('default_watermark_enabled')?.value === '1';
+      const defaultWatermarkPath = Settings.get('default_watermark_path')?.value;
+
+      // Determine watermark to use
+      let watermarkPath = null;
+      let watermarkPosition = 'bottom-right';
+      let watermarkOpacity = 0.7;
+      let watermarkScale = 0.15;
+
+      if (hasCustomWatermark && channel.watermark_enabled && channel.watermark_path && fs.existsSync(channel.watermark_path)) {
+        // User has custom watermark permission and has uploaded one
+        watermarkPath = channel.watermark_path;
+        watermarkPosition = channel.watermark_position || 'bottom-right';
+        watermarkOpacity = channel.watermark_opacity || 1.0;
+        watermarkScale = channel.watermark_scale || 1.0;
+        logger.info(`Using custom watermark for channel ${channelId}`, { path: watermarkPath });
+      } else if (defaultWatermarkEnabled && defaultWatermarkPath && fs.existsSync(defaultWatermarkPath)) {
+        // Use default watermark if user doesn't have custom watermark permission
+        watermarkPath = defaultWatermarkPath;
+        watermarkPosition = Settings.get('default_watermark_position')?.value || 'bottom-right';
+        watermarkOpacity = parseFloat(Settings.get('default_watermark_opacity')?.value) || 0.7;
+        watermarkScale = parseFloat(Settings.get('default_watermark_scale')?.value) || 0.15;
+        logger.info(`Using default watermark for channel ${channelId}`, { path: watermarkPath });
+      }
+
+      const hasWatermark = watermarkPath !== null;
 
       // Get quality preset resolution
       const qualityPreset = channel.quality_preset || '720p';
@@ -411,7 +443,7 @@ class StreamManager {
 
       // Add watermark input if enabled
       if (hasWatermark) {
-        ffmpegArgs.push('-i', channel.watermark_path);
+        ffmpegArgs.push('-i', watermarkPath);
       }
 
       // Build filter complex for video processing
@@ -429,13 +461,11 @@ class StreamManager {
       const titleBoxPadding = userSettings.title_box_padding || '5';
 
       if (hasWatermark) {
-        const position = this.getWatermarkPosition(channel.watermark_position || 'top-left');
-        const opacity = channel.watermark_opacity || 1.0;
-        const scale = channel.watermark_scale || 1.0;
+        const position = this.getWatermarkPosition(watermarkPosition);
 
         // Build watermark filter - scale, apply watermark
         let watermarkFilter = `[0:v]scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=decrease,pad=${resolution.width}:${resolution.height}:(ow-iw)/2:(oh-ih)/2[scaled];`;
-        watermarkFilter += `[1:v]scale=iw*${scale}:ih*${scale},format=rgba,colorchannelmixer=aa=${opacity}[logo];`;
+        watermarkFilter += `[1:v]scale=iw*${watermarkScale}:ih*${watermarkScale},format=rgba,colorchannelmixer=aa=${watermarkOpacity}[logo];`;
         watermarkFilter += `[scaled][logo]overlay=${position}`;
 
         // Add title overlay if enabled
@@ -449,11 +479,12 @@ class StreamManager {
         ffmpegArgs.push('-filter_complex', watermarkFilter);
 
         logger.info(`Watermark enabled for channel ${channelId}`, {
-          position: channel.watermark_position,
-          opacity: channel.watermark_opacity,
-          scale: channel.watermark_scale,
+          position: watermarkPosition,
+          opacity: watermarkOpacity,
+          scale: watermarkScale,
+          isDefault: watermarkPath === defaultWatermarkPath
         });
-        Channel.addLog(channelId, 'info', `Watermark applied at ${channel.watermark_position}`);
+        Channel.addLog(channelId, 'info', `Watermark applied at ${watermarkPosition}${watermarkPath === defaultWatermarkPath ? ' (default)' : ''}`);
       } else if (rtmpDestinations.length > 0 || (titleEnabled && streamTitle)) {
         // No watermark but have RTMP destinations or title - scale and optionally add title
         let scaleFilter = `[0:v]scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=decrease,pad=${resolution.width}:${resolution.height}:(ow-iw)/2:(oh-ih)/2`;

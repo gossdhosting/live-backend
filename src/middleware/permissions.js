@@ -216,6 +216,18 @@ export const checkPlanLimit = (limitType) => {
           }
           break;
 
+        case 'platform_connection':
+          if (!limits.canCreate.platform_connection) {
+            return res.status(403).json({
+              error: 'Platform connection limit reached',
+              limit: limits.limits.max_platform_connections,
+              current: limits.usage.platform_connections,
+              plan: limits.user_plan,
+              message: `Your plan allows ${limits.limits.max_platform_connections} platform connection(s). Please upgrade to connect more platforms.`
+            });
+          }
+          break;
+
         default:
           return res.status(400).json({ error: 'Invalid limit type' });
       }

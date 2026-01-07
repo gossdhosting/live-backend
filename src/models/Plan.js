@@ -45,15 +45,16 @@ class Plan {
     max_bitrate,
     max_stream_duration,
     storage_limit_mb,
-    custom_watermark
+    custom_watermark,
+    max_platform_connections
   }) {
     const stmt = db.prepare(`
       INSERT INTO plans (
         name, description, price_monthly, price_yearly,
         max_concurrent_streams, max_bitrate, max_stream_duration,
-        storage_limit_mb, custom_watermark
+        storage_limit_mb, custom_watermark, max_platform_connections
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
@@ -65,7 +66,8 @@ class Plan {
       max_bitrate,
       max_stream_duration || null,
       storage_limit_mb,
-      custom_watermark ? 1 : 0
+      custom_watermark ? 1 : 0,
+      max_platform_connections || 1
     );
 
     return this.getById(result.lastInsertRowid);
@@ -86,6 +88,7 @@ class Plan {
       'max_stream_duration',
       'storage_limit_mb',
       'custom_watermark',
+      'max_platform_connections',
       'is_active'
     ];
 
@@ -161,7 +164,8 @@ class Plan {
       max_bitrate: plan.max_bitrate,
       max_stream_duration: plan.max_stream_duration, // null = unlimited
       storage_limit_mb: plan.storage_limit_mb,
-      custom_watermark: plan.custom_watermark === 1
+      custom_watermark: plan.custom_watermark === 1,
+      max_platform_connections: plan.max_platform_connections || 1
     };
 
     return limits[limitType];
