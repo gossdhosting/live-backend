@@ -13,7 +13,7 @@ const router = express.Router();
 // ==================== FACEBOOK ====================
 
 // Initiate Facebook OAuth
-router.get('/facebook', authenticateToken, checkPlanLimit('platform_connection'), (req, res) => {
+router.get('/facebook', authenticateToken, (req, res) => {
   try {
     const state = JSON.stringify({ userId: req.user.id });
     const authUrl = FacebookService.getAuthUrl(state);
@@ -34,13 +34,6 @@ router.get('/facebook/callback', async (req, res) => {
 
   try {
     const { userId } = JSON.parse(state);
-
-    // Check plan limits before saving connection
-    const limits = await User.checkPlanLimits(userId);
-    if (!limits || !limits.canCreate.platform_connection) {
-      logger.warn('Platform connection limit reached in callback', { userId, platform: 'facebook' });
-      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?tab=platforms&error=platform_limit_reached`);
-    }
 
     // Exchange code for access token
     const tokenData = await FacebookService.getAccessToken(code);
@@ -87,7 +80,7 @@ router.get('/facebook/callback', async (req, res) => {
 // ==================== YOUTUBE ====================
 
 // Initiate YouTube OAuth
-router.get('/youtube', authenticateToken, checkPlanLimit('platform_connection'), (req, res) => {
+router.get('/youtube', authenticateToken, (req, res) => {
   try {
     const state = JSON.stringify({ userId: req.user.id });
     const authUrl = YouTubeService.getAuthUrl(state);
@@ -115,13 +108,6 @@ router.get('/youtube/callback', async (req, res) => {
     const { userId } = JSON.parse(state);
     console.log('=== YouTube OAuth - parsed state ===', { userId });
     logger.info('YouTube OAuth - parsed state', { userId });
-
-    // Check plan limits before saving connection
-    const limits = await User.checkPlanLimits(userId);
-    if (!limits || !limits.canCreate.platform_connection) {
-      logger.warn('Platform connection limit reached in callback', { userId, platform: 'youtube' });
-      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?tab=platforms&error=platform_limit_reached`);
-    }
 
     // Exchange code for tokens
     console.log('=== YouTube OAuth - exchanging code for tokens ===');
@@ -181,7 +167,7 @@ router.get('/youtube/callback', async (req, res) => {
 // ==================== TWITCH ====================
 
 // Initiate Twitch OAuth
-router.get('/twitch', authenticateToken, checkPlanLimit('platform_connection'), (req, res) => {
+router.get('/twitch', authenticateToken, (req, res) => {
   try {
     const state = JSON.stringify({ userId: req.user.id });
     const authUrl = TwitchService.getAuthUrl(state);
@@ -202,13 +188,6 @@ router.get('/twitch/callback', async (req, res) => {
 
   try {
     const { userId } = JSON.parse(state);
-
-    // Check plan limits before saving connection
-    const limits = await User.checkPlanLimits(userId);
-    if (!limits || !limits.canCreate.platform_connection) {
-      logger.warn('Platform connection limit reached in callback', { userId, platform: 'twitch' });
-      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?tab=platforms&error=platform_limit_reached`);
-    }
 
     // Exchange code for access token
     const tokenData = await TwitchService.getAccessToken(code);
