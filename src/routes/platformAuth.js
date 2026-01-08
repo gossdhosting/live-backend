@@ -5,6 +5,7 @@ import FacebookService from '../services/FacebookService.js';
 import YouTubeService from '../services/YouTubeService.js';
 import TwitchService from '../services/TwitchService.js';
 import PlatformConnection from '../models/PlatformConnection.js';
+import User from '../models/User.js';
 import logger from '../utils/logger.js';
 
 const router = express.Router();
@@ -33,6 +34,13 @@ router.get('/facebook/callback', async (req, res) => {
 
   try {
     const { userId } = JSON.parse(state);
+
+    // Check plan limits before saving connection
+    const limits = await User.checkPlanLimits(userId);
+    if (!limits || !limits.canCreate.platform_connection) {
+      logger.warn('Platform connection limit reached in callback', { userId, platform: 'facebook' });
+      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?tab=platforms&error=platform_limit_reached`);
+    }
 
     // Exchange code for access token
     const tokenData = await FacebookService.getAccessToken(code);
@@ -107,6 +115,13 @@ router.get('/youtube/callback', async (req, res) => {
     const { userId } = JSON.parse(state);
     console.log('=== YouTube OAuth - parsed state ===', { userId });
     logger.info('YouTube OAuth - parsed state', { userId });
+
+    // Check plan limits before saving connection
+    const limits = await User.checkPlanLimits(userId);
+    if (!limits || !limits.canCreate.platform_connection) {
+      logger.warn('Platform connection limit reached in callback', { userId, platform: 'youtube' });
+      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?tab=platforms&error=platform_limit_reached`);
+    }
 
     // Exchange code for tokens
     console.log('=== YouTube OAuth - exchanging code for tokens ===');
@@ -187,6 +202,13 @@ router.get('/twitch/callback', async (req, res) => {
 
   try {
     const { userId } = JSON.parse(state);
+
+    // Check plan limits before saving connection
+    const limits = await User.checkPlanLimits(userId);
+    if (!limits || !limits.canCreate.platform_connection) {
+      logger.warn('Platform connection limit reached in callback', { userId, platform: 'twitch' });
+      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?tab=platforms&error=platform_limit_reached`);
+    }
 
     // Exchange code for access token
     const tokenData = await TwitchService.getAccessToken(code);
