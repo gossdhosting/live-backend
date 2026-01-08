@@ -54,7 +54,7 @@ router.get('/facebook/callback', async (req, res) => {
     // Delete existing Facebook connection for this user
     await PlatformConnection.deleteByPlatformAndUser('facebook', userId);
 
-    // Save connection with page information
+    // Save connection with page information and all available pages
     await PlatformConnection.create({
       platform: 'facebook',
       user_id: userId,
@@ -65,6 +65,11 @@ router.get('/facebook/callback', async (req, res) => {
       platform_user_email: userInfo.email,
       platform_page_id: firstPage?.id,
       platform_page_name: firstPage?.name,
+      available_pages: JSON.stringify(pages.map(page => ({
+        id: page.id,
+        name: page.name,
+        access_token: page.access_token
+      }))),
       scopes: ['public_profile', 'pages_show_list', 'pages_manage_posts', 'publish_video'],
     });
 

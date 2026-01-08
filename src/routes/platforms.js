@@ -24,6 +24,8 @@ router.get('/connections', authenticateToken, async (req, res) => {
       platform_user_email: conn.platform_user_email,
       platform_page_name: conn.platform_page_name,
       platform_channel_name: conn.platform_channel_name,
+      platform_page_id: conn.platform_page_id,
+      available_pages: conn.available_pages,
       created_at: conn.created_at,
       is_expired: PlatformConnection.isTokenExpired(conn),
     }));
@@ -77,13 +79,79 @@ router.get('/facebook/pages', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Facebook account not connected' });
     }
 
-    const accessToken = await FacebookService.refreshTokenIfNeeded(connection);
-    const pages = await FacebookService.getPages(accessToken);
+    // Return available pages stored during OAuth
+    let pages = [];
+    if (connection.available_pages) {
+      try {
+        pages = JSON.parse(connection.available_pages);
+      } catch (e) {
+        logger.warn('Failed to parse available_pages', { error: e.message });
+      }
+    }
 
-    res.json({ pages });
+    res.json({
+      pages,
+      selectedPageId: connection.platform_page_id,
+      selectedPageName: connection.platform_page_name
+    });
   } catch (error) {
     logger.error('Failed to get Facebook pages', { error: error.message });
     res.status(500).json({ error: error.message || 'Failed to get Facebook pages' });
+  }
+});
+
+// Update selected Facebook page
+router.put('/facebook/select-page', authenticateToken, async (req, res) => {
+  try {
+    const { pageId } = req.body;
+
+    if (!pageId) {
+      return res.status(400).json({ error: 'Page ID is required' });
+    }
+
+    const connection = await PlatformConnection.getByPlatformAndUser('facebook', req.user.id);
+
+    if (!connection) {
+      return res.status(404).json({ error: 'Facebook account not connected' });
+    }
+
+    // Parse available pages
+    let pages = [];
+    if (connection.available_pages) {
+      try {
+        pages = JSON.parse(connection.available_pages);
+      } catch (e) {
+        logger.warn('Failed to parse available_pages', { error: e.message });
+        return res.status(500).json({ error: 'Invalid pages data' });
+      }
+    }
+
+    // Find the selected page
+    const selectedPage = pages.find(p => p.id === pageId);
+    if (!selectedPage) {
+      return res.status(404).json({ error: 'Page not found in connected pages' });
+    }
+
+    // Update the connection with selected page
+    await PlatformConnection.update(connection.id, {
+      platform_page_id: selectedPage.id,
+      platform_page_name: selectedPage.name
+    });
+
+    logger.info('Facebook page selection updated', {
+      userId: req.user.id,
+      pageId: selectedPage.id,
+      pageName: selectedPage.name
+    });
+
+    res.json({
+      message: 'Page selection updated successfully',
+      pageId: selectedPage.id,
+      pageName: selectedPage.name
+    });
+  } catch (error) {
+    logger.error('Failed to update Facebook page selection', { error: error.message });
+    res.status(500).json({ error: error.message || 'Failed to update page selection' });
   }
 });
 
