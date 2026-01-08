@@ -8,8 +8,8 @@ class PlatformConnection {
         platform, user_id, access_token, refresh_token, token_expires_at,
         platform_user_id, platform_user_name, platform_user_email,
         platform_page_id, platform_page_name, platform_channel_id, platform_channel_name,
-        scopes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        available_pages, scopes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const info = stmt.run(
@@ -25,6 +25,7 @@ class PlatformConnection {
       data.platform_page_name || null,
       data.platform_channel_id || null,
       data.platform_channel_name || null,
+      data.available_pages || null,
       data.scopes ? JSON.stringify(data.scopes) : null
     );
 
@@ -72,7 +73,7 @@ class PlatformConnection {
       'access_token', 'refresh_token', 'token_expires_at',
       'platform_user_id', 'platform_user_name', 'platform_user_email',
       'platform_page_id', 'platform_page_name', 'platform_channel_id', 'platform_channel_name',
-      'scopes'
+      'available_pages', 'scopes'
     ];
 
     for (const field of allowedFields) {
