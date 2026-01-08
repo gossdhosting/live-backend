@@ -27,6 +27,9 @@ class StreamManager {
     // Map<channelId, Map<destinationId, {status: 'connecting'|'connected'|'disconnected', lastUpdate: Date}>>
     this.rtmpConnectionStatus = new Map();
 
+    // Track scheduled cleanup timers to prevent race conditions on restart
+    this.cleanupTimers = new Map();
+
     // Ensure HLS base directory exists
     this.hlsBasePath = process.env.HLS_BASE_PATH || path.join(process.cwd(), 'var', 'hls');
     if (!fs.existsSync(this.hlsBasePath)) {
@@ -339,6 +342,13 @@ class StreamManager {
 
       // Note: Per-user concurrent stream limits are checked above (lines 177-179)
       // No need for global limit - each user has their own plan limits
+
+      // Cancel any pending cleanup for this channel (in case of quick restart)
+      if (this.cleanupTimers.has(channelId)) {
+        clearTimeout(this.cleanupTimers.get(channelId));
+        this.cleanupTimers.delete(channelId);
+        logger.info(`Cancelled pending cleanup for channel ${channelId}`);
+      }
 
       // Create channel output directory using stream_key for isolation
       const streamKey = channel.stream_key || `channel_${channelId}`;
@@ -965,10 +975,14 @@ class StreamManager {
       }, 5000);
 
       // Clean up HLS files after stopping to prevent stale content
-      setTimeout(() => {
+      const cleanupTimer = setTimeout(() => {
         this.cleanupChannel(channelId);
+        this.cleanupTimers.delete(channelId);
         logger.info(`Cleaned up HLS files for stopped channel ${channelId}`);
       }, 6000); // Wait 6s to ensure FFmpeg has fully stopped
+
+      // Store the timer so it can be cancelled if stream is restarted quickly
+      this.cleanupTimers.set(channelId, cleanupTimer);
 
       Channel.addLog(channelId, 'info', 'Stream stop requested');
 
