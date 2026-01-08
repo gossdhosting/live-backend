@@ -2,6 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import nodemailer from 'nodemailer';
 import {
   getAllSettings,
   updateSettings,
@@ -119,6 +120,89 @@ router.delete('/default-watermark', requireAdmin, async (req, res) => {
   } catch (error) {
     logger.error('Failed to delete default watermark', { error: error.message });
     res.status(500).json({ error: 'Failed to delete default watermark' });
+  }
+});
+
+// Test SMTP settings (admin only)
+router.post('/test-smtp', requireAdmin, async (req, res) => {
+  try {
+    const { testEmail } = req.body;
+
+    if (!testEmail) {
+      return res.status(400).json({ error: 'Test email address is required' });
+    }
+
+    // Get SMTP settings from database
+    const smtpHost = Settings.get('smtp_host')?.value;
+    const smtpPort = Settings.get('smtp_port')?.value;
+    const smtpSecure = Settings.get('smtp_secure')?.value === '1';
+    const smtpUser = Settings.get('smtp_user')?.value;
+    const smtpPassword = Settings.get('smtp_password')?.value;
+    const smtpFromEmail = Settings.get('smtp_from_email')?.value;
+    const smtpFromName = Settings.get('smtp_from_name')?.value;
+
+    if (!smtpHost || !smtpPort || !smtpUser || !smtpPassword || !smtpFromEmail) {
+      return res.status(400).json({ error: 'SMTP settings are incomplete. Please fill in all required fields.' });
+    }
+
+    // Create transporter
+    const transporter = nodemailer.createTransport({
+      host: smtpHost,
+      port: parseInt(smtpPort),
+      secure: smtpSecure,
+      auth: {
+        user: smtpUser,
+        pass: smtpPassword,
+      },
+    });
+
+    // Verify connection
+    await transporter.verify();
+
+    // Send test email
+    const info = await transporter.sendMail({
+      from: `"${smtpFromName || 'ZebCast'}" <${smtpFromEmail}>`,
+      to: testEmail,
+      subject: 'SMTP Test Email - ZebCast',
+      text: 'This is a test email from ZebCast to verify your SMTP settings are working correctly.',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #3498db;">SMTP Test Successful</h2>
+          <p>This is a test email from <strong>ZebCast</strong> to verify your SMTP settings are working correctly.</p>
+          <p style="color: #7f8c8d; font-size: 12px; margin-top: 30px;">
+            If you received this email, your SMTP configuration is properly set up.
+          </p>
+        </div>
+      `,
+    });
+
+    logger.info('SMTP test email sent successfully', {
+      messageId: info.messageId,
+      recipient: testEmail,
+      smtpHost,
+      smtpPort
+    });
+
+    res.json({
+      success: true,
+      message: `Test email sent successfully to ${testEmail}. Please check your inbox.`,
+      messageId: info.messageId
+    });
+  } catch (error) {
+    logger.error('SMTP test failed', { error: error.message, stack: error.stack });
+
+    let errorMessage = 'Failed to send test email. ';
+    if (error.code === 'EAUTH') {
+      errorMessage += 'Authentication failed. Please check your username and password.';
+    } else if (error.code === 'ECONNECTION' || error.code === 'ETIMEDOUT') {
+      errorMessage += 'Could not connect to SMTP server. Please check host and port.';
+    } else if (error.code === 'ESOCKET') {
+      errorMessage += 'Socket error. Please verify your SMTP settings.';
+    } else {
+      errorMessage += error.message;
+    }
+
+    res.status(500).json({ error: errorMessage });
   }
 });
 
