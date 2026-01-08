@@ -61,22 +61,30 @@ router.post('/default-watermark', requireAdmin, upload.single('watermark'), asyn
     }
 
     // Delete old default watermark if exists
-    const oldPath = Settings.get('default_watermark_path')?.value;
-    if (oldPath && fs.existsSync(oldPath) && oldPath !== req.file.path) {
-      try {
-        fs.unlinkSync(oldPath);
-      } catch (error) {
-        logger.warn('Failed to delete old default watermark', { error: error.message });
+    const oldRelativePath = Settings.get('default_watermark_path')?.value;
+    if (oldRelativePath) {
+      // Convert relative path to absolute for deletion
+      const oldAbsolutePath = oldRelativePath.startsWith('/')
+        ? oldRelativePath
+        : path.join(process.cwd(), oldRelativePath);
+
+      if (fs.existsSync(oldAbsolutePath) && oldAbsolutePath !== req.file.path) {
+        try {
+          fs.unlinkSync(oldAbsolutePath);
+        } catch (error) {
+          logger.warn('Failed to delete old default watermark', { error: error.message });
+        }
       }
     }
 
-    // Update setting with new path
-    Settings.set('default_watermark_path', req.file.path);
+    // Save relative path for frontend to use (e.g., "uploads/system/default-watermark.png")
+    const relativePath = path.relative(process.cwd(), req.file.path).replace(/\\/g, '/');
+    Settings.set('default_watermark_path', relativePath);
 
-    logger.info('Default watermark uploaded', { path: req.file.path });
+    logger.info('Default watermark uploaded', { path: relativePath, absolutePath: req.file.path });
     res.json({
       message: 'Default watermark uploaded successfully',
-      path: req.file.path,
+      path: relativePath,
       filename: req.file.filename,
     });
   } catch (error) {
@@ -93,8 +101,15 @@ router.delete('/default-watermark', requireAdmin, async (req, res) => {
   try {
     const watermarkPath = Settings.get('default_watermark_path')?.value;
 
-    if (watermarkPath && fs.existsSync(watermarkPath)) {
-      fs.unlinkSync(watermarkPath);
+    if (watermarkPath) {
+      // Convert relative path to absolute for deletion
+      const absolutePath = watermarkPath.startsWith('/')
+        ? watermarkPath
+        : path.join(process.cwd(), watermarkPath);
+
+      if (fs.existsSync(absolutePath)) {
+        fs.unlinkSync(absolutePath);
+      }
     }
 
     Settings.set('default_watermark_path', '');
