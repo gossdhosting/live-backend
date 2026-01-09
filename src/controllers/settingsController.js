@@ -1,5 +1,7 @@
 import Settings from '../models/Settings.js';
 import logger from '../utils/logger.js';
+import EmailService from '../services/EmailService.js';
+import PushoverService from '../services/PushoverService.js';
 
 // Get all settings
 export const getAllSettings = (req, res) => {
@@ -51,11 +53,34 @@ export const updateSettings = (req, res) => {
 
     const updatedSettings = Settings.updateMultiple(settings);
 
+    // Reset email transporter if SMTP settings changed
+    if (settings.smtp_host || settings.smtp_port || settings.smtp_user || settings.smtp_pass) {
+      EmailService.resetTransporter();
+    }
+
     logger.info('Settings updated', { settings });
 
     res.json({ settings: updatedSettings });
   } catch (error) {
     logger.error('Update settings error', { error: error.message });
     res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// Test Pushover notification
+export const testPushover = async (req, res) => {
+  try {
+    const result = await PushoverService.testNotification();
+
+    if (result.success) {
+      logger.info('Pushover test notification sent successfully');
+      res.json({ message: 'Test notification sent successfully! Check your Pushover app.' });
+    } else {
+      logger.error('Pushover test failed', { error: result.message });
+      res.status(500).json({ error: result.message || 'Failed to send notification' });
+    }
+  } catch (error) {
+    logger.error('Pushover test error', { error: error.message });
+    res.status(500).json({ error: error.message || 'Failed to send notification' });
   }
 };

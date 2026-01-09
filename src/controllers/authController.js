@@ -5,6 +5,10 @@ import logger from '../utils/logger.js';
 import jwt from 'jsonwebtoken';
 import FirebaseService from '../services/FirebaseService.js';
 import db from '../models/database.js';
+import PasswordReset from '../models/PasswordReset.js';
+import EmailService from '../services/EmailService.js';
+import PushoverService from '../services/PushoverService.js';
+import bcrypt from 'bcryptjs';
 
 // Login
 export const login = async (req, res) => {
@@ -292,6 +296,18 @@ export const socialLogin = async (req, res) => {
           provider: provider,
           firebaseUid
         });
+
+        // Send welcome email and notifications (don't wait)
+        const userWithPlan = User.findById(user.id);
+        EmailService.sendRegistrationEmail(user.email, user.name).catch(err =>
+          logger.error('Failed to send registration email', { error: err.message })
+        );
+        EmailService.notifyAdminNewSignup(userWithPlan).catch(err =>
+          logger.error('Failed to send admin email notification', { error: err.message })
+        );
+        PushoverService.notifyNewSignup(userWithPlan).catch(err =>
+          logger.error('Failed to send Pushover notification', { error: err.message })
+        );
       }
     } else {
       // Update last login
@@ -340,5 +356,103 @@ export const socialLogin = async (req, res) => {
   } catch (error) {
     logger.error('Social login error', { error: error.message, stack: error.stack });
     res.status(500).json({ error: error.message || 'Social login failed' });
+  }
+};
+
+// Forgot password - send reset email
+export const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email || !isValidEmail(email)) {
+      return res.status(400).json({ error: 'Valid email required' });
+    }
+
+    const user = User.findByEmail(email);
+
+    if (!user) {
+      // Don't reveal if user exists or not
+      return res.json({ message: 'If that email exists, a reset link has been sent' });
+    }
+
+    // Check if user is social login
+    if (user.auth_provider && user.auth_provider !== 'local') {
+      return res.status(400).json({
+        error: `This account uses ${user.auth_provider} login. Please use ${user.auth_provider} to sign in.`,
+        provider: user.auth_provider
+      });
+    }
+
+    // Create reset token
+    const resetToken = PasswordReset.create(user.id, email);
+
+    // Send email
+    const emailResult = await EmailService.sendForgotPasswordEmail(email, resetToken);
+
+    if (!emailResult.success) {
+      logger.error('Failed to send forgot password email', { email, error: emailResult.message });
+      return res.status(500).json({ error: 'Failed to send reset email. Please contact support.' });
+    }
+
+    logger.info('Password reset requested', { email });
+
+    res.json({ message: 'If that email exists, a reset link has been sent' });
+  } catch (error) {
+    logger.error('Forgot password error', { error: error.message });
+    res.status(500).json({ error: 'Failed to process request' });
+  }
+};
+
+// Reset password with token
+export const resetPassword = async (req, res) => {
+  try {
+    const { token, password } = req.body;
+
+    if (!token || !password) {
+      return res.status(400).json({ error: 'Token and new password required' });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+
+    // Find valid token
+    const resetRecord = PasswordReset.findValidToken(token);
+
+    if (!resetRecord) {
+      return res.status(400).json({ error: 'Invalid or expired reset token' });
+    }
+
+    // Get user
+    const user = User.findByEmail(resetRecord.email);
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Check if user is social login
+    if (user.auth_provider && user.auth_provider !== 'local') {
+      return res.status(400).json({
+        error: `This account uses ${user.auth_provider} login. Password cannot be reset.`,
+        provider: user.auth_provider
+      });
+    }
+
+    // Hash new password
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    // Update password in database
+    const stmt = db.prepare('UPDATE users SET password_hash = ? WHERE id = ?');
+    stmt.run(passwordHash, user.id);
+
+    // Mark token as used
+    PasswordReset.markAsUsed(token);
+
+    logger.info('Password reset successful', { userId: user.id, email: user.email });
+
+    res.json({ message: 'Password reset successful. You can now login with your new password.' });
+  } catch (error) {
+    logger.error('Reset password error', { error: error.message });
+    res.status(500).json({ error: 'Failed to reset password' });
   }
 };

@@ -5,6 +5,8 @@ import PlatformConnection from '../models/PlatformConnection.js';
 import RtmpDestination from '../models/RtmpDestination.js';
 import logger from '../utils/logger.js';
 import { isValidEmail } from '../utils/validation.js';
+import EmailService from '../services/EmailService.js';
+import PushoverService from '../services/PushoverService.js';
 
 // Register new user (public endpoint)
 export const register = async (req, res) => {
@@ -54,6 +56,20 @@ export const register = async (req, res) => {
     });
 
     logger.info('User registered', { userId: user.id, email: user.email });
+
+    // Send welcome email (don't wait for it)
+    EmailService.sendRegistrationEmail(email, name).catch(err =>
+      logger.error('Failed to send registration email', { error: err.message })
+    );
+
+    // Send notifications to admin (don't wait for them)
+    const userWithPlan = User.findById(user.id);
+    EmailService.notifyAdminNewSignup(userWithPlan).catch(err =>
+      logger.error('Failed to send admin email notification', { error: err.message })
+    );
+    PushoverService.notifyNewSignup(userWithPlan).catch(err =>
+      logger.error('Failed to send Pushover notification', { error: err.message })
+    );
 
     res.status(201).json({
       message: 'Registration successful',

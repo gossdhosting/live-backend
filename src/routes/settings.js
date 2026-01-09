@@ -6,6 +6,7 @@ import nodemailer from 'nodemailer';
 import {
   getAllSettings,
   updateSettings,
+  testPushover,
 } from '../controllers/settingsController.js';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import Settings from '../models/Settings.js';
@@ -205,5 +206,8 @@ router.post('/test-smtp', requireAdmin, async (req, res) => {
     res.status(500).json({ error: errorMessage });
   }
 });
+
+// Test Pushover notification (admin only)
+router.post('/test-pushover', requireAdmin, testPushover);
 
 export default router;
