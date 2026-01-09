@@ -1,14 +1,26 @@
 import Plan from '../models/Plan.js';
 import logger from '../utils/logger.js';
 
-// Get all active plans (public endpoint)
+// Get all active plans (public endpoint - excludes hidden plans)
 export const getAllPlans = async (req, res) => {
   try {
-    // Use getAllWithStats to include subscriber counts
-    const plans = Plan.getAllWithStats();
+    // Only show non-hidden plans to regular users
+    const plans = Plan.getAll();
     res.json({ plans });
   } catch (error) {
     logger.error('Failed to fetch plans', { error: error.message });
+    res.status(500).json({ error: 'Failed to fetch plans' });
+  }
+};
+
+// Get all plans for admin (includes hidden plans)
+export const getAllPlansForAdmin = async (req, res) => {
+  try {
+    // Use getAllWithStats to include subscriber counts (includes hidden plans)
+    const plans = Plan.getAllWithStats();
+    res.json({ plans });
+  } catch (error) {
+    logger.error('Failed to fetch plans for admin', { error: error.message });
     res.status(500).json({ error: 'Failed to fetch plans' });
   }
 };
@@ -120,7 +132,8 @@ export const updatePlan = async (req, res) => {
       storage_limit_mb,
       custom_watermark,
       max_platform_connections,
-      is_active
+      is_active,
+      is_hidden
     } = req.body;
 
     // Check if plan exists
@@ -149,6 +162,7 @@ export const updatePlan = async (req, res) => {
     if (custom_watermark !== undefined) updateData.custom_watermark = custom_watermark;
     if (max_platform_connections !== undefined) updateData.max_platform_connections = max_platform_connections;
     if (is_active !== undefined) updateData.is_active = is_active;
+    if (is_hidden !== undefined) updateData.is_hidden = is_hidden;
 
     const plan = Plan.update(id, updateData);
 

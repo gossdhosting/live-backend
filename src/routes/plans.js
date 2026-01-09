@@ -1,6 +1,7 @@
 import express from 'express';
 import {
   getAllPlans,
+  getAllPlansForAdmin,
   getPlanById,
   getPlanStats,
   createPlan,
@@ -17,6 +18,7 @@ router.get('/', getAllPlans);
 router.get('/:id', getPlanById);
 
 // Admin only routes
+router.get('/admin/all', authenticateToken, requireAdmin, getAllPlansForAdmin);
 router.get('/admin/stats', authenticateToken, requireAdmin, getPlanStats);
 router.post('/', authenticateToken, requireAdmin, createPlan);
 router.put('/:id', authenticateToken, requireAdmin, updatePlan);

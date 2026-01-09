@@ -388,6 +388,21 @@ const initDatabase = () => {
     )
   `);
 
+  // Add is_hidden column to plans if it doesn't exist (migration)
+  try {
+    const plansTableInfo = db.prepare('PRAGMA table_info(plans)').all();
+    const hasIsHidden = plansTableInfo.some(col => col.name === 'is_hidden');
+
+    if (!hasIsHidden) {
+      db.exec(`
+        ALTER TABLE plans ADD COLUMN is_hidden INTEGER DEFAULT 0;
+      `);
+      console.log('✅ Added is_hidden column to plans table');
+    }
+  } catch (error) {
+    console.log('Plans is_hidden migration:', error.message);
+  }
+
   // Platform streams table for tracking created streams
   db.exec(`
     CREATE TABLE IF NOT EXISTS platform_streams (

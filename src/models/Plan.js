@@ -1,13 +1,19 @@
 import db from './database.js';
 
 class Plan {
-  // Get all plans
+  // Get all plans (only visible, non-hidden plans for users)
   static getAll() {
+    const stmt = db.prepare('SELECT * FROM plans WHERE is_active = 1 AND (is_hidden IS NULL OR is_hidden = 0) ORDER BY price_monthly ASC');
+    return stmt.all();
+  }
+
+  // Get all plans including hidden (for admin)
+  static getAllForAdmin() {
     const stmt = db.prepare('SELECT * FROM plans WHERE is_active = 1 ORDER BY price_monthly ASC');
     return stmt.all();
   }
 
-  // Get all plans with subscriber statistics
+  // Get all plans with subscriber statistics (admin only - includes hidden plans)
   static getAllWithStats() {
     const stmt = db.prepare(`
       SELECT
@@ -89,13 +95,14 @@ class Plan {
       'storage_limit_mb',
       'custom_watermark',
       'max_platform_connections',
-      'is_active'
+      'is_active',
+      'is_hidden'
     ];
 
     allowedFields.forEach(field => {
       if (data[field] !== undefined) {
         fields.push(`${field} = ?`);
-        if (field === 'custom_watermark' || field === 'is_active') {
+        if (field === 'custom_watermark' || field === 'is_active' || field === 'is_hidden') {
           values.push(data[field] ? 1 : 0);
         } else {
           values.push(data[field]);
