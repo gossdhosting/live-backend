@@ -254,6 +254,10 @@ export const getUserStats = async (req, res) => {
 
     const stats = User.getUserStats(userId);
     const planLimits = await User.checkPlanLimits(userId);
+    const user = User.findById(userId);
+
+    // Check if user has YouTube restreaming access (user level OR plan level)
+    const hasYouTubeAccess = user.youtube_restreaming === 1 || user.plan_youtube_restreaming === 1;
 
     // Flatten the structure for easier frontend access
     res.json({
@@ -261,7 +265,8 @@ export const getUserStats = async (req, res) => {
       limits: planLimits.limits,
       usage: planLimits.usage,
       canCreate: planLimits.canCreate,
-      plan: { name: planLimits.user_plan }
+      plan: { name: planLimits.user_plan },
+      youtube_restreaming: hasYouTubeAccess
     });
   } catch (error) {
     logger.error('Failed to fetch user stats', { error: error.message });

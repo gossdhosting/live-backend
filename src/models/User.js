@@ -32,13 +32,14 @@ class User {
         u.id, u.email, u.name, u.role, u.plan_id, u.subscription_type,
         u.subscription_status, u.subscription_started_at, u.subscription_expires_at,
         u.status, u.last_login_at, u.last_login_ip, u.created_at, u.updated_at,
-        u.auth_provider, u.email_verified, u.profile_picture,
+        u.auth_provider, u.email_verified, u.profile_picture, u.youtube_restreaming,
         p.name as plan_name,
         p.max_concurrent_streams,
         p.max_bitrate,
         p.max_stream_duration,
         p.storage_limit_mb,
-        p.custom_watermark
+        p.custom_watermark,
+        p.youtube_restreaming as plan_youtube_restreaming
       FROM users u
       LEFT JOIN plans p ON u.plan_id = p.id
       WHERE u.id = ?
@@ -60,7 +61,7 @@ class User {
         u.id, u.email, u.name, u.role, u.plan_id, u.subscription_type,
         u.subscription_status, u.subscription_started_at, u.subscription_expires_at,
         u.status, u.last_login_at, u.last_login_ip, u.created_at, u.updated_at,
-        u.auth_provider, u.email_verified,
+        u.auth_provider, u.email_verified, u.youtube_restreaming,
         p.name as plan_name
       FROM users u
       LEFT JOIN plans p ON u.plan_id = p.id
@@ -124,6 +125,11 @@ class User {
     if (data.status !== undefined) {
       fields.push('status = ?');
       values.push(data.status);
+    }
+
+    if (data.youtube_restreaming !== undefined) {
+      fields.push('youtube_restreaming = ?');
+      values.push(data.youtube_restreaming ? 1 : 0);
     }
 
     if (fields.length === 0) return null;

@@ -52,15 +52,16 @@ class Plan {
     max_stream_duration,
     storage_limit_mb,
     custom_watermark,
-    max_platform_connections
+    max_platform_connections,
+    youtube_restreaming
   }) {
     const stmt = db.prepare(`
       INSERT INTO plans (
         name, description, price_monthly, price_yearly,
         max_concurrent_streams, max_bitrate, max_stream_duration,
-        storage_limit_mb, custom_watermark, max_platform_connections
+        storage_limit_mb, custom_watermark, max_platform_connections, youtube_restreaming
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
@@ -73,7 +74,8 @@ class Plan {
       max_stream_duration || null,
       storage_limit_mb,
       custom_watermark ? 1 : 0,
-      max_platform_connections || 1
+      max_platform_connections || 1,
+      youtube_restreaming ? 1 : 0
     );
 
     return this.getById(result.lastInsertRowid);
@@ -96,13 +98,14 @@ class Plan {
       'custom_watermark',
       'max_platform_connections',
       'is_active',
-      'is_hidden'
+      'is_hidden',
+      'youtube_restreaming'
     ];
 
     allowedFields.forEach(field => {
       if (data[field] !== undefined) {
         fields.push(`${field} = ?`);
-        if (field === 'custom_watermark' || field === 'is_active' || field === 'is_hidden') {
+        if (field === 'custom_watermark' || field === 'is_active' || field === 'is_hidden' || field === 'youtube_restreaming') {
           values.push(data[field] ? 1 : 0);
         } else {
           values.push(data[field]);
