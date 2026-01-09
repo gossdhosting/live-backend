@@ -358,12 +358,23 @@ const initDatabase = () => {
 
     if (!hasEnabled) {
       db.exec(`
-        ALTER TABLE rtmp_templates ADD COLUMN enabled INTEGER DEFAULT 1;
+        ALTER TABLE rtmp_templates ADD COLUMN enabled INTEGER DEFAULT 0;
       `);
-      console.log('✅ Added enabled column to rtmp_templates table');
+      console.log('✅ Added enabled column to rtmp_templates table (default disabled)');
     }
   } catch (error) {
     console.log('RTMP templates enabled migration:', error.message);
+  }
+
+  // Disable all existing RTMP templates by default (migration)
+  try {
+    const templatesNeedingUpdate = db.prepare('SELECT COUNT(*) as count FROM rtmp_templates WHERE enabled IS NULL OR enabled = 1').get();
+    if (templatesNeedingUpdate.count > 0) {
+      db.exec(`UPDATE rtmp_templates SET enabled = 0 WHERE enabled IS NULL OR enabled = 1`);
+      console.log(`✅ Disabled ${templatesNeedingUpdate.count} existing RTMP templates by default`);
+    }
+  } catch (error) {
+    console.log('RTMP templates disable migration:', error.message);
   }
 
   // Platform connections table for OAuth2 integrations
