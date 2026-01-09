@@ -54,7 +54,7 @@ export const updateSettings = (req, res) => {
     const updatedSettings = Settings.updateMultiple(settings);
 
     // Reset email transporter if SMTP settings changed
-    if (settings.smtp_host || settings.smtp_port || settings.smtp_user || settings.smtp_pass) {
+    if (settings.smtp_host || settings.smtp_port || settings.smtp_user || settings.smtp_password || settings.smtp_secure || settings.smtp_from_email || settings.smtp_from_name) {
       EmailService.resetTransporter();
     }
 

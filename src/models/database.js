@@ -190,6 +190,26 @@ const initDatabase = () => {
       value: '5',
       description: 'Title box padding in pixels (lower = less CPU usage)',
     },
+    {
+      key: 'email_header',
+      value: '<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background: #f5f5f5;"><div style="background: white; padding: 20px; border-radius: 8px;">',
+      description: 'HTML header added to all emails (logo, branding, etc.)',
+    },
+    {
+      key: 'email_footer',
+      value: '</div><p style="text-align: center; color: #666; font-size: 12px; margin-top: 20px;">© 2026 ZebCast. All rights reserved.</p></div>',
+      description: 'HTML footer added to all emails (copyright, unsubscribe, etc.)',
+    },
+    {
+      key: 'email_template_registration',
+      value: '<h2>Welcome to ZebCast!</h2><p>Hi ${name},</p><p>Thank you for registering with ZebCast. Your account has been created successfully.</p><p>You can now log in and start streaming to multiple platforms simultaneously.</p><p>Best regards,<br>The ZebCast Team</p>',
+      description: 'Registration email template. Variables: ${name}, ${email}',
+    },
+    {
+      key: 'email_template_forgot_password',
+      value: '<h2>Reset Your Password</h2><p>Hi,</p><p>You requested to reset your password. Click the button below to reset it:</p><p style="margin: 20px 0;"><a href="${resetLink}" style="background-color: #3498db; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block;">Reset Password</a></p><p>If you didn\'t request this, you can safely ignore this email.</p><p>This link will expire in 1 hour.</p><p>Best regards,<br>The ZebCast Team</p>',
+      description: 'Forgot password email template. Variables: ${resetLink} (required)',
+    },
   ];
 
   const insertSetting = db.prepare(`

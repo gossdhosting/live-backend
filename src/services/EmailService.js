@@ -10,11 +10,10 @@ class EmailService {
     const smtp_host = Settings.get('smtp_host')?.value;
     const smtp_port = Settings.get('smtp_port')?.value;
     const smtp_user = Settings.get('smtp_user')?.value;
-    const smtp_pass = Settings.get('smtp_pass')?.value;
-    const smtp_secure = Settings.get('smtp_secure')?.value === 'true';
-    const smtp_from = Settings.get('smtp_from')?.value;
+    const smtp_password = Settings.get('smtp_password')?.value;
+    const smtp_secure = Settings.get('smtp_secure')?.value === '1';
 
-    if (!smtp_host || !smtp_port || !smtp_user || !smtp_pass) {
+    if (!smtp_host || !smtp_port || !smtp_user || !smtp_password) {
       logger.warn('SMTP not fully configured');
       return null;
     }
@@ -26,7 +25,7 @@ class EmailService {
         secure: smtp_secure,
         auth: {
           user: smtp_user,
-          pass: smtp_pass,
+          pass: smtp_password,
         },
       });
     }
@@ -60,7 +59,8 @@ class EmailService {
         return { success: false, message: 'SMTP not configured' };
       }
 
-      const smtp_from = Settings.get('smtp_from')?.value || 'noreply@localhost';
+      const smtp_from_email = Settings.get('smtp_from_email')?.value || 'noreply@localhost';
+      const smtp_from_name = Settings.get('smtp_from_name')?.value || 'ZebCast';
       const template = Settings.get('email_template_registration')?.value || `
         <h2>Welcome to ZebCast!</h2>
         <p>Hi ${name},</p>
@@ -72,7 +72,7 @@ class EmailService {
       const htmlContent = this.applyTemplate(template);
 
       await transporter.sendMail({
-        from: smtp_from,
+        from: `"${smtp_from_name}" <${smtp_from_email}>`,
         to: email,
         subject: 'Welcome to ZebCast',
         html: htmlContent,
@@ -95,7 +95,8 @@ class EmailService {
         return { success: false, message: 'SMTP not configured' };
       }
 
-      const smtp_from = Settings.get('smtp_from')?.value || 'noreply@localhost';
+      const smtp_from_email = Settings.get('smtp_from_email')?.value || 'noreply@localhost';
+      const smtp_from_name = Settings.get('smtp_from_name')?.value || 'ZebCast';
       const frontendUrl = process.env.FRONTEND_URL || 'https://panel.zebcast.app';
       const resetLink = `${frontendUrl}/reset-password?token=${resetToken}`;
 
@@ -114,7 +115,7 @@ class EmailService {
       const htmlContent = this.applyTemplate(template.replace('${resetLink}', resetLink));
 
       await transporter.sendMail({
-        from: smtp_from,
+        from: `"${smtp_from_name}" <${smtp_from_email}>`,
         to: email,
         subject: 'Reset Your Password',
         html: htmlContent,
@@ -143,11 +144,12 @@ class EmailService {
         return { success: false, message: 'SMTP not configured' };
       }
 
-      const smtp_from = Settings.get('smtp_from')?.value || 'noreply@localhost';
+      const smtp_from_email = Settings.get('smtp_from_email')?.value || 'noreply@localhost';
+      const smtp_from_name = Settings.get('smtp_from_name')?.value || 'ZebCast';
       const htmlContent = this.applyTemplate(content);
 
       await transporter.sendMail({
-        from: smtp_from,
+        from: `"${smtp_from_name}" <${smtp_from_email}>`,
         to: adminEmail,
         subject: subject,
         html: htmlContent,
