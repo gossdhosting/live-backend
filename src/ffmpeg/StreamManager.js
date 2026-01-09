@@ -170,6 +170,25 @@ class StreamManager {
     return resolutions[preset] || resolutions['720p'];
   }
 
+  // Sanitize stream key to prevent path traversal attacks
+  sanitizeStreamKey(streamKey) {
+    // Remove any path separators and parent directory references
+    // Only allow alphanumeric characters, hyphens, and underscores
+    const sanitized = streamKey.replace(/[^a-zA-Z0-9_-]/g, '');
+
+    // Ensure it's not empty after sanitization
+    if (!sanitized || sanitized.length === 0) {
+      throw new Error('Invalid stream key: must contain alphanumeric characters');
+    }
+
+    // Prevent path traversal attempts
+    if (sanitized.includes('..') || sanitized.includes('/') || sanitized.includes('\\')) {
+      throw new Error('Invalid stream key: path traversal detected');
+    }
+
+    return sanitized;
+  }
+
   getPlatformEncodingSettings(platform, customBitrate = null) {
     const presets = {
       facebook: {
@@ -405,9 +424,11 @@ class StreamManager {
         logger.info(`Cancelled pending cleanup for channel ${channelId}`);
       }
 
-      // Create channel output directory using channel ID for security
-      // SECURITY: Never use user-controlled stream_key for file paths to prevent path traversal
-      const outputDir = path.join(this.hlsBasePath, `channel_${channelId}`);
+      // Create channel output directory using sanitized stream_key
+      // SECURITY: Sanitize stream_key to prevent path traversal attacks
+      const streamKey = channel.stream_key || `channel_${channelId}`;
+      const sanitizedStreamKey = this.sanitizeStreamKey(streamKey);
+      const outputDir = path.join(this.hlsBasePath, sanitizedStreamKey);
       await mkdir(outputDir, { recursive: true }).catch(err => {
         logger.error(`Failed to create output directory for channel ${channelId}`, { error: err.message });
         throw new Error(`Failed to create output directory: ${err.message}`);
@@ -1358,11 +1379,16 @@ class StreamManager {
   // Clean up old HLS files for a channel (async, non-blocking)
   async cleanupChannelAsync(channelId) {
     try {
-      // SECURITY: Always use channel ID for path, never user-controlled stream_key
-      const outputDir = path.join(this.hlsBasePath, `channel_${channelId}`);
+      // Get channel to retrieve stream_key
+      const channel = Channel.findById(channelId);
+
+      // Use sanitized stream_key for cleanup path
+      const streamKey = channel?.stream_key || `channel_${channelId}`;
+      const sanitizedStreamKey = this.sanitizeStreamKey(streamKey);
+      const outputDir = path.join(this.hlsBasePath, sanitizedStreamKey);
 
       await rm(outputDir, { recursive: true, force: true });
-      logger.info(`Cleaned up HLS files for channel ${channelId}`);
+      logger.info(`Cleaned up HLS files for channel ${channelId}`, { streamKey: sanitizedStreamKey });
     } catch (error) {
       // ENOENT errors are fine - directory doesn't exist
       if (error.code !== 'ENOENT') {
@@ -1375,12 +1401,17 @@ class StreamManager {
   // DEPRECATED: Use cleanupChannelAsync instead
   cleanupChannel(channelId) {
     try {
-      // SECURITY: Always use channel ID for path, never user-controlled stream_key
-      const outputDir = path.join(this.hlsBasePath, `channel_${channelId}`);
+      // Get channel to retrieve stream_key
+      const channel = Channel.findById(channelId);
+
+      // Use sanitized stream_key for cleanup path
+      const streamKey = channel?.stream_key || `channel_${channelId}`;
+      const sanitizedStreamKey = this.sanitizeStreamKey(streamKey);
+      const outputDir = path.join(this.hlsBasePath, sanitizedStreamKey);
 
       if (fs.existsSync(outputDir)) {
         fs.rmSync(outputDir, { recursive: true, force: true });
-        logger.info(`Cleaned up HLS files for channel ${channelId}`);
+        logger.info(`Cleaned up HLS files for channel ${channelId}`, { streamKey: sanitizedStreamKey });
       }
     } catch (error) {
       logger.error(`Failed to cleanup channel ${channelId}`, { error: error.message });
