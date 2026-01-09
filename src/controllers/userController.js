@@ -130,7 +130,7 @@ export const updateUser = async (req, res) => {
   try {
     const { id } = req.params;
     const userId = parseInt(id);
-    const { email, name, role, plan_id, subscription_type, subscription_status, status } = req.body;
+    const { email, name, role, plan_id, subscription_type, subscription_status, status, youtube_restreaming } = req.body;
 
     // Users can only update their own profile (limited fields)
     if (req.user.role !== 'admin' && req.user.id !== userId) {
@@ -201,6 +201,10 @@ export const updateUser = async (req, res) => {
           return res.status(400).json({ error: 'Invalid status' });
         }
         updateData.status = status;
+      }
+
+      if (youtube_restreaming !== undefined) {
+        updateData.youtube_restreaming = youtube_restreaming ? 1 : 0;
       }
     }
 

@@ -135,7 +135,8 @@ export const updatePlan = async (req, res) => {
       custom_watermark,
       max_platform_connections,
       is_active,
-      is_hidden
+      is_hidden,
+      youtube_restreaming
     } = req.body;
 
     // Check if plan exists
@@ -165,6 +166,7 @@ export const updatePlan = async (req, res) => {
     if (max_platform_connections !== undefined) updateData.max_platform_connections = max_platform_connections;
     if (is_active !== undefined) updateData.is_active = is_active;
     if (is_hidden !== undefined) updateData.is_hidden = is_hidden;
+    if (youtube_restreaming !== undefined) updateData.youtube_restreaming = youtube_restreaming;
 
     const plan = Plan.update(id, updateData);
 
