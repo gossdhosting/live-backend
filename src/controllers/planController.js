@@ -74,7 +74,8 @@ export const createPlan = async (req, res) => {
       max_stream_duration,
       storage_limit_mb,
       custom_watermark,
-      max_platform_connections
+      max_platform_connections,
+      youtube_restreaming
     } = req.body;
 
     // Validation
@@ -102,7 +103,8 @@ export const createPlan = async (req, res) => {
       max_stream_duration: max_stream_duration || null,
       storage_limit_mb,
       custom_watermark: custom_watermark || false,
-      max_platform_connections: max_platform_connections || 1
+      max_platform_connections: max_platform_connections || 1,
+      youtube_restreaming: youtube_restreaming || false
     });
 
     logger.info('Plan created', { planId: plan.id, name: plan.name, createdBy: req.user.id });

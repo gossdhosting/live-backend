@@ -9,19 +9,20 @@ class User {
     name,
     role = 'user',
     plan_id,
-    subscription_type = 'monthly'
+    subscription_type = 'monthly',
+    youtube_restreaming = 0
   }) {
     const passwordHash = await bcrypt.hash(password, 10);
 
     const stmt = db.prepare(`
       INSERT INTO users (
         email, password_hash, name, role, plan_id,
-        subscription_type, subscription_status, subscription_started_at
+        subscription_type, subscription_status, subscription_started_at, youtube_restreaming
       )
-      VALUES (?, ?, ?, ?, ?, ?, 'active', CURRENT_TIMESTAMP)
+      VALUES (?, ?, ?, ?, ?, ?, 'active', CURRENT_TIMESTAMP, ?)
     `);
 
-    const result = stmt.run(email, passwordHash, name, role, plan_id, subscription_type);
+    const result = stmt.run(email, passwordHash, name, role, plan_id, subscription_type, youtube_restreaming ? 1 : 0);
     return this.findById(result.lastInsertRowid);
   }
 

@@ -11,7 +11,7 @@ import PushoverService from '../services/PushoverService.js';
 // Register new user (public endpoint)
 export const register = async (req, res) => {
   try {
-    const { email, password, name, plan_id, subscription_type } = req.body;
+    const { email, password, name, plan_id, subscription_type, youtube_restreaming } = req.body;
 
     // Validation
     if (!email || !password || !name) {
@@ -52,7 +52,8 @@ export const register = async (req, res) => {
       name,
       role: 'user',
       plan_id: selectedPlanId,
-      subscription_type: subscription_type || 'monthly'
+      subscription_type: subscription_type || 'monthly',
+      youtube_restreaming: youtube_restreaming ? 1 : 0
     });
 
     logger.info('User registered', { userId: user.id, email: user.email });
