@@ -1,6 +1,8 @@
 import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
+import { mkdir, rm, access } from 'fs/promises';
+import { createStream } from 'rotating-file-stream';
 import Channel from '../models/Channel.js';
 import Settings from '../models/Settings.js';
 import UserSettings from '../models/UserSettings.js';
@@ -30,18 +32,13 @@ class StreamManager {
     // Track scheduled cleanup timers to prevent race conditions on restart
     this.cleanupTimers = new Map();
 
-    // Ensure HLS base directory exists
+    // Ensure HLS base directory exists (async init)
     this.hlsBasePath = process.env.HLS_BASE_PATH || path.join(process.cwd(), 'var', 'hls');
-    if (!fs.existsSync(this.hlsBasePath)) {
-      fs.mkdirSync(this.hlsBasePath, { recursive: true });
-    }
+    this.ensureDirectoriesExist();
 
-    // Ensure FFmpeg log directory exists
+    // FFmpeg log directory path
     this.ffmpegLogPath =
       process.env.FFMPEG_LOG_PATH || path.join(process.cwd(), 'logs', 'ffmpeg');
-    if (!fs.existsSync(this.ffmpegLogPath)) {
-      fs.mkdirSync(this.ffmpegLogPath, { recursive: true });
-    }
 
     // FFmpeg executable path
     this.ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg';
@@ -61,6 +58,23 @@ class StreamManager {
 
     // Start health check interval
     this.startHealthMonitoring();
+
+    // Check FFmpeg version on startup
+    this.checkFFmpegVersion();
+  }
+
+  // Ensure required directories exist (non-blocking async)
+  async ensureDirectoriesExist() {
+    try {
+      await mkdir(this.hlsBasePath, { recursive: true });
+      await mkdir(this.ffmpegLogPath, { recursive: true });
+      logger.info('Directories initialized', {
+        hlsPath: this.hlsBasePath,
+        logPath: this.ffmpegLogPath
+      });
+    } catch (error) {
+      logger.error('Failed to create directories', { error: error.message });
+    }
   }
 
   // Clean up channels marked as running but not actually tracked
@@ -83,6 +97,47 @@ class StreamManager {
       }
     } catch (error) {
       logger.error('Failed to cleanup orphaned streams', { error: error.message });
+    }
+  }
+
+  // Check FFmpeg version on startup
+  async checkFFmpegVersion() {
+    try {
+      const ffmpegVersionProcess = spawn(this.ffmpegPath, ['-version']);
+
+      let versionOutput = '';
+
+      ffmpegVersionProcess.stdout.on('data', (data) => {
+        versionOutput += data.toString();
+      });
+
+      ffmpegVersionProcess.on('close', (code) => {
+        if (code === 0 && versionOutput) {
+          // Parse version from output (e.g., "ffmpeg version 4.4.2-0ubuntu0.22.04.1")
+          const versionMatch = versionOutput.match(/ffmpeg version ([0-9]+\.[0-9]+\.[0-9]+)/);
+          if (versionMatch) {
+            const version = versionMatch[1];
+            const [major, minor] = version.split('.').map(Number);
+
+            logger.info(`FFmpeg version detected: ${version}`);
+
+            // Check minimum version (FFmpeg 4.3+)
+            if (major < 4 || (major === 4 && minor < 3)) {
+              logger.warn(`FFmpeg version ${version} is outdated. Recommended: 4.3 or higher. Some features may not work correctly.`);
+            }
+          } else {
+            logger.warn('Could not parse FFmpeg version from output');
+          }
+        } else {
+          logger.error('Failed to check FFmpeg version', { code });
+        }
+      });
+
+      ffmpegVersionProcess.on('error', (err) => {
+        logger.error('Failed to execute FFmpeg version check', { error: err.message });
+      });
+    } catch (error) {
+      logger.error('Error checking FFmpeg version', { error: error.message });
     }
   }
 
@@ -316,11 +371,11 @@ class StreamManager {
               reject(new Error(`Failed to spawn yt-dlp: ${err.message}`));
             });
 
-            // Timeout after 45 seconds
+            // Timeout after 90 seconds (increased for slow connections and rate-limited IPs)
             setTimeout(() => {
               ytdlp.kill('SIGTERM');
-              reject(new Error('yt-dlp timed out after 45 seconds'));
-            }, 45000);
+              reject(new Error('yt-dlp timed out after 90 seconds'));
+            }, 90000);
           });
 
           if (!resolvedInputUrl) {
@@ -350,19 +405,20 @@ class StreamManager {
         logger.info(`Cancelled pending cleanup for channel ${channelId}`);
       }
 
-      // Create channel output directory using stream_key for isolation
-      const streamKey = channel.stream_key || `channel_${channelId}`;
-      const outputDir = path.join(this.hlsBasePath, streamKey);
-      if (!fs.existsSync(outputDir)) {
-        fs.mkdirSync(outputDir, { recursive: true });
-      }
+      // Create channel output directory using channel ID for security
+      // SECURITY: Never use user-controlled stream_key for file paths to prevent path traversal
+      const outputDir = path.join(this.hlsBasePath, `channel_${channelId}`);
+      await mkdir(outputDir, { recursive: true }).catch(err => {
+        logger.error(`Failed to create output directory for channel ${channelId}`, { error: err.message });
+        throw new Error(`Failed to create output directory: ${err.message}`);
+      });
 
       const outputPath = path.join(outputDir, 'index.m3u8');
 
       // Get HLS settings
       const hlsSegmentDuration =
         Settings.get('hls_segment_duration')?.value || '4';
-      const hlsListSize = Settings.get('hls_list_size')?.value || '6';
+      const hlsListSize = Settings.get('hls_list_size')?.value || '10'; // Increased from 6 to 10 for better buffering
 
       // Get platform streams for this channel
       const platformStreams = PlatformStream.getByChannelId(channelId);
@@ -431,15 +487,36 @@ class StreamManager {
       const qualityPreset = channel.quality_preset || '720p';
       const resolution = this.getResolutionFromPreset(qualityPreset);
 
-      // Get threading setting from database
+      // Get threading setting from database with dynamic calculation
       const threadingSetting = Settings.get('ffmpeg_threading');
-      const threads = threadingSetting?.value || 'auto'; // Default to auto if not set
+      let threads;
+
+      if (threadingSetting?.value && threadingSetting.value !== 'auto') {
+        threads = threadingSetting.value;
+      } else {
+        // Dynamic thread allocation based on resolution to prevent CPU hogging
+        // SaaS optimization: limit threads per stream to allow multiple concurrent streams
+        switch (qualityPreset) {
+          case '1080p':
+            threads = '2'; // 1080p needs 2 threads
+            break;
+          case '720p':
+            threads = '1'; // 720p uses 1 thread
+            break;
+          case '480p':
+            threads = '1'; // 480p uses 1 thread
+            break;
+          default:
+            threads = '1'; // Default to 1 thread
+        }
+        logger.info(`Dynamic thread allocation for ${qualityPreset}: ${threads} thread(s)`);
+      }
 
       // Build FFmpeg arguments with improved error handling and quality
       const ffmpegArgs = [
         '-loglevel', 'warning', // Only show warnings and errors
         '-err_detect', 'ignore_err', // Continue on non-critical errors
-        '-threads', threads === 'auto' ? '0' : threads, // 0 = auto-detect, or specific number
+        '-threads', threads, // Controlled thread count per resolution
       ];
 
       // Add loop for video files if enabled
@@ -466,8 +543,9 @@ class StreamManager {
       );
 
       // Add watermark input if enabled
+      // Use -loop 1 for static watermarks to reduce decode overhead
       if (hasWatermark) {
-        ffmpegArgs.push('-i', watermarkPath);
+        ffmpegArgs.push('-loop', '1', '-i', watermarkPath);
       }
 
       // Build filter complex for video processing
@@ -544,7 +622,8 @@ class StreamManager {
         // Single encoder for all outputs
         ffmpegArgs.push(
           '-c:v', 'libx264',
-          '-preset', 'ultrafast', // Use ultrafast preset for 2-core VPS
+          '-preset', 'veryfast', // Changed from ultrafast to veryfast for better quality with minimal CPU increase
+          '-tune', 'zerolatency', // Optimize for low-latency streaming
           '-pix_fmt', 'yuv420p',  // Force YUV 4:2:0 for Twitch/player compatibility
           '-flags', '+global_header', // Ensure SPS/PPS headers work in Tee muxer
           '-g', '60',
@@ -627,12 +706,14 @@ class StreamManager {
         );
       }
 
-      // Create log file for this channel
-      const logFilePath = path.join(
-        this.ffmpegLogPath,
-        `channel_${channelId}.log`
-      );
-      const logStream = fs.createWriteStream(logFilePath, { flags: 'a' });
+      // Create rotating log file for this channel
+      // Logs will rotate at 10MB, keep 5 files, and compress old logs
+      const logStream = createStream(`channel_${channelId}.log`, {
+        size: '10M', // Max 10MB per file
+        maxFiles: 5, // Keep 5 rotated files
+        path: this.ffmpegLogPath,
+        compress: 'gzip' // Compress old logs
+      });
 
       logger.info(`Starting stream for channel ${channelId}`, {
         inputUrl: channel.input_url,
@@ -722,6 +803,17 @@ class StreamManager {
           'Invalid data found',
           'Decoder (codec none) not found',
           'No such file or directory',
+          'Conversion failed',
+          'Unable to parse option value',
+          'Invalid argument',
+          'Operation not permitted',
+          'Broken pipe',
+          'I/O error',
+          'Input/output error',
+          'av_interleaved_write_frame(): Immediate exit requested',
+          'Error opening filters',
+          'Cannot allocate memory',
+          'Permission denied'
         ];
 
         const isCriticalError = criticalErrors.some(err => message.includes(err));
@@ -970,16 +1062,40 @@ class StreamManager {
       setTimeout(() => {
         if (this.processes.has(channelId)) {
           logger.warn(`Force killing stream for channel ${channelId}`);
-          processInfo.process.kill('SIGKILL');
+          const processInfo = this.processes.get(channelId);
+          if (processInfo) {
+            processInfo.process.kill('SIGKILL');
+          }
+
+          // Forcefully cleanup after SIGKILL to prevent zombie processes
+          setTimeout(() => {
+            if (this.processes.has(channelId)) {
+              logger.error(`Process ${channelId} still exists after SIGKILL, forcing cleanup`);
+              this.processes.delete(channelId);
+              this.healthMetrics.delete(channelId);
+              this.rtmpConnectionStatus.delete(channelId);
+              Channel.updateStatus(channelId, 'stopped', null, 'Force stopped - process cleanup');
+            }
+          }, 2000); // Wait 2 seconds after SIGKILL
         }
       }, 5000);
 
-      // Clean up HLS files after stopping to prevent stale content
-      const cleanupTimer = setTimeout(() => {
-        this.cleanupChannel(channelId);
+      // Clean up HLS files after stopping - use longer delay to prevent breaking active viewers
+      // HLS files are deleted after 5 minutes to allow:
+      // 1. Active viewers to finish watching buffered segments
+      // 2. Network delays and player seeking operations
+      // 3. New stream starts will overwrite old files anyway
+      const cleanupTimer = setTimeout(async () => {
+        // Double check stream hasn't restarted
+        if (this.processes.has(channelId)) {
+          logger.info(`Skipping cleanup for channel ${channelId} - stream restarted`);
+          return;
+        }
+
+        await this.cleanupChannelAsync(channelId);
         this.cleanupTimers.delete(channelId);
         logger.info(`Cleaned up HLS files for stopped channel ${channelId}`);
-      }, 6000); // Wait 6s to ensure FFmpeg has fully stopped
+      }, 5 * 60 * 1000); // Wait 5 minutes instead of 6 seconds
 
       // Store the timer so it can be cancelled if stream is restarted quickly
       this.cleanupTimers.set(channelId, cleanupTimer);
@@ -1239,12 +1355,28 @@ class StreamManager {
     await Promise.allSettled(promises);
   }
 
-  // Clean up old HLS files for a channel
+  // Clean up old HLS files for a channel (async, non-blocking)
+  async cleanupChannelAsync(channelId) {
+    try {
+      // SECURITY: Always use channel ID for path, never user-controlled stream_key
+      const outputDir = path.join(this.hlsBasePath, `channel_${channelId}`);
+
+      await rm(outputDir, { recursive: true, force: true });
+      logger.info(`Cleaned up HLS files for channel ${channelId}`);
+    } catch (error) {
+      // ENOENT errors are fine - directory doesn't exist
+      if (error.code !== 'ENOENT') {
+        logger.error(`Failed to cleanup channel ${channelId}`, { error: error.message });
+      }
+    }
+  }
+
+  // Clean up old HLS files for a channel (sync, kept for backward compatibility)
+  // DEPRECATED: Use cleanupChannelAsync instead
   cleanupChannel(channelId) {
     try {
-      const channel = Channel.findById(channelId);
-      const streamKey = channel?.stream_key || `channel_${channelId}`;
-      const outputDir = path.join(this.hlsBasePath, streamKey);
+      // SECURITY: Always use channel ID for path, never user-controlled stream_key
+      const outputDir = path.join(this.hlsBasePath, `channel_${channelId}`);
 
       if (fs.existsSync(outputDir)) {
         fs.rmSync(outputDir, { recursive: true, force: true });

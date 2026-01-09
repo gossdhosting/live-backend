@@ -1,6 +1,7 @@
 import RtmpDestination from '../models/RtmpDestination.js';
 import RtmpTemplate from '../models/RtmpTemplate.js';
 import Channel from '../models/Channel.js';
+import User from '../models/User.js';
 import logger from '../utils/logger.js';
 
 export const getRtmpDestinations = async (req, res) => {
@@ -53,6 +54,21 @@ export const createRtmpDestination = async (req, res) => {
       return res.status(400).json({ error: 'Invalid platform. Must be facebook, youtube, twitch, or custom' });
     }
 
+    // Validate custom_bitrate against plan limits (unless admin)
+    if (custom_bitrate && req.user.role !== 'admin') {
+      const userLimits = await User.checkPlanLimits(req.user.id);
+      if (userLimits && userLimits.limits.max_bitrate) {
+        const requestedBitrate = parseInt(custom_bitrate);
+        if (requestedBitrate > userLimits.limits.max_bitrate) {
+          return res.status(403).json({
+            error: `Custom bitrate ${requestedBitrate}k exceeds your plan limit of ${userLimits.limits.max_bitrate}k`,
+            max_bitrate: userLimits.limits.max_bitrate,
+            requested_bitrate: requestedBitrate
+          });
+        }
+      }
+    }
+
     const destination = RtmpDestination.create({
       channel_id: channelId,
       platform: platform.toLowerCase(),
@@ -92,6 +108,21 @@ export const updateRtmpDestination = async (req, res) => {
       const validPlatforms = ['facebook', 'youtube', 'twitch', 'custom'];
       if (!validPlatforms.includes(platform.toLowerCase())) {
         return res.status(400).json({ error: 'Invalid platform. Must be facebook, youtube, twitch, or custom' });
+      }
+    }
+
+    // Validate custom_bitrate against plan limits if provided (unless admin)
+    if (custom_bitrate !== undefined && req.user.role !== 'admin') {
+      const userLimits = await User.checkPlanLimits(req.user.id);
+      if (userLimits && userLimits.limits.max_bitrate) {
+        const requestedBitrate = parseInt(custom_bitrate);
+        if (requestedBitrate > userLimits.limits.max_bitrate) {
+          return res.status(403).json({
+            error: `Custom bitrate ${requestedBitrate}k exceeds your plan limit of ${userLimits.limits.max_bitrate}k`,
+            max_bitrate: userLimits.limits.max_bitrate,
+            requested_bitrate: requestedBitrate
+          });
+        }
       }
     }
 
