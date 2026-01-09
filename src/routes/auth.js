@@ -1,6 +1,7 @@
 import express from 'express';
 import {
   login,
+  socialLogin,
   getCurrentUser,
   updateProfile,
   changePassword,
@@ -14,6 +15,7 @@ const router = express.Router();
 
 // Public routes
 router.post('/login', loginLimiter, login);
+router.post('/social-login', loginLimiter, socialLogin);
 
 // Protected routes
 router.get('/me', authenticateToken, getCurrentUser);

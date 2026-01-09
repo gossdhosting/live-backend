@@ -247,6 +247,86 @@ class User {
 
     return user;
   }
+
+  // Find user by Firebase UID
+  static findByFirebaseUid(firebaseUid) {
+    const stmt = db.prepare('SELECT * FROM users WHERE firebase_uid = ?');
+    return stmt.get(firebaseUid);
+  }
+
+  // Create user from social login
+  static async createSocialUser({
+    email,
+    name,
+    auth_provider,
+    firebase_uid,
+    email_verified,
+    profile_picture,
+    plan_id,
+    role = 'user',
+    subscription_type = 'monthly'
+  }) {
+    const stmt = db.prepare(`
+      INSERT INTO users (
+        email, name, auth_provider, firebase_uid, email_verified,
+        profile_picture, role, plan_id, subscription_type,
+        subscription_status, subscription_started_at, password_hash
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', CURRENT_TIMESTAMP, NULL)
+    `);
+
+    const result = stmt.run(
+      email,
+      name,
+      auth_provider,
+      firebase_uid,
+      email_verified ? 1 : 0,
+      profile_picture,
+      role,
+      plan_id,
+      subscription_type
+    );
+
+    return this.findById(result.lastInsertRowid);
+  }
+
+  // Update social user info (for existing users who link social accounts)
+  static updateSocialAuth(id, { firebase_uid, auth_provider, profile_picture, email_verified }) {
+    const fields = [];
+    const values = [];
+
+    if (firebase_uid !== undefined) {
+      fields.push('firebase_uid = ?');
+      values.push(firebase_uid);
+    }
+
+    if (auth_provider !== undefined) {
+      fields.push('auth_provider = ?');
+      values.push(auth_provider);
+    }
+
+    if (profile_picture !== undefined) {
+      fields.push('profile_picture = ?');
+      values.push(profile_picture);
+    }
+
+    if (email_verified !== undefined) {
+      fields.push('email_verified = ?');
+      values.push(email_verified ? 1 : 0);
+    }
+
+    if (fields.length === 0) return null;
+
+    fields.push('updated_at = CURRENT_TIMESTAMP');
+    values.push(id);
+
+    const stmt = db.prepare(`
+      UPDATE users SET ${fields.join(', ')} WHERE id = ?
+    `);
+
+    stmt.run(...values);
+    return this.findById(id);
+  }
 }
 
 export default User;
