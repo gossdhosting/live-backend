@@ -596,13 +596,17 @@ class StreamManager {
       // For RTMP input, add specific buffer settings to handle incoming stream
       if (isRtmpInput) {
         ffmpegArgs.push(
-          '-rtmp_buffer', '1000', // 1 second buffer for RTMP input
           '-rtmp_live', 'live'     // Optimize for live streaming
         );
       }
 
+      // Only use -re flag for video files to control playback speed
+      // For live streams (YouTube/RTMP), skip -re to allow faster processing
+      if (isVideoFile) {
+        ffmpegArgs.push('-re'); // Read input at native frame rate for video files
+      }
+
       ffmpegArgs.push(
-        '-re', // Read input at native frame rate
         '-i',
         resolvedInputUrl
       );
@@ -687,7 +691,7 @@ class StreamManager {
         // Single encoder for all outputs
         ffmpegArgs.push(
           '-c:v', 'libx264',
-          '-preset', 'veryfast', // Changed from ultrafast to veryfast for better quality with minimal CPU increase
+          '-preset', 'ultrafast', // Use ultrafast for maximum speed in live streaming
           '-tune', 'zerolatency', // Optimize for low-latency streaming
           '-pix_fmt', 'yuv420p',  // Force YUV 4:2:0 for Twitch/player compatibility
           '-flags', '+global_header', // Ensure SPS/PPS headers work in Tee muxer
