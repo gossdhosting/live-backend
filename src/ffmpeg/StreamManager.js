@@ -648,6 +648,14 @@ class StreamManager {
 
         logger.info(`Title-only filter with scaling to ${qualityPreset} (${resolution.width}x${resolution.height}) applied for channel ${channelId}`);
         Channel.addLog(channelId, 'info', `Output quality: ${qualityPreset} (${resolution.width}x${resolution.height}) with title overlay`);
+      } else if (isRtmpInput) {
+        // RTMP input without watermark/title - still need to scale for proper resolution
+        const scaleFilter = `[0:v]scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=decrease,pad=${resolution.width}:${resolution.height}:(ow-iw)/2:(oh-ih)/2[vout]`;
+
+        ffmpegArgs.push('-filter_complex', scaleFilter);
+
+        logger.info(`RTMP input scaling to ${qualityPreset} (${resolution.width}x${resolution.height}) for channel ${channelId}`);
+        Channel.addLog(channelId, 'info', `Output quality: ${qualityPreset} (${resolution.width}x${resolution.height})`);
       }
 
       // Log title overlay if enabled
@@ -661,8 +669,9 @@ class StreamManager {
       }
 
       // OPTIMIZATION: Only encode if we need to apply filters (watermark or title)
-      // If no filters needed, use stream copy for maximum performance
-      const needsEncoding = hasWatermark || (titleEnabled && streamTitle);
+      // OR if using RTMP input (to control bitrate and keyframe interval for platforms)
+      // If no filters needed and not RTMP input, use stream copy for maximum performance
+      const needsEncoding = hasWatermark || (titleEnabled && streamTitle) || isRtmpInput;
 
       if (needsEncoding) {
         // Single encoder for all outputs
