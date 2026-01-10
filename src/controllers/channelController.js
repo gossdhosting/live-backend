@@ -385,7 +385,7 @@ export const getChannelRtmpDestinations = (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    const destinations = RtmpDestination.getByChannelId(id);
+    const destinations = RtmpDestination.getAll(id);
 
     res.json({ destinations });
   } catch (error) {
