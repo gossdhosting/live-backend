@@ -300,6 +300,47 @@ export const startStream = async (req, res) => {
       return res.status(400).json({ error: 'Stream is already running' });
     }
 
+    // Check for platform conflicts - platforms like Twitch only allow one stream per account
+    const PlatformStream = (await import('../models/PlatformStream.js')).default;
+    const channelPlatformStreams = PlatformStream.getByChannelId(id);
+
+    if (channelPlatformStreams.length > 0) {
+      // Get all user's running channels
+      const userChannels = Channel.findByUserId(channel.user_id);
+      const runningChannels = userChannels.filter(c => c.status === 'running' && c.id !== id);
+
+      if (runningChannels.length > 0) {
+        // Check if any running channel shares platforms with this channel
+        const conflicts = [];
+
+        for (const runningChannel of runningChannels) {
+          const runningPlatforms = PlatformStream.getByChannelId(runningChannel.id);
+
+          for (const newPlatform of channelPlatformStreams) {
+            const conflict = runningPlatforms.find(
+              rp => rp.platform_connection_id === newPlatform.platform_connection_id
+            );
+
+            if (conflict) {
+              conflicts.push({
+                platform: conflict.platform,
+                channel: runningChannel.name
+              });
+            }
+          }
+        }
+
+        if (conflicts.length > 0) {
+          const platformList = conflicts.map(c => c.platform).join(', ');
+          const channelList = [...new Set(conflicts.map(c => c.channel))].join(', ');
+
+          return res.status(400).json({
+            error: `Platform conflict detected: ${platformList} is already streaming from channel "${channelList}". Most platforms only allow one active stream per account. Please stop the other stream first.`
+          });
+        }
+      }
+    }
+
     const result = await streamManager.startStream(id, req.user);
 
     logger.info('Stream started', { channelId: id, userId: req.user.id });
