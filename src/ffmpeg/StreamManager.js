@@ -566,16 +566,20 @@ class StreamManager {
         ffmpegArgs.push(
           '-reconnect', '1',
           '-reconnect_streamed', '1',
-          '-reconnect_delay_max', '5',
-          '-timeout', '10000000'
+          '-reconnect_delay_max', '5'
         );
+
+        // CRITICAL: Do NOT add -timeout for RTMP input as it implies -rtmp_listen 1
+        // which forces FFmpeg into server/listen mode
+        if (!isRtmpInput) {
+          ffmpegArgs.push('-timeout', '10000000');
+        }
       }
 
       // For RTMP input, add specific buffer settings to handle incoming stream
       if (isRtmpInput) {
         ffmpegArgs.push(
-          '-rtmp_live', 'live',    // Optimize for live streaming
-          '-rtmp_listen', '0'       // CRITICAL: Disable listen mode, act as client only
+          '-rtmp_live', 'live'     // Optimize for live streaming (act as client)
         );
       }
 
