@@ -29,9 +29,6 @@ class StreamManager {
     // Map<channelId, Map<destinationId, {status: 'connecting'|'connected'|'disconnected', lastUpdate: Date}>>
     this.rtmpConnectionStatus = new Map();
 
-    // Track scheduled cleanup timers to prevent race conditions on restart
-    this.cleanupTimers = new Map();
-
     // Ensure HLS base directory exists (async init)
     this.hlsBasePath = process.env.HLS_BASE_PATH || path.join(process.cwd(), 'var', 'hls');
     this.ensureDirectoriesExist();
@@ -425,13 +422,6 @@ class StreamManager {
 
       // Note: Per-user concurrent stream limits are checked above (lines 177-179)
       // No need for global limit - each user has their own plan limits
-
-      // Cancel any pending cleanup for this channel (in case of quick restart)
-      if (this.cleanupTimers.has(channelId)) {
-        clearTimeout(this.cleanupTimers.get(channelId));
-        this.cleanupTimers.delete(channelId);
-        logger.info(`Cancelled pending cleanup for channel ${channelId}`);
-      }
 
       // Create channel output directory using sanitized stream_key
       // SECURITY: Sanitize stream_key to prevent path traversal attacks
@@ -1128,25 +1118,7 @@ class StreamManager {
         }
       }, 5000);
 
-      // Clean up HLS files after stopping - use longer delay to prevent breaking active viewers
-      // HLS files are deleted after 5 minutes to allow:
-      // 1. Active viewers to finish watching buffered segments
-      // 2. Network delays and player seeking operations
-      // 3. New stream starts will overwrite old files anyway
-      const cleanupTimer = setTimeout(async () => {
-        // Double check stream hasn't restarted
-        if (this.processes.has(channelId)) {
-          logger.info(`Skipping cleanup for channel ${channelId} - stream restarted`);
-          return;
-        }
-
-        await this.cleanupChannelAsync(channelId);
-        this.cleanupTimers.delete(channelId);
-        logger.info(`Cleaned up HLS files for stopped channel ${channelId}`);
-      }, 5 * 60 * 1000); // Wait 5 minutes instead of 6 seconds
-
-      // Store the timer so it can be cancelled if stream is restarted quickly
-      this.cleanupTimers.set(channelId, cleanupTimer);
+      // HLS cleanup timer removed - no HLS files are generated anymore
 
       Channel.addLog(channelId, 'info', 'Stream stop requested');
 
