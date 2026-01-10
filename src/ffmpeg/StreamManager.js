@@ -560,20 +560,17 @@ class StreamManager {
         Channel.addLog(channelId, 'info', 'Video will loop automatically');
       }
 
-      // Add reconnection settings for live streams (YouTube and RTMP input)
+      // Add reconnection settings for live streams
       // Video files don't need reconnection as they're local files
-      if (!isVideoFile) {
+      // RTMP protocol doesn't support -reconnect/-timeout options (HTTP/HLS only)
+      // CRITICAL: -timeout for RTMP implies -rtmp_listen 1 (server mode)
+      if (!isVideoFile && !isRtmpInput) {
         ffmpegArgs.push(
           '-reconnect', '1',
           '-reconnect_streamed', '1',
-          '-reconnect_delay_max', '5'
+          '-reconnect_delay_max', '5',
+          '-timeout', '10000000'
         );
-
-        // CRITICAL: Do NOT add -timeout for RTMP input as it implies -rtmp_listen 1
-        // which forces FFmpeg into server/listen mode
-        if (!isRtmpInput) {
-          ffmpegArgs.push('-timeout', '10000000');
-        }
       }
 
       // For RTMP input, add specific buffer settings to handle incoming stream
