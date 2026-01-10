@@ -325,6 +325,37 @@ class StreamManager {
         const rtmpInputUrl = `rtmp://127.0.0.1:1935/live/${channel.stream_key}`;
         resolvedInputUrl = rtmpInputUrl;
         logger.info(`Using RTMP input for channel ${channelId}: ${rtmpInputUrl}`);
+
+        // Verify RTMP stream is available before starting
+        // This prevents FFmpeg from failing or entering listen mode
+        const { spawn } = await import('child_process');
+        const testProbe = spawn('ffprobe', [
+          '-v', 'quiet',
+          '-print_format', 'json',
+          '-show_streams',
+          '-timeout', '3000000', // 3 second timeout
+          rtmpInputUrl
+        ]);
+
+        await new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            testProbe.kill();
+            reject(new Error('RTMP stream not available. Please ensure OBS/encoder is connected and streaming.'));
+          }, 5000); // 5 second max wait
+
+          let output = '';
+          testProbe.stdout.on('data', (data) => { output += data; });
+
+          testProbe.on('close', (code) => {
+            clearTimeout(timeout);
+            if (code === 0 && output.includes('"streams"')) {
+              logger.info(`RTMP stream verified available for channel ${channelId}`);
+              resolve();
+            } else {
+              reject(new Error('RTMP stream not available. Please ensure OBS/encoder is connected and streaming.'));
+            }
+          });
+        });
       }
       // If input type is video, get the file path from MediaFile
       else if (isVideoFile) {
