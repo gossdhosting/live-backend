@@ -23,14 +23,17 @@ export const updateUserSettings = (req, res) => {
       return res.status(400).json({ error: 'Invalid settings format' });
     }
 
-    // Validate title settings
+    // Validate title and watermark settings
     const allowedKeys = [
       'title_bg_color',
       'title_opacity',
       'title_position',
       'title_text_color',
       'title_font_size',
-      'title_box_padding'
+      'title_box_padding',
+      'watermark_position',
+      'watermark_opacity',
+      'watermark_scale'
     ];
 
     // Filter to only allowed keys
@@ -85,6 +88,28 @@ export const updateUserSettings = (req, res) => {
       const colorRegex = /^#[0-9A-F]{6}$/i;
       if (!colorRegex.test(filteredSettings.title_text_color)) {
         return res.status(400).json({ error: 'Invalid title_text_color format (use #RRGGBB)' });
+      }
+    }
+
+    // Validate watermark settings
+    if (filteredSettings.watermark_opacity !== undefined) {
+      const opacity = parseFloat(filteredSettings.watermark_opacity);
+      if (isNaN(opacity) || opacity < 0 || opacity > 1) {
+        return res.status(400).json({ error: 'watermark_opacity must be between 0 and 1' });
+      }
+    }
+
+    if (filteredSettings.watermark_scale !== undefined) {
+      const scale = parseFloat(filteredSettings.watermark_scale);
+      if (isNaN(scale) || scale < 0.1 || scale > 2.0) {
+        return res.status(400).json({ error: 'watermark_scale must be between 0.1 and 2.0' });
+      }
+    }
+
+    if (filteredSettings.watermark_position) {
+      const validPositions = ['top-left', 'top-right', 'bottom-left', 'bottom-right', 'center'];
+      if (!validPositions.includes(filteredSettings.watermark_position)) {
+        return res.status(400).json({ error: 'Invalid watermark_position value' });
       }
     }
 
