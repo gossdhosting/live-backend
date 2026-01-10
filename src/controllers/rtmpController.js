@@ -1,227 +1,87 @@
-import RtmpDestination from '../models/RtmpDestination.js';
-import RtmpTemplate from '../models/RtmpTemplate.js';
 import Channel from '../models/Channel.js';
-import User from '../models/User.js';
 import logger from '../utils/logger.js';
 
-export const getRtmpDestinations = async (req, res) => {
+/**
+ * RTMP Authentication Handler
+ * Called by nginx-rtmp when a client tries to publish a stream
+ *
+ * nginx-rtmp sends POST request with form data:
+ * - name: stream key (e.g., "1ECBA5F83")
+ * - app: application name (e.g., "live")
+ */
+export const rtmpAuth = (req, res) => {
   try {
-    const { channelId } = req.params;
+    const streamKey = req.body.name;
+    const app = req.body.app;
 
-    // Verify channel exists
-    const channel = Channel.findById(channelId);
+    logger.info('RTMP authentication attempt', { streamKey, app });
+
+    if (!streamKey) {
+      logger.warn('RTMP auth failed: no stream key provided');
+      return res.status(403).send('Forbidden');
+    }
+
+    // Find channel by stream_key
+    const channel = Channel.findByStreamKey(streamKey);
+
     if (!channel) {
-      return res.status(404).json({ error: 'Channel not found' });
+      logger.warn('RTMP auth failed: invalid stream key', { streamKey });
+      return res.status(403).send('Forbidden');
     }
 
-    // Check ownership (admins can view all, users only their own)
-    if (req.user.role !== 'admin' && channel.user_id !== req.user.id) {
-      return res.status(403).json({ error: 'Access denied' });
+    // Check if channel is configured for RTMP input
+    if (channel.input_type !== 'rtmp') {
+      logger.warn('RTMP auth failed: channel not configured for RTMP input', {
+        streamKey,
+        channelId: channel.id,
+        inputType: channel.input_type
+      });
+      return res.status(403).send('Forbidden');
     }
 
-    const destinations = RtmpDestination.getAll(channelId);
-    res.json({ destinations });
-  } catch (error) {
-    logger.error('Failed to fetch RTMP destinations', { error: error.message });
-    res.status(500).json({ error: 'Failed to fetch RTMP destinations' });
-  }
-};
-
-export const createRtmpDestination = async (req, res) => {
-  try {
-    const { channelId } = req.params;
-    const { platform, rtmp_url, stream_key, enabled, custom_bitrate } = req.body;
-
-    // Validate required fields
-    if (!platform || !rtmp_url || !stream_key) {
-      return res.status(400).json({ error: 'Platform, RTMP URL, and stream key are required' });
-    }
-
-    // Verify channel exists
-    const channel = Channel.findById(channelId);
-    if (!channel) {
-      return res.status(404).json({ error: 'Channel not found' });
-    }
-
-    // Check ownership (admins can modify all, users only their own)
-    if (req.user.role !== 'admin' && channel.user_id !== req.user.id) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
-
-    // Validate platform
-    const validPlatforms = ['facebook', 'youtube', 'twitch', 'custom'];
-    if (!validPlatforms.includes(platform.toLowerCase())) {
-      return res.status(400).json({ error: 'Invalid platform. Must be facebook, youtube, twitch, or custom' });
-    }
-
-    // Validate custom_bitrate against plan limits (unless admin)
-    if (custom_bitrate && req.user.role !== 'admin') {
-      const userLimits = await User.checkPlanLimits(req.user.id);
-      if (userLimits && userLimits.limits.max_bitrate) {
-        const requestedBitrate = parseInt(custom_bitrate);
-        if (requestedBitrate > userLimits.limits.max_bitrate) {
-          return res.status(403).json({
-            error: `Custom bitrate ${requestedBitrate}k exceeds your plan limit of ${userLimits.limits.max_bitrate}k`,
-            max_bitrate: userLimits.limits.max_bitrate,
-            requested_bitrate: requestedBitrate
-          });
-        }
-      }
-    }
-
-    const destination = RtmpDestination.create({
-      channel_id: channelId,
-      platform: platform.toLowerCase(),
-      rtmp_url,
-      stream_key,
-      enabled: enabled !== undefined ? (enabled ? 1 : 0) : 1,
-      custom_bitrate: custom_bitrate || null,
+    logger.info('RTMP authentication successful', {
+      streamKey,
+      channelId: channel.id,
+      channelName: channel.name
     });
 
-    logger.info(`RTMP destination created for channel ${channelId}`, { platform, id: destination.id, custom_bitrate });
-    res.status(201).json({ destination });
+    // Return 200 OK to allow the publish
+    res.status(200).send('OK');
   } catch (error) {
-    logger.error('Failed to create RTMP destination', { error: error.message });
-    res.status(500).json({ error: 'Failed to create RTMP destination' });
+    logger.error('RTMP authentication error', { error: error.message });
+    res.status(500).send('Internal Server Error');
   }
 };
 
-export const updateRtmpDestination = async (req, res) => {
+/**
+ * RTMP Publish Done Handler
+ * Called by nginx-rtmp when a stream is stopped/disconnected
+ */
+export const rtmpPublishDone = (req, res) => {
   try {
-    const { id } = req.params;
-    const { platform, rtmp_url, stream_key, enabled, custom_bitrate } = req.body;
+    const streamKey = req.body.name;
+    const app = req.body.app;
 
-    // Check if destination exists
-    const existing = RtmpDestination.getById(id);
-    if (!existing) {
-      return res.status(404).json({ error: 'RTMP destination not found' });
-    }
+    logger.info('RTMP stream ended', { streamKey, app });
 
-    // Check ownership via channel
-    const channel = Channel.findById(existing.channel_id);
-    if (channel && req.user.role !== 'admin' && channel.user_id !== req.user.id) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
+    // Find channel
+    const channel = Channel.findByStreamKey(streamKey);
 
-    // Validate platform if provided
-    if (platform) {
-      const validPlatforms = ['facebook', 'youtube', 'twitch', 'custom'];
-      if (!validPlatforms.includes(platform.toLowerCase())) {
-        return res.status(400).json({ error: 'Invalid platform. Must be facebook, youtube, twitch, or custom' });
-      }
-    }
-
-    // Validate custom_bitrate against plan limits if provided (unless admin)
-    if (custom_bitrate !== undefined && req.user.role !== 'admin') {
-      const userLimits = await User.checkPlanLimits(req.user.id);
-      if (userLimits && userLimits.limits.max_bitrate) {
-        const requestedBitrate = parseInt(custom_bitrate);
-        if (requestedBitrate > userLimits.limits.max_bitrate) {
-          return res.status(403).json({
-            error: `Custom bitrate ${requestedBitrate}k exceeds your plan limit of ${userLimits.limits.max_bitrate}k`,
-            max_bitrate: userLimits.limits.max_bitrate,
-            requested_bitrate: requestedBitrate
-          });
-        }
-      }
-    }
-
-    const destination = RtmpDestination.update(id, {
-      platform: platform?.toLowerCase(),
-      rtmp_url,
-      stream_key,
-      enabled: enabled !== undefined ? (enabled ? 1 : 0) : undefined,
-      custom_bitrate: custom_bitrate !== undefined ? custom_bitrate : undefined,
-    });
-
-    logger.info(`RTMP destination updated`, { id, platform, custom_bitrate });
-    res.json({ destination });
-  } catch (error) {
-    logger.error('Failed to update RTMP destination', { error: error.message });
-    res.status(500).json({ error: 'Failed to update RTMP destination' });
-  }
-};
-
-export const deleteRtmpDestination = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    // Check if destination exists
-    const existing = RtmpDestination.getById(id);
-    if (!existing) {
-      return res.status(404).json({ error: 'RTMP destination not found' });
-    }
-
-    // Check ownership via channel
-    const channel = Channel.findById(existing.channel_id);
-    if (channel && req.user.role !== 'admin' && channel.user_id !== req.user.id) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
-
-    RtmpDestination.delete(id);
-    logger.info(`RTMP destination deleted`, { id });
-    res.json({ message: 'RTMP destination deleted successfully' });
-  } catch (error) {
-    logger.error('Failed to delete RTMP destination', { error: error.message });
-    res.status(500).json({ error: 'Failed to delete RTMP destination' });
-  }
-};
-
-// Toggle a template for a specific channel (enable/disable)
-export const toggleTemplateForChannel = async (req, res) => {
-  try {
-    const { channelId, templateId } = req.params;
-    const { enabled } = req.body;
-
-    // Verify channel exists
-    const channel = Channel.findById(channelId);
-    if (!channel) {
-      return res.status(404).json({ error: 'Channel not found' });
-    }
-
-    // Check ownership (admins can modify all, users only their own)
-    if (req.user.role !== 'admin' && channel.user_id !== req.user.id) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
-
-    // Verify template exists
-    const template = RtmpTemplate.getById(templateId);
-    if (!template) {
-      return res.status(404).json({ error: 'Template not found' });
-    }
-
-    // Check if destination already exists for this channel+template
-    const existingDestination = RtmpDestination.getByChannelAndTemplate(channelId, templateId);
-
-    if (enabled) {
-      // Enable: create or update destination
-      if (existingDestination) {
-        const destination = RtmpDestination.update(existingDestination.id, { enabled: 1 });
-        logger.info(`RTMP destination enabled for channel ${channelId}`, { templateId });
-        return res.json({ destination });
-      } else {
-        const destination = RtmpDestination.create({
-          channel_id: channelId,
-          template_id: templateId,
-          platform: template.platform,
-          rtmp_url: template.rtmp_url,
-          stream_key: template.stream_key,
-          enabled: 1,
+    if (channel) {
+      // Update channel status if it was running
+      if (channel.status === 'running') {
+        Channel.updateStatus(channel.id, 'stopped', null, 'RTMP stream disconnected');
+        Channel.addLog(channel.id, 'info', 'RTMP input stream disconnected');
+        logger.info('Channel status updated after RTMP disconnect', {
+          channelId: channel.id,
+          streamKey
         });
-        logger.info(`RTMP destination created from template for channel ${channelId}`, { templateId });
-        return res.status(201).json({ destination });
       }
-    } else {
-      // Disable: delete destination if exists
-      if (existingDestination) {
-        RtmpDestination.delete(existingDestination.id);
-        logger.info(`RTMP destination disabled for channel ${channelId}`, { templateId });
-        return res.json({ message: 'Destination disabled' });
-      }
-      return res.json({ message: 'Destination already disabled' });
     }
+
+    res.status(200).send('OK');
   } catch (error) {
-    logger.error('Failed to toggle template for channel', { error: error.message });
-    res.status(500).json({ error: 'Failed to toggle template for channel' });
+    logger.error('RTMP publish done error', { error: error.message });
+    res.status(500).send('Internal Server Error');
   }
 };

@@ -315,12 +315,21 @@ class StreamManager {
         });
       }
 
-      // --- HANDLE INPUT TYPE (YOUTUBE VS VIDEO FILE) ---
+      // --- HANDLE INPUT TYPE (YOUTUBE VS VIDEO FILE VS RTMP) ---
       let resolvedInputUrl = channel.input_url;
       const isVideoFile = channel.input_type === 'video';
+      const isRtmpInput = channel.input_type === 'rtmp';
 
+      // If input type is RTMP, use nginx-rtmp as input source
+      if (isRtmpInput) {
+        // RTMP input comes from nginx-rtmp server on localhost
+        // Format: rtmp://localhost:1935/live/{stream_key}
+        const rtmpInputUrl = `rtmp://localhost:1935/live/${channel.stream_key}`;
+        resolvedInputUrl = rtmpInputUrl;
+        logger.info(`Using RTMP input for channel ${channelId}: ${rtmpInputUrl}`);
+      }
       // If input type is video, get the file path from MediaFile
-      if (isVideoFile) {
+      else if (isVideoFile) {
         if (!channel.media_file_id) {
           throw new Error('Media file not selected for video input type');
         }
@@ -514,29 +523,49 @@ class StreamManager {
       const qualityPreset = channel.quality_preset || '720p';
       const resolution = this.getResolutionFromPreset(qualityPreset);
 
-      // Get threading setting from database with dynamic calculation
+      // Get threading setting from database
       const threadingSetting = Settings.get('ffmpeg_threading');
       let threads;
 
-      if (threadingSetting?.value && threadingSetting.value !== 'auto') {
-        threads = threadingSetting.value;
+      if (threadingSetting?.value) {
+        if (threadingSetting.value === 'auto') {
+          // Dynamic thread allocation based on resolution to prevent CPU hogging
+          // SaaS optimization: limit threads per stream to allow multiple concurrent streams
+          switch (qualityPreset) {
+            case '1080p':
+              threads = '2'; // 1080p needs 2 threads
+              break;
+            case '720p':
+              threads = '1'; // 720p uses 1 thread
+              break;
+            case '480p':
+              threads = '1'; // 480p uses 1 thread
+              break;
+            default:
+              threads = '1'; // Default to 1 thread
+          }
+          logger.info(`Dynamic thread allocation for ${qualityPreset}: ${threads} thread(s)`);
+        } else {
+          // Use database value
+          threads = threadingSetting.value;
+          logger.info(`Using database thread setting: ${threads} thread(s)`);
+        }
       } else {
-        // Dynamic thread allocation based on resolution to prevent CPU hogging
-        // SaaS optimization: limit threads per stream to allow multiple concurrent streams
+        // No database setting, use dynamic allocation as fallback
         switch (qualityPreset) {
           case '1080p':
-            threads = '2'; // 1080p needs 2 threads
+            threads = '2';
             break;
           case '720p':
-            threads = '1'; // 720p uses 1 thread
+            threads = '1';
             break;
           case '480p':
-            threads = '1'; // 480p uses 1 thread
+            threads = '1';
             break;
           default:
-            threads = '1'; // Default to 1 thread
+            threads = '1';
         }
-        logger.info(`Dynamic thread allocation for ${qualityPreset}: ${threads} thread(s)`);
+        logger.info(`No database setting found, using dynamic allocation for ${qualityPreset}: ${threads} thread(s)`);
       }
 
       // Build FFmpeg arguments with improved error handling and quality
@@ -553,13 +582,22 @@ class StreamManager {
         Channel.addLog(channelId, 'info', 'Video will loop automatically');
       }
 
-      // Add reconnection settings only for YouTube/live streams
+      // Add reconnection settings for live streams (YouTube and RTMP input)
+      // Video files don't need reconnection as they're local files
       if (!isVideoFile) {
         ffmpegArgs.push(
           '-reconnect', '1',
           '-reconnect_streamed', '1',
           '-reconnect_delay_max', '5',
           '-timeout', '10000000'
+        );
+      }
+
+      // For RTMP input, add specific buffer settings to handle incoming stream
+      if (isRtmpInput) {
+        ffmpegArgs.push(
+          '-rtmp_buffer', '1000', // 1 second buffer for RTMP input
+          '-rtmp_live', 'live'     // Optimize for live streaming
         );
       }
 

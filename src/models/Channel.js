@@ -46,6 +46,12 @@ class Channel {
     return stmt.all(userId);
   }
 
+  // Find channel by stream key (for RTMP authentication)
+  static findByStreamKey(streamKey) {
+    const stmt = db.prepare('SELECT * FROM channels WHERE stream_key = ?');
+    return stmt.get(streamKey);
+  }
+
   // Update channel
   static update(id, data) {
     const allowedFields = ['name', 'description', 'input_url', 'auto_restart', 'quality_preset', 'stream_title', 'input_type', 'media_file_id', 'loop_video', 'title_enabled', 'watermark_enabled', 'watermark_path', 'watermark_position', 'watermark_opacity', 'watermark_scale'];

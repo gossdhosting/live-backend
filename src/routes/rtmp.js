@@ -1,25 +1,11 @@
 import express from 'express';
-import {
-  getRtmpDestinations,
-  createRtmpDestination,
-  updateRtmpDestination,
-  deleteRtmpDestination,
-  toggleTemplateForChannel,
-} from '../controllers/rtmpController.js';
-import { authenticateToken, requireAdmin } from '../middleware/auth.js';
+import { rtmpAuth, rtmpPublishDone } from '../controllers/rtmpController.js';
 
 const router = express.Router();
 
-// All routes require authentication
-router.use(authenticateToken);
-
-// RTMP destination management (users can manage their own channels)
-router.get('/channels/:channelId/rtmp', getRtmpDestinations);
-router.post('/channels/:channelId/rtmp', createRtmpDestination);
-router.put('/rtmp/:id', updateRtmpDestination);
-router.delete('/rtmp/:id', deleteRtmpDestination);
-
-// Toggle template for channel
-router.post('/channels/:channelId/rtmp/template/:templateId/toggle', toggleTemplateForChannel);
+// RTMP Input Authentication (called by nginx-rtmp, no auth token required)
+// These endpoints are called by nginx-rtmp module when streams are published
+router.post('/auth', rtmpAuth);
+router.post('/done', rtmpPublishDone);
 
 export default router;
