@@ -8,6 +8,7 @@ import {
   startStream,
   stopStream,
   getChannelLogs,
+  getChannelRtmpDestinations,
 } from '../controllers/channelController.js';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import { checkPlanLimit } from '../middleware/permissions.js';
@@ -31,5 +32,8 @@ router.post('/:id/stop', streamControlLimiter, stopStream);
 
 // Logs
 router.get('/:id/logs', getChannelLogs);
+
+// RTMP destinations
+router.get('/:id/rtmp', getChannelRtmpDestinations);
 
 export default router;

@@ -1,6 +1,7 @@
 import Channel from '../models/Channel.js';
 import MediaFile from '../models/MediaFile.js';
 import User from '../models/User.js';
+import RtmpDestination from '../models/RtmpDestination.js';
 import streamManager from '../ffmpeg/StreamManager.js';
 import { isValidYouTubeUrl, isValidChannelName } from '../utils/validation.js';
 import logger from '../utils/logger.js';
@@ -365,6 +366,30 @@ export const getChannelLogs = (req, res) => {
     res.json({ logs });
   } catch (error) {
     logger.error('Get channel logs error', { error: error.message });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// Get RTMP destinations for a channel
+export const getChannelRtmpDestinations = (req, res) => {
+  try {
+    const { id } = req.params;
+    const channel = Channel.findById(id);
+
+    if (!channel) {
+      return res.status(404).json({ error: 'Channel not found' });
+    }
+
+    // Check ownership (admins can view all, users only their own)
+    if (req.user.role !== 'admin' && channel.user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const destinations = RtmpDestination.getByChannelId(id);
+
+    res.json({ destinations });
+  } catch (error) {
+    logger.error('Get channel RTMP destinations error', { error: error.message });
     res.status(500).json({ error: 'Internal server error' });
   }
 };
