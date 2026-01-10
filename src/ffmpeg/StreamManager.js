@@ -477,19 +477,25 @@ class StreamManager {
       const defaultWatermarkEnabled = Settings.get('default_watermark_enabled')?.value === '1';
       const defaultWatermarkPath = Settings.get('default_watermark_path')?.value;
 
+      // Get user-level watermark settings
+      const userWatermarkPath = UserSettings.get(channel.user_id, 'watermark_path')?.value;
+      const userWatermarkPosition = UserSettings.get(channel.user_id, 'watermark_position')?.value;
+      const userWatermarkOpacity = UserSettings.get(channel.user_id, 'watermark_opacity')?.value;
+      const userWatermarkScale = UserSettings.get(channel.user_id, 'watermark_scale')?.value;
+
       // Determine watermark to use
       let watermarkPath = null;
       let watermarkPosition = 'bottom-right';
       let watermarkOpacity = 0.7;
       let watermarkScale = 0.15;
 
-      if (hasCustomWatermark && channel.watermark_enabled && channel.watermark_path && fs.existsSync(channel.watermark_path)) {
-        // User has custom watermark permission and has uploaded one
-        watermarkPath = channel.watermark_path;
-        watermarkPosition = channel.watermark_position || 'bottom-right';
-        watermarkOpacity = channel.watermark_opacity || 1.0;
-        watermarkScale = channel.watermark_scale || 1.0;
-        logger.info(`Using custom watermark for channel ${channelId}`, { path: watermarkPath });
+      if (hasCustomWatermark && channel.watermark_enabled && userWatermarkPath && fs.existsSync(userWatermarkPath)) {
+        // User has custom watermark permission, channel has it enabled, and user has uploaded one
+        watermarkPath = userWatermarkPath;
+        watermarkPosition = userWatermarkPosition || 'top-left';
+        watermarkOpacity = parseFloat(userWatermarkOpacity) || 1.0;
+        watermarkScale = parseFloat(userWatermarkScale) || 1.0;
+        logger.info(`Using user watermark for channel ${channelId}`, { path: watermarkPath });
       } else if (!hasCustomWatermark && defaultWatermarkEnabled && defaultWatermarkPath && fs.existsSync(defaultWatermarkPath)) {
         // Use default watermark ONLY if user doesn't have custom watermark permission
         watermarkPath = defaultWatermarkPath;
@@ -499,7 +505,7 @@ class StreamManager {
         logger.info(`Using default watermark for channel ${channelId} (no custom watermark permission)`, { path: watermarkPath });
       } else if (hasCustomWatermark) {
         // User has custom watermark permission but hasn't enabled it - no watermark at all
-        logger.info(`No watermark for channel ${channelId} (custom watermark permission, watermark not enabled)`);
+        logger.info(`No watermark for channel ${channelId} (custom watermark permission, watermark not enabled or not uploaded)`);
       }
 
       const hasWatermark = watermarkPath !== null;
