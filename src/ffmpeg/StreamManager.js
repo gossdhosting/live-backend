@@ -574,7 +574,8 @@ class StreamManager {
       // For RTMP input, add specific buffer settings to handle incoming stream
       if (isRtmpInput) {
         ffmpegArgs.push(
-          '-rtmp_live', 'live'     // Optimize for live streaming
+          '-rtmp_live', 'live',    // Optimize for live streaming
+          '-rtmp_listen', '0'       // CRITICAL: Disable listen mode, act as client only
         );
       }
 
