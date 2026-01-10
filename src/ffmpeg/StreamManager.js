@@ -435,20 +435,7 @@ class StreamManager {
 
       // Create channel output directory using sanitized stream_key
       // SECURITY: Sanitize stream_key to prevent path traversal attacks
-      const streamKey = channel.stream_key || `channel_${channelId}`;
-      const sanitizedStreamKey = this.sanitizeStreamKey(streamKey);
-      const outputDir = path.join(this.hlsBasePath, sanitizedStreamKey);
-      await mkdir(outputDir, { recursive: true }).catch(err => {
-        logger.error(`Failed to create output directory for channel ${channelId}`, { error: err.message });
-        throw new Error(`Failed to create output directory: ${err.message}`);
-      });
-
-      const outputPath = path.join(outputDir, 'index.m3u8');
-
-      // Get HLS settings
-      const hlsSegmentDuration =
-        Settings.get('hls_segment_duration')?.value || '4';
-      const hlsListSize = Settings.get('hls_list_size')?.value || '10'; // Increased from 6 to 10 for better buffering
+      // No HLS output needed - stream directly to platforms only
 
       // Get platform streams for this channel
       const platformStreams = PlatformStream.getByChannelId(channelId);
@@ -720,31 +707,35 @@ class StreamManager {
       }
       ffmpegArgs.push('-map', '0:a');
 
-      // Use Tee Muxer to send encoded stream to multiple destinations
-      if (rtmpDestinations.length > 0) {
-        // Build tee outputs
+      // Direct RTMP outputs only (no HLS)
+      if (rtmpDestinations.length === 0) {
+        throw new Error('No RTMP destinations configured. Please add at least one platform or custom RTMP destination.');
+      }
+
+      if (rtmpDestinations.length === 1) {
+        // Single output - direct RTMP without tee muxer
+        const dest = rtmpDestinations[0];
+        let rtmpUrl = dest.rtmp_url;
+        if (dest.stream_key) {
+          const separator = (!rtmpUrl.endsWith('/') && !dest.stream_key.startsWith('/')) ? '/' : '';
+          rtmpUrl = `${rtmpUrl}${separator}${dest.stream_key}`;
+        }
+
+        ffmpegArgs.push(
+          '-f', 'flv',
+          '-flvflags', 'no_duration_filesize',
+          rtmpUrl
+        );
+
+        logger.info(`Direct RTMP output to ${dest.platform} for channel ${channelId}`);
+        Channel.addLog(channelId, 'info', `Streaming to ${dest.platform}`);
+      } else {
+        // Multiple outputs - use tee muxer
         const teeOutputs = [];
 
-        // Convert Windows paths to forward slashes for FFmpeg
-        const safeOutputPath = outputPath.replace(/\\/g, '/');
-        const segmentPath = path.join(outputDir, 'segment_%03d.ts').replace(/\\/g, '/');
-
-        // HLS output for tee muxer
-        const hlsFlags = [
-          `hls_time=${hlsSegmentDuration}`,
-          `hls_list_size=${hlsListSize}`,
-          `hls_flags=delete_segments+append_list`,
-          `hls_segment_filename=${segmentPath}`
-        ].join(':');
-
-        teeOutputs.push(`[f=hls:${hlsFlags}]${safeOutputPath}`);
-
-        // Add RTMP outputs
         rtmpDestinations.forEach((dest) => {
-          // Construct full RTMP URL, adding / separator if needed
           let rtmpUrl = dest.rtmp_url;
           if (dest.stream_key) {
-            // Add separator if rtmp_url doesn't end with / and stream_key doesn't start with /
             const separator = (!rtmpUrl.endsWith('/') && !dest.stream_key.startsWith('/')) ? '/' : '';
             rtmpUrl = `${rtmpUrl}${separator}${dest.stream_key}`;
           }
@@ -755,24 +746,13 @@ class StreamManager {
           Channel.addLog(channelId, 'info', `Streaming to ${dest.platform}`);
         });
 
-        // Add tee muxer
         ffmpegArgs.push(
           '-f', 'tee',
           teeOutputs.join('|')
         );
 
-        logger.info(`Using tee muxer for ${rtmpDestinations.length + 1} outputs (1 HLS + ${rtmpDestinations.length} RTMP)`);
-        Channel.addLog(channelId, 'info', `Multi-output: HLS + ${rtmpDestinations.length} RTMP destination(s)`);
-      } else {
-        // No RTMP destinations, just output to HLS normally
-        ffmpegArgs.push(
-          '-f', 'hls',
-          '-hls_time', hlsSegmentDuration,
-          '-hls_list_size', hlsListSize,
-          '-hls_flags', 'delete_segments+append_list',
-          '-hls_segment_filename', path.join(outputDir, 'segment_%03d.ts'),
-          outputPath
-        );
+        logger.info(`Using tee muxer for ${rtmpDestinations.length} RTMP outputs`);
+        Channel.addLog(channelId, 'info', `Multi-output: ${rtmpDestinations.length} RTMP destination(s)`);
       }
 
       // Create rotating log file for this channel
@@ -786,7 +766,7 @@ class StreamManager {
 
       logger.info(`Starting stream for channel ${channelId}`, {
         inputUrl: channel.input_url,
-        outputPath,
+        rtmpDestinations: rtmpDestinations.length,
       });
 
       // Spawn FFmpeg process
@@ -812,7 +792,6 @@ class StreamManager {
 
       // Update channel status
       Channel.updateStatus(channelId, 'running', ffmpegProcess.pid, null);
-      Channel.updateOutputPath(channelId, outputPath);
       Channel.addLog(channelId, 'info', 'Stream started successfully');
 
       // Auto-update RTMP connection status to "connected" after 5 seconds if no errors
@@ -1424,46 +1403,16 @@ class StreamManager {
     await Promise.allSettled(promises);
   }
 
-  // Clean up old HLS files for a channel (async, non-blocking)
+  // HLS cleanup removed - no HLS files are generated anymore
   async cleanupChannelAsync(channelId) {
-    try {
-      // Get channel to retrieve stream_key
-      const channel = Channel.findById(channelId);
-
-      // Use sanitized stream_key for cleanup path
-      const streamKey = channel?.stream_key || `channel_${channelId}`;
-      const sanitizedStreamKey = this.sanitizeStreamKey(streamKey);
-      const outputDir = path.join(this.hlsBasePath, sanitizedStreamKey);
-
-      await rm(outputDir, { recursive: true, force: true });
-      logger.info(`Cleaned up HLS files for channel ${channelId}`, { streamKey: sanitizedStreamKey });
-    } catch (error) {
-      // ENOENT errors are fine - directory doesn't exist
-      if (error.code !== 'ENOENT') {
-        logger.error(`Failed to cleanup channel ${channelId}`, { error: error.message });
-      }
-    }
+    // No-op: HLS has been removed from the system
+    logger.info(`Cleanup called for channel ${channelId} - no action needed (HLS removed)`);
   }
 
-  // Clean up old HLS files for a channel (sync, kept for backward compatibility)
-  // DEPRECATED: Use cleanupChannelAsync instead
+  // HLS cleanup removed - no HLS files are generated anymore
   cleanupChannel(channelId) {
-    try {
-      // Get channel to retrieve stream_key
-      const channel = Channel.findById(channelId);
-
-      // Use sanitized stream_key for cleanup path
-      const streamKey = channel?.stream_key || `channel_${channelId}`;
-      const sanitizedStreamKey = this.sanitizeStreamKey(streamKey);
-      const outputDir = path.join(this.hlsBasePath, sanitizedStreamKey);
-
-      if (fs.existsSync(outputDir)) {
-        fs.rmSync(outputDir, { recursive: true, force: true });
-        logger.info(`Cleaned up HLS files for channel ${channelId}`, { streamKey: sanitizedStreamKey });
-      }
-    } catch (error) {
-      logger.error(`Failed to cleanup channel ${channelId}`, { error: error.message });
-    }
+    // No-op: HLS has been removed from the system
+    logger.info(`Cleanup called for channel ${channelId} - no action needed (HLS removed)`);
   }
 }
 
