@@ -319,9 +319,10 @@ class StreamManager {
 
       // If input type is RTMP, use nginx-rtmp as input source
       if (isRtmpInput) {
-        // RTMP input comes from nginx-rtmp server on localhost
-        // Format: rtmp://localhost:1935/live/{stream_key}
-        const rtmpInputUrl = `rtmp://localhost:1935/live/${channel.stream_key}`;
+        // RTMP input comes from nginx-rtmp server on 127.0.0.1
+        // Use explicit IPv4 to avoid IPv6 resolution issues
+        // Format: rtmp://127.0.0.1:1935/live/{stream_key}
+        const rtmpInputUrl = `rtmp://127.0.0.1:1935/live/${channel.stream_key}`;
         resolvedInputUrl = rtmpInputUrl;
         logger.info(`Using RTMP input for channel ${channelId}: ${rtmpInputUrl}`);
       }
