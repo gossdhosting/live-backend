@@ -633,22 +633,18 @@ class StreamManager {
           isDefault: watermarkPath === defaultWatermarkPath
         });
         Channel.addLog(channelId, 'info', `Watermark applied at ${watermarkPosition}${watermarkPath === defaultWatermarkPath ? ' (default)' : ''}`);
-      } else if (rtmpDestinations.length > 0 || (titleEnabled && streamTitle)) {
-        // No watermark but have RTMP destinations or title - scale and optionally add title
+      } else if (titleEnabled && streamTitle) {
+        // No watermark but have title - scale and add title
         let scaleFilter = `[0:v]scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=decrease,pad=${resolution.width}:${resolution.height}:(ow-iw)/2:(oh-ih)/2`;
 
-        // Add title overlay if enabled
-        if (titleEnabled && streamTitle) {
-          const titleDrawtext = this.buildDrawtextFilter(streamTitle, titleBgColor, titleOpacity, titlePosition, titleTextColor, titleFontSize, titleBoxPadding, resolution);
-          scaleFilter += titleDrawtext;
-        }
-
+        const titleDrawtext = this.buildDrawtextFilter(streamTitle, titleBgColor, titleOpacity, titlePosition, titleTextColor, titleFontSize, titleBoxPadding, resolution);
+        scaleFilter += titleDrawtext;
         scaleFilter += '[vout]';
 
         ffmpegArgs.push('-filter_complex', scaleFilter);
 
-        logger.info(`Quality preset ${qualityPreset} (${resolution.width}x${resolution.height}) applied for channel ${channelId}`);
-        Channel.addLog(channelId, 'info', `Output quality: ${qualityPreset} (${resolution.width}x${resolution.height})`);
+        logger.info(`Title-only filter with scaling to ${qualityPreset} (${resolution.width}x${resolution.height}) applied for channel ${channelId}`);
+        Channel.addLog(channelId, 'info', `Output quality: ${qualityPreset} (${resolution.width}x${resolution.height}) with title overlay`);
       }
 
       // Log title overlay if enabled
@@ -661,8 +657,9 @@ class StreamManager {
         Channel.addLog(channelId, 'info', `Title overlay: "${streamTitle}" at ${titlePosition}`);
       }
 
-      // OPTIMIZATION: Encode once, use tee muxer to distribute to all outputs
-      const needsEncoding = hasWatermark || rtmpDestinations.length > 0 || (titleEnabled && streamTitle);
+      // OPTIMIZATION: Only encode if we need to apply filters (watermark or title)
+      // If no filters needed, use stream copy for maximum performance
+      const needsEncoding = hasWatermark || (titleEnabled && streamTitle);
 
       if (needsEncoding) {
         // Single encoder for all outputs
@@ -784,32 +781,36 @@ class StreamManager {
       Channel.updateStatus(channelId, 'running', ffmpegProcess.pid, null);
       Channel.addLog(channelId, 'info', 'Stream started successfully');
 
-      // Auto-update RTMP connection status to "connected" after 5 seconds if no errors
+      // Auto-update RTMP connection status after 5 seconds as fallback
+      // This handles cases where FFmpeg doesn't output connection messages
+      // Only mark as connected if: process still running AND no errors detected
       if (rtmpDestinations.length > 0) {
         setTimeout(() => {
           const processStillRunning = this.processes.has(channelId);
           const rtmpStatusMap = this.rtmpConnectionStatus.get(channelId);
+          const processInfo = this.processes.get(channelId);
 
           logger.info(`[RTMP-TIMER] 5-second timer fired for channel ${channelId}`, {
             processStillRunning,
             hasRtmpStatusMap: !!rtmpStatusMap,
-            rtmpStatusMapSize: rtmpStatusMap ? rtmpStatusMap.size : 0,
-            allRtmpChannels: Array.from(this.rtmpConnectionStatus.keys())
+            errorCount: processInfo?.errorCount || 0
           });
 
           if (processStillRunning && rtmpStatusMap) {
-            // Update all RTMP destinations to connected if process is still running
+            // Only mark as connected if there were no errors during startup
+            const hasErrors = processInfo && processInfo.errorCount > 0;
+
             rtmpDestinations.forEach(dest => {
               const status = rtmpStatusMap.get(dest.id);
-              logger.info(`[RTMP-TIMER] Checking dest ${dest.platform} (ID: ${dest.id})`, {
-                hasStatus: !!status,
-                currentStatus: status?.status
-              });
               if (status && status.status === 'connecting') {
-                status.status = 'connected';
-                status.lastUpdate = new Date();
-                logger.info(`RTMP connection established for ${dest.platform} (channel ${channelId})`);
-                Channel.addLog(channelId, 'info', `${dest.platform}: Connected`);
+                if (!hasErrors) {
+                  status.status = 'connected';
+                  status.lastUpdate = new Date();
+                  logger.info(`RTMP connection assumed connected for ${dest.platform} (channel ${channelId}) - no errors detected`);
+                  Channel.addLog(channelId, 'info', `${dest.platform}: Connected`);
+                } else {
+                  logger.warn(`RTMP connection NOT marked as connected for ${dest.platform} (channel ${channelId}) - errors detected during startup`);
+                }
               }
             });
           }
@@ -890,17 +891,26 @@ class StreamManager {
         // Detect RTMP connection status
         const rtmpStatusMap = this.rtmpConnectionStatus.get(channelId);
         if (rtmpStatusMap) {
-          // Match patterns like "Opening 'rtmp://..." or "rtmp://... for writing"
-          if (message.includes('rtmp://') && (message.includes('Opening') || message.includes('for writing'))) {
+          // Match patterns that indicate successful RTMP connection:
+          // - "Opening 'rtmp://..." - FFmpeg opening connection
+          // - "rtmp://... for writing" - Starting to write
+          // - "Writing trailer for" - Successfully writing data
+          const isConnecting = message.includes('rtmp://') && (
+            message.includes('Opening') ||
+            message.includes('for writing') ||
+            message.includes('Writing trailer for')
+          );
+
+          if (isConnecting) {
             // Extract the RTMP URL to identify which destination
             rtmpDestinations.forEach(dest => {
               const baseUrl = dest.rtmp_url.replace(/\/$/, ''); // Remove trailing slash
               if (message.includes(baseUrl)) {
                 const status = rtmpStatusMap.get(dest.id);
-                if (status) {
+                if (status && status.status === 'connecting') {
                   status.status = 'connected';
                   status.lastUpdate = new Date();
-                  logger.info(`RTMP connection established for ${dest.platform} (channel ${channelId})`);
+                  logger.info(`RTMP connection established for ${dest.platform} via FFmpeg message (channel ${channelId})`);
                   Channel.addLog(channelId, 'info', `${dest.platform}: Connected`);
                 }
               }
