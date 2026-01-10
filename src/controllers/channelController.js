@@ -106,8 +106,12 @@ export const createChannel = async (req, res) => {
       if (!mediaFile) {
         return res.status(400).json({ error: 'Selected media file not found' });
       }
+    } else if (finalInputType === 'rtmp') {
+      // RTMP input type doesn't require input_url or media_file_id
+      // Stream will come from nginx-rtmp server via stream key
+      logger.info('Creating RTMP input channel', { name, userId: req.user.id });
     } else {
-      return res.status(400).json({ error: 'Invalid input type. Must be "youtube" or "video"' });
+      return res.status(400).json({ error: 'Invalid input type. Must be "youtube", "video", or "rtmp"' });
     }
 
     // Validate quality preset against plan limits (unless admin)
@@ -202,8 +206,15 @@ export const updateChannel = (req, res) => {
         .json({ error: 'Channel name must be 2-100 characters' });
     }
 
-    if (input_url && !isValidYouTubeUrl(input_url)) {
+    // Only validate YouTube URL if input_type is youtube
+    const finalInputType = input_type || channel.input_type;
+    if (input_url && finalInputType === 'youtube' && !isValidYouTubeUrl(input_url)) {
       return res.status(400).json({ error: 'Invalid YouTube URL' });
+    }
+
+    // Validate input_type if provided
+    if (input_type && !['youtube', 'video', 'rtmp'].includes(input_type)) {
+      return res.status(400).json({ error: 'Invalid input type. Must be "youtube", "video", or "rtmp"' });
     }
 
     const updateData = {};
