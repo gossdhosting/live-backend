@@ -758,6 +758,11 @@ class StreamManager {
         rtmpDestinations: rtmpDestinations.length,
       });
 
+      // Log the full FFmpeg command for debugging
+      const fullCommand = `${this.ffmpegPath} ${ffmpegArgs.join(' ')}`;
+      logger.info(`FFmpeg command for channel ${channelId}: ${fullCommand}`);
+      logStream.write(`[CMD] ${new Date().toISOString()} - ${fullCommand}\n`);
+
       // Spawn FFmpeg process
       const ffmpegProcess = spawn(this.ffmpegPath, ffmpegArgs);
 
