@@ -296,8 +296,26 @@ export const startStream = async (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
+    // Check if stream is actually running (verify process exists)
     if (channel.status === 'running') {
-      return res.status(400).json({ error: 'Stream is already running' });
+      // Verify the process actually exists
+      if (channel.process_id) {
+        try {
+          process.kill(channel.process_id, 0); // Signal 0 checks if process exists
+          return res.status(400).json({ error: 'Stream is already running' });
+        } catch (e) {
+          // Process doesn't exist, clean up the database state
+          logger.warn('Channel marked as running but process not found', {
+            channelId: id,
+            processId: channel.process_id
+          });
+          Channel.updateStatus(id, 'stopped', null, 'Process not found');
+        }
+      } else {
+        // No process_id but marked as running, clean up
+        logger.warn('Channel marked as running without process_id', { channelId: id });
+        Channel.updateStatus(id, 'stopped', null, 'Invalid state');
+      }
     }
 
     // Check for platform conflicts - platforms like Twitch only allow one stream per account
