@@ -171,13 +171,15 @@ export const updateChannel = (req, res) => {
       input_type,
       media_file_id,
       loop_video,
-      title_enabled
+      title_enabled,
+      watermark_enabled
     } = req.body;
 
     logger.info('Update channel request', {
       channelId: id,
       title_enabled,
       stream_title,
+      watermark_enabled,
       body: req.body
     });
 
@@ -215,6 +217,7 @@ export const updateChannel = (req, res) => {
     if (media_file_id !== undefined) updateData.media_file_id = media_file_id;
     if (loop_video !== undefined) updateData.loop_video = loop_video ? 1 : 0;
     if (title_enabled !== undefined) updateData.title_enabled = title_enabled ? 1 : 0;
+    if (watermark_enabled !== undefined) updateData.watermark_enabled = watermark_enabled ? 1 : 0;
 
     logger.info('Updating channel with data', { channelId: id, updateData });
 
