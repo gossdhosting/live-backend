@@ -1016,6 +1016,13 @@ class StreamManager {
           const lastError = processMetrics.lastError || `Exit code ${code}`;
 
           const errorMsg = `Stream failed: ${lastError}`;
+          logger.error(`FFmpeg process failed for channel ${channelId}`, {
+            code,
+            signal,
+            lastError,
+            errorCount: processMetrics.errorCount || 0
+          });
+          Channel.addLog(channelId, 'error', `FFmpeg exited with code ${code}: ${lastError}`);
           Channel.updateStatus(channelId, 'error', null, errorMsg);
           Channel.addLog(channelId, 'error', errorMsg);
 
