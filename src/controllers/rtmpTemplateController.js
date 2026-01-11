@@ -8,7 +8,8 @@ export const getRtmpTemplates = async (req, res) => {
     const templates = enabledOnly ? await RtmpTemplate.getEnabled() : await RtmpTemplate.getAll();
     res.json({ templates });
   } catch (error) {
-    logger.error('Failed to fetch RTMP templates', { error: error.message });
+    logger.error('Failed to fetch RTMP templates', { error: error.message, stack: error.stack });
+    console.error('RTMP templates error:', error);
     res.status(500).json({ error: 'Failed to fetch RTMP templates' });
   }
 };

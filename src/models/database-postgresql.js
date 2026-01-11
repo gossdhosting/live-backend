@@ -113,9 +113,11 @@ class PreparedStatement {
       }
 
       const result = await client.query(sql, params);
+      const insertId = result.rows[0]?.id || null;
       return {
         changes: result.rowCount,
-        lastInsertRowid: result.rows[0]?.id || null,
+        lastInsertRowid: insertId, // SQLite compatibility
+        lastID: insertId, // PostgreSQL compatibility
       };
     } finally {
       client.release();
