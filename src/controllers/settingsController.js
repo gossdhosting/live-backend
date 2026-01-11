@@ -19,7 +19,11 @@ export const updateSettings = async (req, res) => {
   try {
     const { settings } = req.body;
 
+    logger.info('Update settings called', { settingsKeys: Object.keys(settings || {}), settingsCount: Object.keys(settings || {}).length });
+    console.log('[Settings] Received update request:', JSON.stringify(settings, null, 2));
+
     if (!settings || typeof settings !== 'object') {
+      logger.warn('Invalid settings format received');
       return res.status(400).json({ error: 'Invalid settings format' });
     }
 
@@ -51,14 +55,18 @@ export const updateSettings = async (req, res) => {
       }
     }
 
+    logger.info('Calling Settings.updateMultiple...');
     const updatedSettings = await Settings.updateMultiple(settings);
+    logger.info('Settings.updateMultiple completed', { updatedCount: updatedSettings ? updatedSettings.length : 0 });
 
     // Reset email transporter if SMTP settings changed
     if (settings.smtp_host || settings.smtp_port || settings.smtp_user || settings.smtp_password || settings.smtp_secure || settings.smtp_from_email || settings.smtp_from_name) {
       EmailService.resetTransporter();
+      logger.info('Email transporter reset due to SMTP settings change');
     }
 
-    logger.info('Settings updated', { settings });
+    logger.info('Settings updated successfully', { settingsCount: Object.keys(settings).length });
+    console.log('[Settings] Update successful, returning:', updatedSettings?.length || 0, 'settings');
 
     res.json({ settings: updatedSettings });
   } catch (error) {
