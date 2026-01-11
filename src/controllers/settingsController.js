@@ -4,9 +4,9 @@ import EmailService from '../services/EmailService.js';
 import PushoverService from '../services/PushoverService.js';
 
 // Get all settings
-export const getAllSettings = (req, res) => {
+export const getAllSettings = async (req, res) => {
   try {
-    const settings = Settings.getAll();
+    const settings = await Settings.getAll();
     res.json({ settings });
   } catch (error) {
     logger.error('Get all settings error', { error: error.message });
@@ -15,7 +15,7 @@ export const getAllSettings = (req, res) => {
 };
 
 // Update settings
-export const updateSettings = (req, res) => {
+export const updateSettings = async (req, res) => {
   try {
     const { settings } = req.body;
 
@@ -51,7 +51,7 @@ export const updateSettings = (req, res) => {
       }
     }
 
-    const updatedSettings = Settings.updateMultiple(settings);
+    const updatedSettings = await Settings.updateMultiple(settings);
 
     // Reset email transporter if SMTP settings changed
     if (settings.smtp_host || settings.smtp_port || settings.smtp_user || settings.smtp_password || settings.smtp_secure || settings.smtp_from_email || settings.smtp_from_name) {

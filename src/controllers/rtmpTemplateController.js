@@ -5,7 +5,7 @@ export const getRtmpTemplates = async (req, res) => {
   try {
     // Check if we should only return enabled templates
     const enabledOnly = req.query.enabled === 'true';
-    const templates = enabledOnly ? RtmpTemplate.getEnabled() : RtmpTemplate.getAll();
+    const templates = enabledOnly ? await RtmpTemplate.getEnabled() : await RtmpTemplate.getAll();
     res.json({ templates });
   } catch (error) {
     logger.error('Failed to fetch RTMP templates', { error: error.message });
@@ -28,7 +28,7 @@ export const createRtmpTemplate = async (req, res) => {
       return res.status(400).json({ error: 'Invalid platform. Must be facebook, youtube, twitch, or custom' });
     }
 
-    const template = RtmpTemplate.create({
+    const template = await RtmpTemplate.create({
       name,
       platform: platform.toLowerCase(),
       rtmp_url,
@@ -49,7 +49,7 @@ export const updateRtmpTemplate = async (req, res) => {
     const { name, platform, rtmp_url, stream_key, enabled } = req.body;
 
     // Check if template exists
-    const existing = RtmpTemplate.getById(id);
+    const existing = await RtmpTemplate.getById(id);
     if (!existing) {
       return res.status(404).json({ error: 'RTMP template not found' });
     }
@@ -62,7 +62,7 @@ export const updateRtmpTemplate = async (req, res) => {
       }
     }
 
-    const template = RtmpTemplate.update(id, {
+    const template = await RtmpTemplate.update(id, {
       name,
       platform: platform?.toLowerCase(),
       rtmp_url,
@@ -83,12 +83,12 @@ export const deleteRtmpTemplate = async (req, res) => {
     const { id } = req.params;
 
     // Check if template exists
-    const existing = RtmpTemplate.getById(id);
+    const existing = await RtmpTemplate.getById(id);
     if (!existing) {
       return res.status(404).json({ error: 'RTMP template not found' });
     }
 
-    RtmpTemplate.delete(id);
+    await RtmpTemplate.delete(id);
     logger.info(`RTMP template deleted`, { id });
     res.json({ message: 'RTMP template deleted successfully' });
   } catch (error) {

@@ -5,7 +5,7 @@ import logger from '../utils/logger.js';
 export const getAllPlans = async (req, res) => {
   try {
     // Only show non-hidden plans to regular users
-    const plans = Plan.getAll();
+    const plans = await Plan.getAll();
     res.json({ plans });
   } catch (error) {
     logger.error('Failed to fetch plans', { error: error.message });
@@ -17,7 +17,7 @@ export const getAllPlans = async (req, res) => {
 export const getAllPlansForAdmin = async (req, res) => {
   try {
     // Use getAllWithStats to include subscriber counts (includes hidden plans)
-    const plans = Plan.getAllWithStats();
+    const plans = await Plan.getAllWithStats();
     res.json({ plans });
   } catch (error) {
     logger.error('Failed to fetch plans for admin', { error: error.message });
@@ -29,7 +29,7 @@ export const getAllPlansForAdmin = async (req, res) => {
 export const getPlanById = async (req, res) => {
   try {
     const { id } = req.params;
-    const plan = Plan.getById(id);
+    const plan = await Plan.getById(id);
 
     if (!plan) {
       return res.status(404).json({ error: 'Plan not found' });
@@ -45,7 +45,7 @@ export const getPlanById = async (req, res) => {
 // Get plan statistics (admin only)
 export const getPlanStats = async (req, res) => {
   try {
-    const statsArray = Plan.getPlanStats();
+    const statsArray = await Plan.getPlanStats();
     // Convert array to object keyed by plan ID for easier frontend access
     const stats = {};
     statsArray.forEach(stat => {
@@ -88,12 +88,12 @@ export const createPlan = async (req, res) => {
     }
 
     // Check if plan name already exists
-    const existingPlan = Plan.getByName(name);
+    const existingPlan = await Plan.getByName(name);
     if (existingPlan) {
       return res.status(400).json({ error: 'Plan name already exists' });
     }
 
-    const plan = Plan.create({
+    const plan = await Plan.create({
       name,
       description,
       price_monthly,
@@ -140,14 +140,14 @@ export const updatePlan = async (req, res) => {
     } = req.body;
 
     // Check if plan exists
-    const existingPlan = Plan.getById(id);
+    const existingPlan = await Plan.getById(id);
     if (!existingPlan) {
       return res.status(404).json({ error: 'Plan not found' });
     }
 
     // Check if new name conflicts with existing plan
     if (name && name !== existingPlan.name) {
-      const nameTaken = Plan.getByName(name);
+      const nameTaken = await Plan.getByName(name);
       if (nameTaken) {
         return res.status(400).json({ error: 'Plan name already exists' });
       }
@@ -168,7 +168,7 @@ export const updatePlan = async (req, res) => {
     if (is_hidden !== undefined) updateData.is_hidden = is_hidden;
     if (youtube_restreaming !== undefined) updateData.youtube_restreaming = youtube_restreaming;
 
-    const plan = Plan.update(id, updateData);
+    const plan = await Plan.update(id, updateData);
 
     logger.info('Plan updated', { planId: id, updatedBy: req.user.id });
 
@@ -188,14 +188,14 @@ export const deletePlan = async (req, res) => {
     const { id } = req.params;
 
     // Check if plan exists
-    const plan = Plan.getById(id);
+    const plan = await Plan.getById(id);
     if (!plan) {
       return res.status(404).json({ error: 'Plan not found' });
     }
 
     // Attempt to delete (soft delete)
     try {
-      Plan.delete(id);
+      await Plan.delete(id);
       logger.info('Plan deleted', { planId: id, deletedBy: req.user.id });
       res.json({ message: 'Plan deactivated successfully' });
     } catch (error) {

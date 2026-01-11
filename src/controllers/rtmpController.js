@@ -9,7 +9,7 @@ import logger from '../utils/logger.js';
  * - name: stream key (e.g., "1ECBA5F83")
  * - app: application name (e.g., "live")
  */
-export const rtmpAuth = (req, res) => {
+export const rtmpAuth = async (req, res) => {
   try {
     const streamKey = req.body.name;
     const app = req.body.app;
@@ -22,7 +22,7 @@ export const rtmpAuth = (req, res) => {
     }
 
     // Find channel by stream_key
-    const channel = Channel.findByStreamKey(streamKey);
+    const channel = await Channel.findByStreamKey(streamKey);
 
     if (!channel) {
       logger.warn('RTMP auth failed: invalid stream key', { streamKey });
@@ -57,7 +57,7 @@ export const rtmpAuth = (req, res) => {
  * RTMP Publish Done Handler
  * Called by nginx-rtmp when a stream is stopped/disconnected
  */
-export const rtmpPublishDone = (req, res) => {
+export const rtmpPublishDone = async (req, res) => {
   try {
     const streamKey = req.body.name;
     const app = req.body.app;
@@ -65,13 +65,13 @@ export const rtmpPublishDone = (req, res) => {
     logger.info('RTMP stream ended', { streamKey, app });
 
     // Find channel
-    const channel = Channel.findByStreamKey(streamKey);
+    const channel = await Channel.findByStreamKey(streamKey);
 
     if (channel) {
       // Update channel status if it was running
       if (channel.status === 'running') {
-        Channel.updateStatus(channel.id, 'stopped', null, 'RTMP stream disconnected');
-        Channel.addLog(channel.id, 'info', 'RTMP input stream disconnected');
+        await Channel.updateStatus(channel.id, 'stopped', null, 'RTMP stream disconnected');
+        await Channel.addLog(channel.id, 'info', 'RTMP input stream disconnected');
         logger.info('Channel status updated after RTMP disconnect', {
           channelId: channel.id,
           streamKey

@@ -5,14 +5,14 @@ import fs from 'fs';
 import { spawn } from 'child_process';
 
 // Get all media files
-export const getAllMedia = (req, res) => {
+export const getAllMedia = async (req, res) => {
   try {
     const userId = req.user.id;
     const isAdmin = req.user.role === 'admin';
 
     // Admins see all media, users see only their own
-    const mediaFiles = isAdmin ? MediaFile.findAll() : MediaFile.findByUserId(userId);
-    const totalStorage = isAdmin ? MediaFile.getTotalStorageUsed() : MediaFile.getTotalStorageUsedByUser(userId);
+    const mediaFiles = isAdmin ? await MediaFile.findAll() : await MediaFile.findByUserId(userId);
+    const totalStorage = isAdmin ? await MediaFile.getTotalStorageUsed() : await MediaFile.getTotalStorageUsedByUser(userId);
 
     res.json({
       mediaFiles,
@@ -26,10 +26,10 @@ export const getAllMedia = (req, res) => {
 };
 
 // Get single media file
-export const getMedia = (req, res) => {
+export const getMedia = async (req, res) => {
   try {
     const { id } = req.params;
-    const mediaFile = MediaFile.findById(id);
+    const mediaFile = await MediaFile.findById(id);
 
     if (!mediaFile) {
       return res.status(404).json({ error: 'Media file not found' });
@@ -73,7 +73,7 @@ export const uploadMedia = async (req, res) => {
     const duration = await getVideoDuration(filePath);
 
     // Create database record with user_id
-    const mediaFile = MediaFile.create({
+    const mediaFile = await MediaFile.create({
       filename,
       original_name: file.originalname,
       file_path: filePath,
@@ -98,10 +98,10 @@ export const uploadMedia = async (req, res) => {
 };
 
 // Delete media file
-export const deleteMedia = (req, res) => {
+export const deleteMedia = async (req, res) => {
   try {
     const { id } = req.params;
-    const mediaFile = MediaFile.findById(id);
+    const mediaFile = await MediaFile.findById(id);
 
     if (!mediaFile) {
       return res.status(404).json({ error: 'Media file not found' });
@@ -112,7 +112,7 @@ export const deleteMedia = (req, res) => {
       return res.status(403).json({ error: 'Access denied: not media file owner' });
     }
 
-    const success = MediaFile.delete(id);
+    const success = await MediaFile.delete(id);
 
     if (!success) {
       return res.status(404).json({ error: 'Media file not found' });

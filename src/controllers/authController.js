@@ -23,7 +23,7 @@ export const login = async (req, res) => {
       return res.status(400).json({ error: 'Invalid email format' });
     }
 
-    const user = User.findByEmail(email);
+    const user = await User.findByEmail(email);
 
     if (!user) {
       return res.status(401).json({ error: 'Invalid credentials' });
@@ -42,10 +42,10 @@ export const login = async (req, res) => {
 
     // Update last login info
     const ipAddress = req.ip || req.connection.remoteAddress;
-    User.updateLastLogin(user.id, ipAddress);
+    await User.updateLastLogin(user.id, ipAddress);
 
     // Get full user with plan details
-    const userWithPlan = User.findById(user.id);
+    const userWithPlan = await User.findById(user.id);
 
     logger.info('User logged in', { userId: user.id, email: user.email });
 
@@ -98,7 +98,7 @@ export const updateProfile = async (req, res) => {
     }
 
     // Verify current password
-    const user = User.findByEmail(req.user.email);
+    const user = await User.findByEmail(req.user.email);
     const isValidPassword = await User.verifyPassword(
       currentPassword,
       user.password_hash
@@ -115,7 +115,7 @@ export const updateProfile = async (req, res) => {
 
     // Check if email is already taken by another user
     if (email && email !== req.user.email) {
-      const existingUser = User.findByEmail(email);
+      const existingUser = await User.findByEmail(email);
       if (existingUser) {
         return res.status(400).json({ error: 'Email already in use' });
       }
@@ -154,7 +154,7 @@ export const changePassword = async (req, res) => {
         .json({ error: 'New password must be at least 6 characters' });
     }
 
-    const user = User.findByEmail(req.user.email);
+    const user = await User.findByEmail(req.user.email);
 
     const isValidPassword = await User.verifyPassword(
       currentPassword,
@@ -183,7 +183,7 @@ export const adminLoginAsUser = async (req, res) => {
     const targetUserId = parseInt(userId);
 
     // Verify target user exists
-    const targetUser = User.findById(targetUserId);
+    const targetUser = await User.findById(targetUserId);
     if (!targetUser) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -255,15 +255,15 @@ export const socialLogin = async (req, res) => {
     const firebaseUser = await FirebaseService.getFirebaseUser(firebaseUid);
 
     // Check if user exists in database by Firebase UID
-    let user = User.findByFirebaseUid(firebaseUid);
+    let user = await User.findByFirebaseUid(firebaseUid);
 
     if (!user) {
       // Check if user exists by email (to link existing account)
-      const existingUser = User.findByEmail(firebaseUser.email);
+      const existingUser = await User.findByEmail(firebaseUser.email);
 
       if (existingUser) {
         // Link existing account with Firebase UID
-        user = User.updateSocialAuth(existingUser.id, {
+        user = await User.updateSocialAuth(existingUser.id, {
           firebase_uid: firebaseUid,
           auth_provider: provider || decodedToken.firebase.sign_in_provider,
           profile_picture: firebaseUser.photoURL,
@@ -298,7 +298,7 @@ export const socialLogin = async (req, res) => {
         });
 
         // Send welcome email and notifications (don't wait)
-        const userWithPlan = User.findById(user.id);
+        const userWithPlan = await User.findById(user.id);
         EmailService.sendRegistrationEmail(user.email, user.name).catch(err =>
           logger.error('Failed to send registration email', { error: err.message })
         );
@@ -312,11 +312,11 @@ export const socialLogin = async (req, res) => {
     } else {
       // Update last login
       const ipAddress = req.ip || req.connection.remoteAddress;
-      User.updateLastLogin(user.id, ipAddress);
+      await User.updateLastLogin(user.id, ipAddress);
 
       // Update profile picture if changed
       if (firebaseUser.photoURL && firebaseUser.photoURL !== user.profile_picture) {
-        User.updateSocialAuth(user.id, {
+        await User.updateSocialAuth(user.id, {
           profile_picture: firebaseUser.photoURL
         });
       }
@@ -332,7 +332,7 @@ export const socialLogin = async (req, res) => {
     const token = generateToken(user.id);
 
     // Get full user with plan details
-    const userWithPlan = User.findById(user.id);
+    const userWithPlan = await User.findById(user.id);
 
     res.json({
       token,
@@ -368,7 +368,7 @@ export const forgotPassword = async (req, res) => {
       return res.status(400).json({ error: 'Valid email required' });
     }
 
-    const user = User.findByEmail(email);
+    const user = await User.findByEmail(email);
 
     if (!user) {
       // Don't reveal if user exists or not
@@ -384,7 +384,7 @@ export const forgotPassword = async (req, res) => {
     }
 
     // Create reset token
-    const resetToken = PasswordReset.create(user.id, email);
+    const resetToken = await PasswordReset.create(user.id, email);
 
     // Send email
     const emailResult = await EmailService.sendForgotPasswordEmail(email, resetToken);
@@ -417,14 +417,14 @@ export const resetPassword = async (req, res) => {
     }
 
     // Find valid token
-    const resetRecord = PasswordReset.findValidToken(token);
+    const resetRecord = await PasswordReset.findValidToken(token);
 
     if (!resetRecord) {
       return res.status(400).json({ error: 'Invalid or expired reset token' });
     }
 
     // Get user
-    const user = User.findByEmail(resetRecord.email);
+    const user = await User.findByEmail(resetRecord.email);
 
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
@@ -446,7 +446,7 @@ export const resetPassword = async (req, res) => {
     stmt.run(passwordHash, user.id);
 
     // Mark token as used
-    PasswordReset.markAsUsed(token);
+    await PasswordReset.markAsUsed(token);
 
     logger.info('Password reset successful', { userId: user.id, email: user.email });
 

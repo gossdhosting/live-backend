@@ -14,10 +14,10 @@ const QUALITY_BITRATES = {
 };
 
 // Get all channels
-export const getAllChannels = (req, res) => {
+export const getAllChannels = async (req, res) => {
   try {
     // All users (including admins) only see their own channels
-    const channels = Channel.findByUserId(req.user.id);
+    const channels = await Channel.findByUserId(req.user.id);
 
     // Enhance with real-time status
     const enhancedChannels = channels.map((channel) => ({
@@ -33,10 +33,10 @@ export const getAllChannels = (req, res) => {
 };
 
 // Get single channel
-export const getChannel = (req, res) => {
+export const getChannel = async (req, res) => {
   try {
     const { id } = req.params;
-    const channel = Channel.findById(id);
+    const channel = await Channel.findById(id);
 
     if (!channel) {
       return res.status(404).json({ error: 'Channel not found' });
@@ -103,7 +103,7 @@ export const createChannel = async (req, res) => {
         return res.status(400).json({ error: 'Media file selection is required for video input type' });
       }
       // Verify media file exists
-      const mediaFile = MediaFile.findById(media_file_id);
+      const mediaFile = await MediaFile.findById(media_file_id);
       if (!mediaFile) {
         return res.status(400).json({ error: 'Selected media file not found' });
       }
@@ -133,7 +133,7 @@ export const createChannel = async (req, res) => {
       }
     }
 
-    const channel = Channel.create({
+    const channel = await Channel.create({
       user_id: req.user.id,
       name,
       description,
@@ -163,7 +163,7 @@ export const createChannel = async (req, res) => {
 };
 
 // Update channel
-export const updateChannel = (req, res) => {
+export const updateChannel = async (req, res) => {
   try {
     const { id } = req.params;
     const {
@@ -188,7 +188,7 @@ export const updateChannel = (req, res) => {
       body: req.body
     });
 
-    const channel = Channel.findById(id);
+    const channel = await Channel.findById(id);
 
     if (!channel) {
       return res.status(404).json({ error: 'Channel not found' });
@@ -233,7 +233,7 @@ export const updateChannel = (req, res) => {
 
     logger.info('Updating channel with data', { channelId: id, updateData });
 
-    const updatedChannel = Channel.update(id, updateData);
+    const updatedChannel = await Channel.update(id, updateData);
 
     logger.info('Channel updated', { channelId: id });
 
@@ -249,7 +249,7 @@ export const deleteChannel = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const channel = Channel.findById(id);
+    const channel = await Channel.findById(id);
 
     if (!channel) {
       return res.status(404).json({ error: 'Channel not found' });
@@ -269,7 +269,7 @@ export const deleteChannel = async (req, res) => {
     streamManager.cleanupChannel(id);
 
     // Delete from database
-    Channel.delete(id);
+    await Channel.delete(id);
 
     logger.info('Channel deleted', { channelId: id });
 
@@ -285,7 +285,7 @@ export const startStream = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const channel = Channel.findById(id);
+    const channel = await Channel.findById(id);
 
     if (!channel) {
       return res.status(404).json({ error: 'Channel not found' });
@@ -309,22 +309,22 @@ export const startStream = async (req, res) => {
             channelId: id,
             processId: channel.process_id
           });
-          Channel.updateStatus(id, 'stopped', null, 'Process not found');
+          await Channel.updateStatus(id, 'stopped', null, 'Process not found');
         }
       } else {
         // No process_id but marked as running, clean up
         logger.warn('Channel marked as running without process_id', { channelId: id });
-        Channel.updateStatus(id, 'stopped', null, 'Invalid state');
+        await Channel.updateStatus(id, 'stopped', null, 'Invalid state');
       }
     }
 
     // Check for platform conflicts - platforms like Twitch only allow one stream per account
     const PlatformStream = (await import('../models/PlatformStream.js')).default;
-    const channelPlatformStreams = PlatformStream.getByChannelId(id);
+    const channelPlatformStreams = await PlatformStream.getByChannelId(id);
 
     if (channelPlatformStreams.length > 0) {
       // Get all user's running channels
-      const userChannels = Channel.findByUserId(channel.user_id);
+      const userChannels = await Channel.findByUserId(channel.user_id);
       const runningChannels = userChannels.filter(c => c.status === 'running' && c.id !== id);
 
       if (runningChannels.length > 0) {
@@ -332,7 +332,7 @@ export const startStream = async (req, res) => {
         const conflicts = [];
 
         for (const runningChannel of runningChannels) {
-          const runningPlatforms = PlatformStream.getByChannelId(runningChannel.id);
+          const runningPlatforms = await PlatformStream.getByChannelId(runningChannel.id);
 
           for (const newPlatform of channelPlatformStreams) {
             const conflict = runningPlatforms.find(
@@ -365,7 +365,7 @@ export const startStream = async (req, res) => {
 
     res.json({
       message: result.message,
-      channel: Channel.findById(id),
+      channel: await Channel.findById(id),
     });
   } catch (error) {
     logger.error('Start stream error', { error: error.message });
@@ -378,7 +378,7 @@ export const stopStream = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const channel = Channel.findById(id);
+    const channel = await Channel.findById(id);
 
     if (!channel) {
       return res.status(404).json({ error: 'Channel not found' });
@@ -395,7 +395,7 @@ export const stopStream = async (req, res) => {
 
     res.json({
       message: result.message,
-      channel: Channel.findById(id),
+      channel: await Channel.findById(id),
     });
   } catch (error) {
     logger.error('Stop stream error', { error: error.message });
@@ -404,12 +404,12 @@ export const stopStream = async (req, res) => {
 };
 
 // Get channel logs
-export const getChannelLogs = (req, res) => {
+export const getChannelLogs = async (req, res) => {
   try {
     const { id } = req.params;
     const limit = parseInt(req.query.limit) || 100;
 
-    const channel = Channel.findById(id);
+    const channel = await Channel.findById(id);
 
     if (!channel) {
       return res.status(404).json({ error: 'Channel not found' });
@@ -420,7 +420,7 @@ export const getChannelLogs = (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    const logs = Channel.getLogs(id, limit);
+    const logs = await Channel.getLogs(id, limit);
 
     res.json({ logs });
   } catch (error) {
@@ -430,10 +430,10 @@ export const getChannelLogs = (req, res) => {
 };
 
 // Get RTMP destinations for a channel
-export const getChannelRtmpDestinations = (req, res) => {
+export const getChannelRtmpDestinations = async (req, res) => {
   try {
     const { id } = req.params;
-    const channel = Channel.findById(id);
+    const channel = await Channel.findById(id);
 
     if (!channel) {
       return res.status(404).json({ error: 'Channel not found' });
@@ -444,7 +444,7 @@ export const getChannelRtmpDestinations = (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    const destinations = RtmpDestination.getAll(id);
+    const destinations = await RtmpDestination.getAll(id);
 
     res.json({ destinations });
   } catch (error) {

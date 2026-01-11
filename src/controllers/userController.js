@@ -27,7 +27,7 @@ export const register = async (req, res) => {
     }
 
     // Check if email already exists
-    const existingUser = User.findByEmail(email);
+    const existingUser = await User.findByEmail(email);
     if (existingUser) {
       return res.status(400).json({ error: 'Email already registered' });
     }
@@ -36,10 +36,10 @@ export const register = async (req, res) => {
     let selectedPlanId = plan_id;
     if (!selectedPlanId) {
       // Default to Free plan
-      const freePlan = Plan.getByName('Free');
+      const freePlan = await Plan.getByName('Free');
       selectedPlanId = freePlan?.id;
     } else {
-      const plan = Plan.getById(selectedPlanId);
+      const plan = await Plan.getById(selectedPlanId);
       if (!plan) {
         return res.status(400).json({ error: 'Invalid plan selected' });
       }
@@ -64,7 +64,7 @@ export const register = async (req, res) => {
     );
 
     // Send notifications to admin (don't wait for them)
-    const userWithPlan = User.findById(user.id);
+    const userWithPlan = await User.findById(user.id);
     EmailService.notifyAdminNewSignup(userWithPlan).catch(err =>
       logger.error('Failed to send admin email notification', { error: err.message })
     );
@@ -92,7 +92,7 @@ export const register = async (req, res) => {
 export const getAllUsers = async (req, res) => {
   try {
     const { includeInactive } = req.query;
-    const users = User.getAll({ includeInactive: includeInactive === 'true' });
+    const users = await User.getAll({ includeInactive: includeInactive === 'true' });
 
     res.json({ users });
   } catch (error) {
@@ -112,7 +112,7 @@ export const getUserById = async (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    const user = User.getUserWithPlan(userId);
+    const user = await User.getUserWithPlan(userId);
 
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
@@ -138,7 +138,7 @@ export const updateUser = async (req, res) => {
     }
 
     // Check if user exists
-    const existingUser = User.findById(userId);
+    const existingUser = await User.findById(userId);
     if (!existingUser) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -153,7 +153,7 @@ export const updateUser = async (req, res) => {
       }
       // Check if email is taken by another user
       if (email !== existingUser.email) {
-        const emailTaken = User.findByEmail(email);
+        const emailTaken = await User.findByEmail(email);
         if (emailTaken) {
           return res.status(400).json({ error: 'Email already in use' });
         }
@@ -175,7 +175,7 @@ export const updateUser = async (req, res) => {
       }
 
       if (plan_id !== undefined) {
-        const plan = Plan.getById(plan_id);
+        const plan = await Plan.getById(plan_id);
         if (!plan) {
           return res.status(400).json({ error: 'Invalid plan' });
         }
@@ -229,7 +229,7 @@ export const deleteUser = async (req, res) => {
     const userId = parseInt(id);
 
     // Check if user exists
-    const user = User.findById(userId);
+    const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -239,7 +239,7 @@ export const deleteUser = async (req, res) => {
       return res.status(400).json({ error: 'Cannot delete your own account' });
     }
 
-    User.delete(userId);
+    await User.delete(userId);
 
     logger.info('User deleted', { userId, deletedBy: req.user.id });
 
@@ -257,9 +257,9 @@ export const getUserStats = async (req, res) => {
       ? parseInt(req.params.id)
       : req.user.id;
 
-    const stats = User.getUserStats(userId);
+    const stats = await User.getUserStats(userId);
     const planLimits = await User.checkPlanLimits(userId);
-    const user = User.findById(userId);
+    const user = await User.findById(userId);
 
     // Check if user has YouTube restreaming access (user level OR plan level)
     const hasYouTubeAccess = user.youtube_restreaming === 1 || user.plan_youtube_restreaming === 1;
@@ -285,23 +285,23 @@ export const getUserDetails = async (req, res) => {
     const { id } = req.params;
     const userId = parseInt(id);
 
-    const user = User.findById(userId);
+    const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
     // Get user stats and plan information
-    const stats = User.getUserStats(userId);
+    const stats = await User.getUserStats(userId);
     const planLimits = await User.checkPlanLimits(userId);
 
     // Get platform connections
-    const platforms = PlatformConnection.getByUserId(userId);
+    const platforms = await PlatformConnection.getByUserId(userId);
 
     // Get RTMP destinations across all channels
-    const userChannels = Channel.findByUserId(userId);
+    const userChannels = await Channel.findByUserId(userId);
     let allRtmpDestinations = [];
     for (const channel of userChannels) {
-      const destinations = RtmpDestination.getAll(channel.id);
+      const destinations = await RtmpDestination.getAll(channel.id);
       allRtmpDestinations = allRtmpDestinations.concat(
         destinations.map(d => ({ ...d, channel_name: channel.name }))
       );

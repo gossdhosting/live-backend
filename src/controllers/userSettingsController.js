@@ -2,10 +2,10 @@ import UserSettings from '../models/UserSettings.js';
 import logger from '../utils/logger.js';
 
 // Get user's settings
-export const getUserSettings = (req, res) => {
+export const getUserSettings = async (req, res) => {
   try {
     const userId = req.user.id;
-    const settings = UserSettings.getAllWithDefaults(userId);
+    const settings = await UserSettings.getAllWithDefaults(userId);
     res.json({ settings });
   } catch (error) {
     logger.error('Get user settings error', { error: error.message, userId: req.user?.id });
@@ -14,7 +14,7 @@ export const getUserSettings = (req, res) => {
 };
 
 // Update user's settings
-export const updateUserSettings = (req, res) => {
+export const updateUserSettings = async (req, res) => {
   try {
     const userId = req.user.id;
     const { settings } = req.body;
@@ -113,7 +113,7 @@ export const updateUserSettings = (req, res) => {
       }
     }
 
-    const updatedSettings = UserSettings.updateMultiple(userId, filteredSettings);
+    const updatedSettings = await UserSettings.updateMultiple(userId, filteredSettings);
 
     logger.info('User settings updated', { userId, settings: filteredSettings });
 
@@ -125,15 +125,15 @@ export const updateUserSettings = (req, res) => {
 };
 
 // Reset user settings to defaults
-export const resetUserSettings = (req, res) => {
+export const resetUserSettings = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    UserSettings.deleteAll(userId);
+    await UserSettings.deleteAll(userId);
 
     logger.info('User settings reset to defaults', { userId });
 
-    const defaults = UserSettings.getDefaultTitleSettings();
+    const defaults = await UserSettings.getDefaultTitleSettings();
     res.json({ settings: defaults, message: 'Settings reset to defaults' });
   } catch (error) {
     logger.error('Reset user settings error', { error: error.message, userId: req.user?.id });
