@@ -84,8 +84,12 @@ class PreparedStatement {
   async all(...params) {
     const client = await this.pool.connect();
     try {
+      console.log('[DB] Executing query:', this.sql, 'with params:', params);
       const result = await client.query(this.sql, params);
       return result.rows;
+    } catch (error) {
+      console.error('[DB] Query failed:', this.sql, 'params:', params, 'error:', error.message);
+      throw error;
     } finally {
       client.release();
     }
