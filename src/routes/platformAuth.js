@@ -77,7 +77,8 @@ router.get('/facebook/callback', async (req, res) => {
 
     res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?tab=platforms&success=facebook_connected`);
   } catch (error) {
-    logger.error('Facebook OAuth callback failed', { error: error.message });
+    logger.error('Facebook OAuth callback failed', { error: error.message, stack: error.stack, userId: state ? JSON.parse(state).userId : 'unknown' });
+    console.error('Facebook OAuth callback error:', error);
     res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?tab=platforms&error=facebook_auth_failed`);
   }
 });
@@ -225,7 +226,8 @@ router.get('/twitch/callback', async (req, res) => {
 
     res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?tab=platforms&success=twitch_connected`);
   } catch (error) {
-    logger.error('Twitch OAuth callback failed', { error: error.message });
+    logger.error('Twitch OAuth callback failed', { error: error.message, stack: error.stack, userId: state ? JSON.parse(state).userId : 'unknown' });
+    console.error('Twitch OAuth callback error:', error);
     res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?tab=platforms&error=twitch_auth_failed`);
   }
 });
