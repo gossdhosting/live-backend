@@ -22,10 +22,12 @@ class RtmpDestination {
       data.platform,
       data.rtmp_url,
       data.stream_key,
-      data.enabled !== undefined ? data.enabled : 1,
+      data.enabled !== undefined ? data.enabled : true,
       data.custom_bitrate || null
     );
-    return await this.getById(result.lastInsertRowid);
+    // For PostgreSQL, use lastID; for SQLite, use lastInsertRowid
+    const insertedId = result.lastID || result.lastInsertRowid;
+    return await this.getById(insertedId);
   }
 
   static async getByChannelAndTemplate(channelId, templateId) {

@@ -2,7 +2,7 @@ import db from './database.js';
 
 class RtmpTemplate {
   // Create a new RTMP template
-  static async create({ name, platform, rtmp_url, stream_key, enabled = 1 }) {
+  static async create({ name, platform, rtmp_url, stream_key, enabled = true }) {
     const stmt = db.prepare(`
       INSERT INTO rtmp_templates (name, platform, rtmp_url, stream_key, enabled)
       VALUES (?, ?, ?, ?, ?)
@@ -13,9 +13,11 @@ class RtmpTemplate {
       platform,
       rtmp_url,
       stream_key,
-      enabled ? 1 : 0
+      enabled ? true : false
     );
-    return await this.getById(result.lastInsertRowid);
+    // For PostgreSQL, use lastID; for SQLite, use lastInsertRowid
+    const insertedId = result.lastID || result.lastInsertRowid;
+    return await this.getById(insertedId);
   }
 
   // Get template by ID
@@ -61,7 +63,7 @@ class RtmpTemplate {
     }
     if (enabled !== undefined) {
       fields.push('enabled = ?');
-      values.push(enabled ? 1 : 0);
+      values.push(enabled ? true : false);
     }
 
     console.log('[RtmpTemplate.update] Fields to update:', fields);
