@@ -32,7 +32,7 @@ class RtmpTemplate {
 
   // Get only enabled templates
   static async getEnabled() {
-    const stmt = db.prepare('SELECT * FROM rtmp_templates WHERE enabled = 1 ORDER BY created_at DESC');
+    const stmt = db.prepare('SELECT * FROM rtmp_templates WHERE enabled = TRUE ORDER BY created_at DESC');
     return await stmt.all();
   }
 

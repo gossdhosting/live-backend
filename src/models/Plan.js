@@ -3,13 +3,13 @@ import db from './database.js';
 class Plan {
   // Get all plans (only visible, non-hidden plans for users)
   static async getAll() {
-    const stmt = db.prepare('SELECT * FROM plans WHERE is_active = 1 AND (is_hidden IS NULL OR is_hidden = 0) ORDER BY price_monthly ASC');
+    const stmt = db.prepare('SELECT * FROM plans WHERE is_active = TRUE AND (is_hidden IS NULL OR is_hidden = FALSE) ORDER BY price_monthly ASC');
     return await stmt.all();
   }
 
   // Get all plans including hidden (for admin)
   static async getAllForAdmin() {
-    const stmt = db.prepare('SELECT * FROM plans WHERE is_active = 1 ORDER BY price_monthly ASC');
+    const stmt = db.prepare('SELECT * FROM plans WHERE is_active = TRUE ORDER BY price_monthly ASC');
     return await stmt.all();
   }
 
@@ -22,7 +22,7 @@ class Plan {
         COUNT(CASE WHEN u.subscription_status = 'active' THEN 1 END) as active_subscribers
       FROM plans p
       LEFT JOIN users u ON p.id = u.plan_id
-      WHERE p.is_active = 1
+      WHERE p.is_active = TRUE
       GROUP BY p.id
       ORDER BY p.price_monthly ASC
     `);
@@ -135,7 +135,7 @@ class Plan {
       throw new Error(`Cannot delete plan: ${usersCount.count} user(s) are currently subscribed to this plan`);
     }
 
-    const stmt = db.prepare('UPDATE plans SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+    const stmt = db.prepare('UPDATE plans SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
     return await stmt.run(id);
   }
 
@@ -157,7 +157,7 @@ class Plan {
         COUNT(CASE WHEN u.subscription_status = 'active' THEN 1 END) as active_subscribers
       FROM plans p
       LEFT JOIN users u ON p.id = u.plan_id
-      WHERE p.is_active = 1
+      WHERE p.is_active = TRUE
       GROUP BY p.id
       ORDER BY p.price_monthly ASC
     `);

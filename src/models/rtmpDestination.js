@@ -86,7 +86,7 @@ class RtmpDestination {
         t.fps as template_fps
       FROM rtmp_destinations d
       LEFT JOIN rtmp_templates t ON d.template_id = t.id
-      WHERE d.channel_id = ? AND d.enabled = 1
+      WHERE d.channel_id = ? AND d.enabled = TRUE
     `);
     return await stmt.all(channelId);
   }
