@@ -65,13 +65,24 @@ class UserSettings {
       DO UPDATE SET value = ?, updated_at = CURRENT_TIMESTAMP
     `);
 
-    const transaction = db.transaction((items) => {
-      for (const [key, value] of Object.entries(items)) {
-        stmt.run(userId, key, value, value);
-      }
-    });
+    // Filter out null/undefined values
+    const validSettings = Object.entries(settings).filter(([key, value]) => value != null);
 
-    await transaction(settings);
+    // Use different transaction approach based on database type
+    if (db.transaction) {
+      // PostgreSQL: async transaction with callback
+      await db.transaction(async () => {
+        for (const [key, value] of validSettings) {
+          await stmt.run(userId, key, value, value);
+        }
+      });
+    } else {
+      // Fallback: run statements sequentially without transaction
+      for (const [key, value] of validSettings) {
+        await stmt.run(userId, key, value, value);
+      }
+    }
+
     return await this.getAll(userId);
   }
 
