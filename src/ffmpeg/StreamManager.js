@@ -715,7 +715,8 @@ class StreamManager {
       } else {
         ffmpegArgs.push('-map', '0:v');
       }
-      ffmpegArgs.push('-map', '0:a');
+      // Make audio mapping optional (?) to support videos without audio
+      ffmpegArgs.push('-map', '0:a?');
 
       // Direct RTMP outputs only (no HLS)
       if (rtmpDestinations.length === 0) {
