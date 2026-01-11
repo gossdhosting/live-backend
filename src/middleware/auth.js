@@ -18,7 +18,7 @@ export const verifyToken = (token) => {
 };
 
 // Authentication middleware
-export const authenticateToken = (req, res, next) => {
+export const authenticateToken = async (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
 
@@ -33,7 +33,7 @@ export const authenticateToken = (req, res, next) => {
   }
 
   // Attach user info to request
-  const user = User.findById(decoded.userId);
+  const user = await User.findById(decoded.userId);
 
   if (!user) {
     return res.status(403).json({ error: 'User not found' });
