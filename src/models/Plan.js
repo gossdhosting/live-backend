@@ -73,9 +73,9 @@ class Plan {
       max_bitrate,
       max_stream_duration || null,
       storage_limit_mb,
-      custom_watermark ? 1 : 0,
+      custom_watermark ? true : false,
       max_platform_connections || 1,
-      youtube_restreaming ? 1 : 0
+      youtube_restreaming ? true : false
     );
 
     return await this.getById(result.lastInsertRowid);
@@ -106,7 +106,7 @@ class Plan {
       if (data[field] !== undefined) {
         fields.push(`${field} = ?`);
         if (field === 'custom_watermark' || field === 'is_active' || field === 'is_hidden' || field === 'youtube_restreaming') {
-          values.push(data[field] ? 1 : 0);
+          values.push(data[field] ? true : false);
         } else {
           values.push(data[field]);
         }

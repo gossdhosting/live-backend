@@ -139,16 +139,23 @@ export const updatePlan = async (req, res) => {
       youtube_restreaming
     } = req.body;
 
+    logger.info('Update plan called', { planId: id, updateFields: Object.keys(req.body) });
+    console.log('[Plan] Update request for plan', id, ':', JSON.stringify(req.body, null, 2));
+
     // Check if plan exists
     const existingPlan = await Plan.getById(id);
     if (!existingPlan) {
+      logger.warn('Plan not found', { planId: id });
       return res.status(404).json({ error: 'Plan not found' });
     }
+
+    logger.info('Existing plan found', { planId: id, currentName: existingPlan.name });
 
     // Check if new name conflicts with existing plan
     if (name && name !== existingPlan.name) {
       const nameTaken = await Plan.getByName(name);
       if (nameTaken) {
+        logger.warn('Plan name already taken', { planId: id, name });
         return res.status(400).json({ error: 'Plan name already exists' });
       }
     }
@@ -168,16 +175,21 @@ export const updatePlan = async (req, res) => {
     if (is_hidden !== undefined) updateData.is_hidden = is_hidden;
     if (youtube_restreaming !== undefined) updateData.youtube_restreaming = youtube_restreaming;
 
+    logger.info('Calling Plan.update with data', { planId: id, updateDataKeys: Object.keys(updateData) });
+    console.log('[Plan] Update data:', JSON.stringify(updateData, null, 2));
+
     const plan = await Plan.update(id, updateData);
 
-    logger.info('Plan updated', { planId: id, updatedBy: req.user.id });
+    logger.info('Plan updated successfully', { planId: id, updatedBy: req.user.id, returnedPlan: !!plan });
+    console.log('[Plan] Updated plan:', JSON.stringify(plan, null, 2));
 
     res.json({
       message: 'Plan updated successfully',
       plan
     });
   } catch (error) {
-    logger.error('Failed to update plan', { error: error.message });
+    logger.error('Failed to update plan', { error: error.message, stack: error.stack });
+    console.error('[Plan] Update failed:', error);
     res.status(500).json({ error: 'Failed to update plan' });
   }
 };
