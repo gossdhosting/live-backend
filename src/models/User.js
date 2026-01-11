@@ -203,7 +203,7 @@ class User {
       max_bitrate: user.max_bitrate,
       max_stream_duration: user.max_stream_duration,
       storage_limit_mb: user.storage_limit_mb,
-      custom_watermark: user.custom_watermark === 1,
+      custom_watermark: user.custom_watermark === true,
       max_platform_connections: maxPlatformConnections
     };
 

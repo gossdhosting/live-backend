@@ -262,7 +262,7 @@ export const getUserStats = async (req, res) => {
     const user = await User.findById(userId);
 
     // Check if user has YouTube restreaming access (user level OR plan level)
-    const hasYouTubeAccess = user.youtube_restreaming === 1 || user.plan_youtube_restreaming === 1;
+    const hasYouTubeAccess = user.youtube_restreaming === true || user.plan_youtube_restreaming === true;
 
     // Flatten the structure for easier frontend access
     res.json({

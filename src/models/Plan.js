@@ -174,7 +174,7 @@ class Plan {
       max_bitrate: plan.max_bitrate,
       max_stream_duration: plan.max_stream_duration, // null = unlimited
       storage_limit_mb: plan.storage_limit_mb,
-      custom_watermark: plan.custom_watermark === 1,
+      custom_watermark: plan.custom_watermark === true,
       max_platform_connections: plan.max_platform_connections || 1
     };
 
