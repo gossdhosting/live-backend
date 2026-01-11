@@ -13,7 +13,7 @@ class Plan {
     return await stmt.all();
   }
 
-  // Get all plans with subscriber statistics (admin only - includes hidden plans)
+  // Get all plans with subscriber statistics (admin only - includes ALL plans: active, inactive, hidden)
   static async getAllWithStats() {
     const stmt = db.prepare(`
       SELECT
@@ -22,7 +22,6 @@ class Plan {
         COUNT(CASE WHEN u.subscription_status = 'active' THEN 1 END) as active_subscribers
       FROM plans p
       LEFT JOIN users u ON p.id = u.plan_id
-      WHERE p.is_active = TRUE
       GROUP BY p.id
       ORDER BY p.price_monthly ASC
     `);
@@ -145,7 +144,7 @@ class Plan {
     return await stmt.run(id);
   }
 
-  // Get user count for each plan
+  // Get user count for each plan (admin only - shows ALL plans)
   static async getPlanStats() {
     const stmt = db.prepare(`
       SELECT
@@ -157,7 +156,6 @@ class Plan {
         COUNT(CASE WHEN u.subscription_status = 'active' THEN 1 END) as active_subscribers
       FROM plans p
       LEFT JOIN users u ON p.id = u.plan_id
-      WHERE p.is_active = TRUE
       GROUP BY p.id
       ORDER BY p.price_monthly ASC
     `);
