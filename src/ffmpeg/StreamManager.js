@@ -77,10 +77,10 @@ class StreamManager {
   // Clean up channels marked as running but not actually tracked
   async cleanupOrphanedStreams() {
     try {
-      const channels = Channel.findAll();
+      const channels = await Channel.findAll();
       let cleanedCount = 0;
 
-      for (const channel of channels) {
+      for (const channel of (Array.isArray(channels) ? channels : [])) {
         // If channel is marked as running but we don't have it in our process map
         if (channel.status === 'running' && !this.processes.has(channel.id)) {
           logger.warn(`Found orphaned stream state for channel ${channel.id}, marking as stopped`);
@@ -235,7 +235,7 @@ class StreamManager {
       // Clear manual stop flag when starting a new stream
       this.manualStops.delete(channelId);
 
-      const channel = Channel.findById(channelId);
+      const channel = await Channel.findById(channelId);
       if (!channel) {
         throw new Error('Channel not found');
       }
@@ -429,10 +429,10 @@ class StreamManager {
       // No HLS output needed - stream directly to platforms only
 
       // Get platform streams for this channel
-      const platformStreams = PlatformStream.getByChannelId(channelId);
+      const platformStreams = await PlatformStream.getByChannelId(channelId);
 
       // Convert platform streams to rtmpDestinations format, respecting enabled state
-      const rtmpDestinations = platformStreams
+      const rtmpDestinations = (Array.isArray(platformStreams) ? platformStreams : [])
         .filter(stream => stream.enabled === 1 || stream.enabled === true)  // Only include enabled streams
         .map(stream => ({
           id: stream.id,
@@ -976,7 +976,7 @@ class StreamManager {
         this.healthMetrics.delete(channelId);
         this.rtmpConnectionStatus.delete(channelId);
 
-        const currentChannel = Channel.findById(channelId);
+        const currentChannel = await Channel.findById(channelId);
         if (!currentChannel) return;
 
         // Check if this was a manual stop
@@ -1164,13 +1164,13 @@ class StreamManager {
   // End platform broadcasts (YouTube, Facebook, Twitch) when stopping stream
   async endPlatformBroadcasts(channelId) {
     try {
-      const platformStreams = PlatformStream.getByChannelId(channelId);
+      const platformStreams = await PlatformStream.getByChannelId(channelId);
 
-      for (const stream of platformStreams) {
+      for (const stream of (Array.isArray(platformStreams) ? platformStreams : [])) {
         try {
           // Get platform connection to get access tokens
           const PlatformConnection = (await import('../models/PlatformConnection.js')).default;
-          const connection = PlatformConnection.getById(stream.platform_connection_id);
+          const connection = await PlatformConnection.getById(stream.platform_connection_id);
 
           if (!connection || !connection.access_token) {
             logger.warn(`No valid connection found for ${stream.platform} stream ${stream.id}`);
