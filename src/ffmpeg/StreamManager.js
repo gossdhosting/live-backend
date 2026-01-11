@@ -418,7 +418,18 @@ class StreamManager {
 
       // Check if already running
       if (this.processes.has(channelId)) {
-        throw new Error('Stream is already running');
+        const processInfo = this.processes.get(channelId);
+        // Verify the process is actually running
+        try {
+          process.kill(processInfo.process.pid, 0); // Signal 0 checks if process exists
+          throw new Error('Stream is already running');
+        } catch (e) {
+          // Process doesn't exist, clean up
+          logger.warn(`Cleaning up stale process entry for channel ${channelId}`);
+          this.processes.delete(channelId);
+          this.healthMetrics.delete(channelId);
+          this.rtmpConnectionStatus.delete(channelId);
+        }
       }
 
       // Note: Per-user concurrent stream limits are checked above (lines 177-179)
