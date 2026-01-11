@@ -333,7 +333,7 @@ class StreamManager {
         }
 
         const MediaFile = (await import('../models/MediaFile.js')).default;
-        const mediaFile = MediaFile.findById(channel.media_file_id);
+        const mediaFile = await MediaFile.findById(channel.media_file_id);
 
         if (!mediaFile) {
           throw new Error('Selected media file not found');
@@ -345,7 +345,7 @@ class StreamManager {
 
         resolvedInputUrl = mediaFile.file_path;
         logger.info(`Using video file for channel ${channelId}: ${mediaFile.original_name}`);
-      } else if (resolvedInputUrl.includes('youtube.com') || resolvedInputUrl.includes('youtu.be')) {
+      } else if (resolvedInputUrl && (resolvedInputUrl.includes('youtube.com') || resolvedInputUrl.includes('youtu.be'))) {
         logger.info(`Resolving YouTube URL for channel ${channelId}`);
 
         try {
