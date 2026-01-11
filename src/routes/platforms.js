@@ -182,8 +182,8 @@ router.post('/facebook/create-stream', authenticateToken, async (req, res) => {
     }
 
     // Check for duplicate Facebook stream
-    const existingStreams = PlatformStream.getByChannelId(channelId);
-    const existingFacebookStream = existingStreams.find(s => s.platform === 'facebook' && s.enabled === 1);
+    const existingStreams = await PlatformStream.getByChannelId(channelId);
+    const existingFacebookStream = (Array.isArray(existingStreams) ? existingStreams : []).find(s => s.platform === 'facebook' && (s.enabled === 1 || s.enabled === true));
     if (existingFacebookStream) {
       return res.status(400).json({
         error: 'A Facebook stream already exists for this channel. Please delete the existing one first.'
@@ -264,8 +264,8 @@ router.post('/youtube/create-broadcast', authenticateToken, async (req, res) => 
     }
 
     // Check for duplicate YouTube stream
-    const existingStreams = PlatformStream.getByChannelId(channelId);
-    const existingYouTubeStream = existingStreams.find(s => s.platform === 'youtube' && s.enabled === 1);
+    const existingStreams = await PlatformStream.getByChannelId(channelId);
+    const existingYouTubeStream = (Array.isArray(existingStreams) ? existingStreams : []).find(s => s.platform === 'youtube' && (s.enabled === 1 || s.enabled === true));
     if (existingYouTubeStream) {
       return res.status(400).json({
         error: 'A YouTube stream already exists for this channel. Please delete the existing one first.'
@@ -352,8 +352,8 @@ router.post('/twitch/setup-stream', authenticateToken, async (req, res) => {
     }
 
     // Check for duplicate Twitch stream
-    const existingStreams = PlatformStream.getByChannelId(channelId);
-    const existingTwitchStream = existingStreams.find(s => s.platform === 'twitch' && s.enabled === 1);
+    const existingStreams = await PlatformStream.getByChannelId(channelId);
+    const existingTwitchStream = (Array.isArray(existingStreams) ? existingStreams : []).find(s => s.platform === 'twitch' && (s.enabled === 1 || s.enabled === true));
     if (existingTwitchStream) {
       return res.status(400).json({
         error: 'A Twitch stream already exists for this channel. Please delete the existing one first.'
