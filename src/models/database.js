@@ -1,7 +1,5 @@
-import dotenv from 'dotenv';
-dotenv.config();
-
 // Determine which database to use based on environment
+// Note: dotenv.config() is already called in server.js
 const dbType = process.env.DB_TYPE || 'sqlite';
 
 let db;
