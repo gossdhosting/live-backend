@@ -411,7 +411,8 @@ router.post('/twitch/setup-stream', authenticateToken, async (req, res) => {
 router.get('/streams/:channelId', authenticateToken, async (req, res) => {
   try {
     const streams = await PlatformStream.getAllWithConnectionByChannel(req.params.channelId);
-    res.json({ streams });
+    // Ensure streams is always an array
+    res.json({ streams: Array.isArray(streams) ? streams : [] });
   } catch (error) {
     logger.error('Failed to get platform streams', { error: error.message });
     res.status(500).json({ error: 'Failed to get platform streams' });
