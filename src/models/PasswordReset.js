@@ -20,7 +20,7 @@ class PasswordReset {
   static async findValidToken(token) {
     const stmt = db.prepare(`
       SELECT * FROM password_resets
-      WHERE token = ? AND expires_at > datetime('now') AND used_at IS NULL
+      WHERE token = ? AND expires_at > CURRENT_TIMESTAMP AND used_at IS NULL
       ORDER BY created_at DESC
       LIMIT 1
     `);
@@ -43,7 +43,7 @@ class PasswordReset {
   static async deleteExpired() {
     const stmt = db.prepare(`
       DELETE FROM password_resets
-      WHERE expires_at < datetime('now')
+      WHERE expires_at < CURRENT_TIMESTAMP
     `);
 
     return await stmt.run();

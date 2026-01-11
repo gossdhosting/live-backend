@@ -16,28 +16,39 @@ class Settings {
   // Set a setting value
   static async set(key, value) {
     const stmt = db.prepare(`
-      INSERT OR REPLACE INTO settings (key, value, updated_at)
+      INSERT INTO settings (key, value, updated_at)
       VALUES (?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(key)
+      DO UPDATE SET value = ?, updated_at = CURRENT_TIMESTAMP
     `);
 
-    await stmt.run(key, value);
+    await stmt.run(key, value, value);
     return await this.get(key);
   }
 
   // Update multiple settings
   static async updateMultiple(settings) {
     const stmt = db.prepare(`
-      INSERT OR REPLACE INTO settings (key, value, updated_at)
+      INSERT INTO settings (key, value, updated_at)
       VALUES (?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(key)
+      DO UPDATE SET value = ?, updated_at = CURRENT_TIMESTAMP
     `);
 
-    const transaction = db.transaction((items) => {
-      for (const [key, value] of Object.entries(items)) {
-        stmt.run(key, value);
+    // Use async transaction for PostgreSQL compatibility
+    if (db.transaction) {
+      await db.transaction(async () => {
+        for (const [key, value] of Object.entries(settings)) {
+          await stmt.run(key, value, value);
+        }
+      });
+    } else {
+      // Fallback for databases without transaction support
+      for (const [key, value] of Object.entries(settings)) {
+        await stmt.run(key, value, value);
       }
-    });
+    }
 
-    await transaction(settings);
     return await this.getAll();
   }
 }
