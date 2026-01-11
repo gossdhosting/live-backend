@@ -22,7 +22,7 @@ class User {
       VALUES (?, ?, ?, ?, ?, ?, 'active', CURRENT_TIMESTAMP, ?)
     `);
 
-    const result = await stmt.run(email, passwordHash, name, role, plan_id, subscription_type, youtube_restreaming ? 1 : 0);
+    const result = await stmt.run(email, passwordHash, name, role, plan_id, subscription_type, youtube_restreaming ? true : false);
     return await this.findById(result.lastInsertRowid);
   }
 
@@ -130,7 +130,7 @@ class User {
 
     if (data.youtube_restreaming !== undefined) {
       fields.push('youtube_restreaming = ?');
-      values.push(data.youtube_restreaming ? 1 : 0);
+      values.push(data.youtube_restreaming ? true : false);
     }
 
     if (fields.length === 0) return null;
@@ -289,7 +289,7 @@ class User {
       name,
       auth_provider,
       firebase_uid,
-      email_verified ? 1 : 0,
+      email_verified ? true : false,
       profile_picture,
       role,
       plan_id,
@@ -321,7 +321,7 @@ class User {
 
     if (email_verified !== undefined) {
       fields.push('email_verified = ?');
-      values.push(email_verified ? 1 : 0);
+      values.push(email_verified ? true : false);
     }
 
     if (fields.length === 0) return null;
