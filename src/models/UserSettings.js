@@ -65,8 +65,10 @@ class UserSettings {
       DO UPDATE SET value = ?, updated_at = CURRENT_TIMESTAMP
     `);
 
-    // Filter out null/undefined values
-    const validSettings = Object.entries(settings).filter(([key, value]) => value != null);
+    // Filter out null/undefined values and convert to string
+    const validSettings = Object.entries(settings)
+      .filter(([key, value]) => value != null)
+      .map(([key, value]) => [key, String(value)]); // Ensure value is always a string
 
     // Use different transaction approach based on database type
     if (db.transaction) {

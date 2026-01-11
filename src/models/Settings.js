@@ -15,6 +15,9 @@ class Settings {
 
   // Set a setting value
   static async set(key, value) {
+    // Ensure value is always a string (not null)
+    const stringValue = value != null ? String(value) : '';
+
     const stmt = db.prepare(`
       INSERT INTO settings (key, value, updated_at)
       VALUES (?, ?, CURRENT_TIMESTAMP)
@@ -22,7 +25,7 @@ class Settings {
       DO UPDATE SET value = ?, updated_at = CURRENT_TIMESTAMP
     `);
 
-    await stmt.run(key, value, value);
+    await stmt.run(key, stringValue, stringValue);
     return await this.get(key);
   }
 
@@ -35,16 +38,21 @@ class Settings {
       DO UPDATE SET value = ?, updated_at = CURRENT_TIMESTAMP
     `);
 
+    // Filter out null/undefined values and convert to string
+    const validSettings = Object.entries(settings)
+      .filter(([key, value]) => value != null)
+      .map(([key, value]) => [key, String(value)]); // Ensure value is always a string
+
     // Use async transaction for PostgreSQL compatibility
     if (db.transaction) {
       await db.transaction(async () => {
-        for (const [key, value] of Object.entries(settings)) {
+        for (const [key, value] of validSettings) {
           await stmt.run(key, value, value);
         }
       });
     } else {
       // Fallback for databases without transaction support
-      for (const [key, value] of Object.entries(settings)) {
+      for (const [key, value] of validSettings) {
         await stmt.run(key, value, value);
       }
     }
