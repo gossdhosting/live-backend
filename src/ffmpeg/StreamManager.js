@@ -960,7 +960,7 @@ class StreamManager {
       });
 
       // Handle process exit
-      ffmpegProcess.on('exit', (code, signal) => {
+      ffmpegProcess.on('exit', async (code, signal) => {
         logger.info(`FFmpeg process exited for channel ${channelId}`, {
           code,
           signal,
