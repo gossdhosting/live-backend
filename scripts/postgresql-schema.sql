@@ -168,6 +168,7 @@ CREATE TABLE platform_connections (
   platform_page_name VARCHAR(255),
   platform_channel_id VARCHAR(255),
   platform_channel_name VARCHAR(255),
+  available_pages TEXT,
   scopes TEXT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
