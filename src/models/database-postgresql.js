@@ -106,10 +106,16 @@ class PreparedStatement {
   async run(...params) {
     const client = await this.pool.connect();
     try {
-      const result = await client.query(this.sql, params);
+      // For INSERT statements, add RETURNING id if not already present
+      let sql = this.sql;
+      if (sql.trim().toUpperCase().startsWith('INSERT') && !sql.toUpperCase().includes('RETURNING')) {
+        sql = sql.trim() + ' RETURNING id';
+      }
+
+      const result = await client.query(sql, params);
       return {
         changes: result.rowCount,
-        lastInsertRowid: result.rows[0]?.id || null, // PostgreSQL doesn't auto-return id
+        lastInsertRowid: result.rows[0]?.id || null,
       };
     } finally {
       client.release();

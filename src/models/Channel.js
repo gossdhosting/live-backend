@@ -8,13 +8,13 @@ class Channel {
   }
 
   // Create a new channel
-  static create({ user_id, name, description, input_url, auto_restart = 1, quality_preset = '720p', stream_title = '', input_type = 'youtube', media_file_id = null, loop_video = 0, title_enabled = 0 }) {
+  static async create({ user_id, name, description, input_url, auto_restart = 1, quality_preset = '720p', stream_title = '', input_type = 'youtube', media_file_id = null, loop_video = 0, title_enabled = 0 }) {
     // Generate unique stream key
     let streamKey;
     let attempts = 0;
     do {
       streamKey = this.generateStreamKey();
-      const existing = db.prepare('SELECT id FROM channels WHERE stream_key = ?').get(streamKey);
+      const existing = await db.prepare('SELECT id FROM channels WHERE stream_key = ?').get(streamKey);
       if (!existing) break;
       attempts++;
     } while (attempts < 10);
@@ -24,36 +24,36 @@ class Channel {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'stopped')
     `);
 
-    const result = stmt.run(user_id, name, description, input_url, auto_restart, quality_preset, stream_title, input_type, media_file_id, loop_video, title_enabled, streamKey);
+    const result = await stmt.run(user_id, name, description, input_url, auto_restart, quality_preset, stream_title, input_type, media_file_id, loop_video, title_enabled, streamKey);
     return this.findById(result.lastInsertRowid);
   }
 
   // Find channel by ID
-  static findById(id) {
+  static async findById(id) {
     const stmt = db.prepare('SELECT * FROM channels WHERE id = ?');
-    return stmt.get(id);
+    return await stmt.get(id);
   }
 
   // Find all channels
-  static findAll() {
+  static async findAll() {
     const stmt = db.prepare('SELECT * FROM channels ORDER BY created_at DESC');
-    return stmt.all();
+    return await stmt.all();
   }
 
   // Find channels by user ID
-  static findByUserId(userId) {
+  static async findByUserId(userId) {
     const stmt = db.prepare('SELECT * FROM channels WHERE user_id = ? ORDER BY created_at DESC');
-    return stmt.all(userId);
+    return await stmt.all(userId);
   }
 
   // Find channel by stream key (for RTMP authentication)
-  static findByStreamKey(streamKey) {
+  static async findByStreamKey(streamKey) {
     const stmt = db.prepare('SELECT * FROM channels WHERE stream_key = ?');
-    return stmt.get(streamKey);
+    return await stmt.get(streamKey);
   }
 
   // Update channel
-  static update(id, data) {
+  static async update(id, data) {
     const allowedFields = ['name', 'description', 'input_url', 'auto_restart', 'quality_preset', 'stream_title', 'input_type', 'media_file_id', 'loop_video', 'title_enabled', 'watermark_enabled', 'watermark_path', 'watermark_position', 'watermark_opacity', 'watermark_scale'];
     const fields = [];
     const values = [];
@@ -74,12 +74,12 @@ class Channel {
       UPDATE channels SET ${fields.join(', ')} WHERE id = ?
     `);
 
-    stmt.run(...values);
+    await stmt.run(...values);
     return this.findById(id);
   }
 
   // Update status and process info
-  static updateStatus(id, status, processId = null, errorMessage = null) {
+  static async updateStatus(id, status, processId = null, errorMessage = null) {
     const stmt = db.prepare(`
       UPDATE channels
       SET status = ?,
@@ -91,44 +91,44 @@ class Channel {
       WHERE id = ?
     `);
 
-    stmt.run(status, processId, errorMessage, status, status, id);
+    await stmt.run(status, processId, errorMessage, status, status, id);
     return this.findById(id);
   }
 
   // Update output path
-  static updateOutputPath(id, outputPath) {
+  static async updateOutputPath(id, outputPath) {
     const stmt = db.prepare(`
       UPDATE channels SET output_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
     `);
 
-    stmt.run(outputPath, id);
+    await stmt.run(outputPath, id);
   }
 
   // Delete channel
-  static delete(id) {
+  static async delete(id) {
     const stmt = db.prepare('DELETE FROM channels WHERE id = ?');
-    return stmt.run(id);
+    return await stmt.run(id);
   }
 
   // Get running channels count
-  static getRunningCount() {
+  static async getRunningCount() {
     const stmt = db.prepare(`SELECT COUNT(*) as count FROM channels WHERE status = 'running'`);
-    const result = stmt.get();
+    const result = await stmt.get();
     return result.count;
   }
 
   // Add log entry
-  static addLog(channelId, logType, message) {
+  static async addLog(channelId, logType, message) {
     const stmt = db.prepare(`
       INSERT INTO stream_logs (channel_id, log_type, message)
       VALUES (?, ?, ?)
     `);
 
-    stmt.run(channelId, logType, message);
+    await stmt.run(channelId, logType, message);
   }
 
   // Get logs for channel
-  static getLogs(channelId, limit = 100) {
+  static async getLogs(channelId, limit = 100) {
     const stmt = db.prepare(`
       SELECT * FROM stream_logs
       WHERE channel_id = ?
@@ -136,7 +136,7 @@ class Channel {
       LIMIT ?
     `);
 
-    return stmt.all(channelId, limit);
+    return await stmt.all(channelId, limit);
   }
 }
 

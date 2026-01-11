@@ -2,30 +2,30 @@ import db from './database.js';
 
 class Settings {
   // Get a setting by key
-  static get(key) {
+  static async get(key) {
     const stmt = db.prepare('SELECT * FROM settings WHERE key = ?');
-    return stmt.get(key);
+    return await stmt.get(key);
   }
 
   // Get all settings
-  static getAll() {
+  static async getAll() {
     const stmt = db.prepare('SELECT * FROM settings ORDER BY key');
-    return stmt.all();
+    return await stmt.all();
   }
 
   // Set a setting value
-  static set(key, value) {
+  static async set(key, value) {
     const stmt = db.prepare(`
       INSERT OR REPLACE INTO settings (key, value, updated_at)
       VALUES (?, ?, CURRENT_TIMESTAMP)
     `);
 
-    stmt.run(key, value);
-    return this.get(key);
+    await stmt.run(key, value);
+    return await this.get(key);
   }
 
   // Update multiple settings
-  static updateMultiple(settings) {
+  static async updateMultiple(settings) {
     const stmt = db.prepare(`
       INSERT OR REPLACE INTO settings (key, value, updated_at)
       VALUES (?, ?, CURRENT_TIMESTAMP)
@@ -37,8 +37,8 @@ class Settings {
       }
     });
 
-    transaction(settings);
-    return this.getAll();
+    await transaction(settings);
+    return await this.getAll();
   }
 }
 

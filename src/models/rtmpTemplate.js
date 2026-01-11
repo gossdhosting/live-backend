@@ -2,42 +2,42 @@ import db from './database.js';
 
 class RtmpTemplate {
   // Create a new RTMP template
-  static create({ name, platform, rtmp_url, stream_key, enabled = 1 }) {
+  static async create({ name, platform, rtmp_url, stream_key, enabled = 1 }) {
     const stmt = db.prepare(`
       INSERT INTO rtmp_templates (name, platform, rtmp_url, stream_key, enabled)
       VALUES (?, ?, ?, ?, ?)
     `);
 
-    const result = stmt.run(
+    const result = await stmt.run(
       name,
       platform,
       rtmp_url,
       stream_key,
       enabled ? 1 : 0
     );
-    return this.getById(result.lastInsertRowid);
+    return await this.getById(result.lastInsertRowid);
   }
 
   // Get template by ID
-  static getById(id) {
+  static async getById(id) {
     const stmt = db.prepare('SELECT * FROM rtmp_templates WHERE id = ?');
-    return stmt.get(id);
+    return await stmt.get(id);
   }
 
   // Get all templates
-  static getAll() {
+  static async getAll() {
     const stmt = db.prepare('SELECT * FROM rtmp_templates ORDER BY created_at DESC');
-    return stmt.all();
+    return await stmt.all();
   }
 
   // Get only enabled templates
-  static getEnabled() {
+  static async getEnabled() {
     const stmt = db.prepare('SELECT * FROM rtmp_templates WHERE enabled = 1 ORDER BY created_at DESC');
-    return stmt.all();
+    return await stmt.all();
   }
 
   // Update template
-  static update(id, { name, platform, rtmp_url, stream_key, enabled }) {
+  static async update(id, { name, platform, rtmp_url, stream_key, enabled }) {
     console.log('[RtmpTemplate.update] Called with:', { id, name, platform, rtmp_url, stream_key, enabled });
 
     const fields = [];
@@ -80,18 +80,18 @@ class RtmpTemplate {
     console.log('[RtmpTemplate.update] Final values:', values);
 
     const stmt = db.prepare(sql);
-    const result = stmt.run(...values);
+    const result = await stmt.run(...values);
     console.log('[RtmpTemplate.update] Update result:', result);
 
-    const updated = this.getById(id);
+    const updated = await this.getById(id);
     console.log('[RtmpTemplate.update] Retrieved updated template:', updated);
     return updated;
   }
 
   // Delete template
-  static delete(id) {
+  static async delete(id) {
     const stmt = db.prepare('DELETE FROM rtmp_templates WHERE id = ?');
-    return stmt.run(id);
+    return await stmt.run(id);
   }
 }
 

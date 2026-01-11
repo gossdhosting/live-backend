@@ -3,7 +3,7 @@ import crypto from 'crypto';
 
 class PasswordReset {
   // Create password reset token
-  static create(userId, email) {
+  static async create(userId, email) {
     const token = crypto.randomBytes(32).toString('hex');
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour from now
 
@@ -12,12 +12,12 @@ class PasswordReset {
       VALUES (?, ?, ?, ?)
     `);
 
-    stmt.run(userId, email, token, expiresAt.toISOString());
+    await stmt.run(userId, email, token, expiresAt.toISOString());
     return token;
   }
 
   // Find valid reset token
-  static findValidToken(token) {
+  static async findValidToken(token) {
     const stmt = db.prepare(`
       SELECT * FROM password_resets
       WHERE token = ? AND expires_at > datetime('now') AND used_at IS NULL
@@ -25,28 +25,28 @@ class PasswordReset {
       LIMIT 1
     `);
 
-    return stmt.get(token);
+    return await stmt.get(token);
   }
 
   // Mark token as used
-  static markAsUsed(token) {
+  static async markAsUsed(token) {
     const stmt = db.prepare(`
       UPDATE password_resets
       SET used_at = CURRENT_TIMESTAMP
       WHERE token = ?
     `);
 
-    stmt.run(token);
+    await stmt.run(token);
   }
 
   // Delete expired tokens (cleanup)
-  static deleteExpired() {
+  static async deleteExpired() {
     const stmt = db.prepare(`
       DELETE FROM password_resets
       WHERE expires_at < datetime('now')
     `);
 
-    return stmt.run();
+    return await stmt.run();
   }
 }
 

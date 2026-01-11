@@ -2,7 +2,7 @@ import db from './database.js';
 
 class PlatformStream {
   // Create a new platform stream
-  static create(data) {
+  static async create(data) {
     const stmt = db.prepare(`
       INSERT INTO platform_streams (
         channel_id, platform_connection_id, platform, platform_stream_id,
@@ -11,7 +11,7 @@ class PlatformStream {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    const info = stmt.run(
+    const info = await stmt.run(
       data.channel_id,
       data.platform_connection_id,
       data.platform,
@@ -25,45 +25,45 @@ class PlatformStream {
       data.rtmp_destination_id || null
     );
 
-    return this.getById(info.lastInsertRowid);
+    return await this.getById(info.lastInsertRowid);
   }
 
   // Get stream by ID
-  static getById(id) {
+  static async getById(id) {
     const stmt = db.prepare('SELECT * FROM platform_streams WHERE id = ?');
-    return stmt.get(id);
+    return await stmt.get(id);
   }
 
   // Get all streams for a channel
-  static getByChannelId(channelId) {
+  static async getByChannelId(channelId) {
     const stmt = db.prepare('SELECT * FROM platform_streams WHERE channel_id = ? ORDER BY created_at DESC');
-    return stmt.all(channelId);
+    return await stmt.all(channelId);
   }
 
   // Get stream by platform and channel
-  static getByPlatformAndChannel(platform, channelId) {
+  static async getByPlatformAndChannel(platform, channelId) {
     const stmt = db.prepare(`
       SELECT * FROM platform_streams
       WHERE platform = ? AND channel_id = ?
       ORDER BY created_at DESC
       LIMIT 1
     `);
-    return stmt.get(platform, channelId);
+    return await stmt.get(platform, channelId);
   }
 
   // Update stream status
-  static updateStatus(id, status) {
+  static async updateStatus(id, status) {
     const stmt = db.prepare(`
       UPDATE platform_streams
       SET status = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `);
-    stmt.run(status, id);
-    return this.getById(id);
+    await stmt.run(status, id);
+    return await this.getById(id);
   }
 
   // Update stream
-  static update(id, data) {
+  static async update(id, data) {
     const fields = [];
     const values = [];
 
@@ -80,7 +80,7 @@ class PlatformStream {
     }
 
     if (fields.length === 0) {
-      return this.getById(id);
+      return await this.getById(id);
     }
 
     fields.push('updated_at = CURRENT_TIMESTAMP');
@@ -92,24 +92,24 @@ class PlatformStream {
       WHERE id = ?
     `);
 
-    stmt.run(...values);
-    return this.getById(id);
+    await stmt.run(...values);
+    return await this.getById(id);
   }
 
   // Delete stream
-  static delete(id) {
+  static async delete(id) {
     const stmt = db.prepare('DELETE FROM platform_streams WHERE id = ?');
-    return stmt.run(id);
+    return await stmt.run(id);
   }
 
   // Delete all streams for a channel
-  static deleteByChannelId(channelId) {
+  static async deleteByChannelId(channelId) {
     const stmt = db.prepare('DELETE FROM platform_streams WHERE channel_id = ?');
-    return stmt.run(channelId);
+    return await stmt.run(channelId);
   }
 
   // Get stream with connection details
-  static getWithConnection(id) {
+  static async getWithConnection(id) {
     const stmt = db.prepare(`
       SELECT
         ps.*,
@@ -121,11 +121,11 @@ class PlatformStream {
       LEFT JOIN platform_connections pc ON ps.platform_connection_id = pc.id
       WHERE ps.id = ?
     `);
-    return stmt.get(id);
+    return await stmt.get(id);
   }
 
   // Get all streams with connection details for a channel
-  static getAllWithConnectionByChannel(channelId) {
+  static async getAllWithConnectionByChannel(channelId) {
     const stmt = db.prepare(`
       SELECT
         ps.*,
@@ -137,7 +137,7 @@ class PlatformStream {
       WHERE ps.channel_id = ?
       ORDER BY ps.created_at DESC
     `);
-    return stmt.all(channelId);
+    return await stmt.all(channelId);
   }
 }
 

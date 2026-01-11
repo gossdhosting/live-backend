@@ -2,7 +2,7 @@ import db from './database.js';
 
 class PlatformConnection {
   // Create a new platform connection
-  static create(data) {
+  static async create(data) {
     const stmt = db.prepare(`
       INSERT INTO platform_connections (
         platform, user_id, access_token, refresh_token, token_expires_at,
@@ -12,7 +12,7 @@ class PlatformConnection {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    const info = stmt.run(
+    const info = await stmt.run(
       data.platform,
       data.user_id,
       data.access_token,
@@ -29,13 +29,13 @@ class PlatformConnection {
       data.scopes ? JSON.stringify(data.scopes) : null
     );
 
-    return this.getById(info.lastInsertRowid);
+    return await this.getById(info.lastInsertRowid);
   }
 
   // Get connection by ID
-  static getById(id) {
+  static async getById(id) {
     const stmt = db.prepare('SELECT * FROM platform_connections WHERE id = ?');
-    const connection = stmt.get(id);
+    const connection = await stmt.get(id);
     if (connection && connection.scopes) {
       connection.scopes = JSON.parse(connection.scopes);
     }
@@ -43,9 +43,9 @@ class PlatformConnection {
   }
 
   // Get all connections for a user
-  static getByUserId(userId) {
+  static async getByUserId(userId) {
     const stmt = db.prepare('SELECT * FROM platform_connections WHERE user_id = ? ORDER BY created_at DESC');
-    const connections = stmt.all(userId);
+    const connections = await stmt.all(userId);
     return connections.map(conn => {
       if (conn.scopes) {
         conn.scopes = JSON.parse(conn.scopes);
@@ -55,9 +55,9 @@ class PlatformConnection {
   }
 
   // Get connection by platform and user
-  static getByPlatformAndUser(platform, userId) {
+  static async getByPlatformAndUser(platform, userId) {
     const stmt = db.prepare('SELECT * FROM platform_connections WHERE platform = ? AND user_id = ? ORDER BY created_at DESC LIMIT 1');
-    const connection = stmt.get(platform, userId);
+    const connection = await stmt.get(platform, userId);
     if (connection && connection.scopes) {
       connection.scopes = JSON.parse(connection.scopes);
     }
@@ -65,7 +65,7 @@ class PlatformConnection {
   }
 
   // Update connection
-  static update(id, data) {
+  static async update(id, data) {
     const fields = [];
     const values = [];
 
@@ -88,7 +88,7 @@ class PlatformConnection {
     }
 
     if (fields.length === 0) {
-      return this.getById(id);
+      return await this.getById(id);
     }
 
     fields.push('updated_at = CURRENT_TIMESTAMP');
@@ -100,20 +100,20 @@ class PlatformConnection {
       WHERE id = ?
     `);
 
-    stmt.run(...values);
-    return this.getById(id);
+    await stmt.run(...values);
+    return await this.getById(id);
   }
 
   // Delete connection
-  static delete(id) {
+  static async delete(id) {
     const stmt = db.prepare('DELETE FROM platform_connections WHERE id = ?');
-    return stmt.run(id);
+    return await stmt.run(id);
   }
 
   // Delete all connections for a user and platform
-  static deleteByPlatformAndUser(platform, userId) {
+  static async deleteByPlatformAndUser(platform, userId) {
     const stmt = db.prepare('DELETE FROM platform_connections WHERE platform = ? AND user_id = ?');
-    return stmt.run(platform, userId);
+    return await stmt.run(platform, userId);
   }
 
   // Check if token is expired

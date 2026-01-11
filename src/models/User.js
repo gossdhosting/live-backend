@@ -22,12 +22,12 @@ class User {
       VALUES (?, ?, ?, ?, ?, ?, 'active', CURRENT_TIMESTAMP, ?)
     `);
 
-    const result = stmt.run(email, passwordHash, name, role, plan_id, subscription_type, youtube_restreaming ? 1 : 0);
-    return this.findById(result.lastInsertRowid);
+    const result = await stmt.run(email, passwordHash, name, role, plan_id, subscription_type, youtube_restreaming ? 1 : 0);
+    return await this.findById(result.lastInsertRowid);
   }
 
   // Find user by ID (excludes password_hash)
-  static findById(id) {
+  static async findById(id) {
     const stmt = db.prepare(`
       SELECT
         u.id, u.email, u.name, u.role, u.plan_id, u.subscription_type,
@@ -45,17 +45,17 @@ class User {
       LEFT JOIN plans p ON u.plan_id = p.id
       WHERE u.id = ?
     `);
-    return stmt.get(id);
+    return await stmt.get(id);
   }
 
   // Find user by email (includes password hash for authentication)
-  static findByEmail(email) {
+  static async findByEmail(email) {
     const stmt = db.prepare('SELECT * FROM users WHERE email = ?');
-    return stmt.get(email);
+    return await stmt.get(email);
   }
 
   // Get all users (admin only) - excludes password hashes
-  static getAll({ includeInactive = false } = {}) {
+  static async getAll({ includeInactive = false } = {}) {
     const condition = includeInactive ? '' : "WHERE u.status = 'active'";
     const stmt = db.prepare(`
       SELECT
@@ -69,7 +69,7 @@ class User {
       ${condition}
       ORDER BY u.created_at DESC
     `);
-    return stmt.all();
+    return await stmt.all();
   }
 
   // Verify password
@@ -142,34 +142,34 @@ class User {
       UPDATE users SET ${fields.join(', ')} WHERE id = ?
     `);
 
-    stmt.run(...values);
-    return this.findById(id);
+    await stmt.run(...values);
+    return await this.findById(id);
   }
 
   // Update last login info
-  static updateLastLogin(id, ipAddress) {
+  static async updateLastLogin(id, ipAddress) {
     const stmt = db.prepare(`
       UPDATE users
       SET last_login_at = CURRENT_TIMESTAMP, last_login_ip = ?
       WHERE id = ?
     `);
-    stmt.run(ipAddress, id);
+    await stmt.run(ipAddress, id);
   }
 
   // Delete user (admin only)
-  static delete(id) {
+  static async delete(id) {
     // This will cascade delete all user's channels, media files, etc.
     const stmt = db.prepare('DELETE FROM users WHERE id = ?');
-    return stmt.run(id);
+    return await stmt.run(id);
   }
 
   // Get user statistics
-  static getUserStats(userId) {
-    const channelCount = db.prepare('SELECT COUNT(*) as count FROM channels WHERE user_id = ?').get(userId);
-    const runningChannels = db.prepare("SELECT COUNT(*) as count FROM channels WHERE user_id = ? AND status = 'running'").get(userId);
-    const mediaFiles = db.prepare('SELECT COUNT(*) as count FROM media_files WHERE user_id = ?').get(userId);
-    const totalStorage = db.prepare('SELECT COALESCE(SUM(file_size), 0) as total FROM media_files WHERE user_id = ?').get(userId);
-    const platformConnections = db.prepare('SELECT COUNT(*) as count FROM platform_connections WHERE user_id = ?').get(userId);
+  static async getUserStats(userId) {
+    const channelCount = await db.prepare('SELECT COUNT(*) as count FROM channels WHERE user_id = ?').get(userId);
+    const runningChannels = await db.prepare("SELECT COUNT(*) as count FROM channels WHERE user_id = ? AND status = 'running'").get(userId);
+    const mediaFiles = await db.prepare('SELECT COUNT(*) as count FROM media_files WHERE user_id = ?').get(userId);
+    const totalStorage = await db.prepare('SELECT COALESCE(SUM(file_size), 0) as total FROM media_files WHERE user_id = ?').get(userId);
+    const platformConnections = await db.prepare('SELECT COUNT(*) as count FROM platform_connections WHERE user_id = ?').get(userId);
 
     return {
       total_channels: channelCount.count,
@@ -182,20 +182,20 @@ class User {
 
   // Check if user has reached plan limits
   static async checkPlanLimits(userId) {
-    const user = this.findById(userId);
+    const user = await this.findById(userId);
     if (!user) return null;
 
-    const stats = this.getUserStats(userId);
+    const stats = await this.getUserStats(userId);
 
     // Get platform connection count (OAuth connections + RTMP templates count as platform connections)
     const platformConnectionsStmt = db.prepare(`
       SELECT COUNT(DISTINCT id) as count FROM platform_connections WHERE user_id = ?
     `);
-    const platformConnectionCount = platformConnectionsStmt.get(userId)?.count || 0;
+    const platformConnectionCount = (await platformConnectionsStmt.get(userId))?.count || 0;
 
     // Get max_platform_connections from user's plan
     const planStmt = db.prepare('SELECT max_platform_connections FROM plans WHERE id = ?');
-    const planData = planStmt.get(user.plan_id);
+    const planData = await planStmt.get(user.plan_id);
     const maxPlatformConnections = planData?.max_platform_connections || 1;
 
     const limits = {
@@ -230,7 +230,7 @@ class User {
   }
 
   // Get user with full plan details
-  static getUserWithPlan(userId) {
+  static async getUserWithPlan(userId) {
     const stmt = db.prepare(`
       SELECT
         u.*,
@@ -247,7 +247,7 @@ class User {
       LEFT JOIN plans p ON u.plan_id = p.id
       WHERE u.id = ?
     `);
-    const user = stmt.get(userId);
+    const user = await stmt.get(userId);
 
     if (user) {
       // Remove password hash
@@ -258,9 +258,9 @@ class User {
   }
 
   // Find user by Firebase UID
-  static findByFirebaseUid(firebaseUid) {
+  static async findByFirebaseUid(firebaseUid) {
     const stmt = db.prepare('SELECT * FROM users WHERE firebase_uid = ?');
-    return stmt.get(firebaseUid);
+    return await stmt.get(firebaseUid);
   }
 
   // Create user from social login
@@ -284,7 +284,7 @@ class User {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', CURRENT_TIMESTAMP, NULL)
     `);
 
-    const result = stmt.run(
+    const result = await stmt.run(
       email,
       name,
       auth_provider,
@@ -296,11 +296,11 @@ class User {
       subscription_type
     );
 
-    return this.findById(result.lastInsertRowid);
+    return await this.findById(result.lastInsertRowid);
   }
 
   // Update social user info (for existing users who link social accounts)
-  static updateSocialAuth(id, { firebase_uid, auth_provider, profile_picture, email_verified }) {
+  static async updateSocialAuth(id, { firebase_uid, auth_provider, profile_picture, email_verified }) {
     const fields = [];
     const values = [];
 
@@ -333,8 +333,8 @@ class User {
       UPDATE users SET ${fields.join(', ')} WHERE id = ?
     `);
 
-    stmt.run(...values);
-    return this.findById(id);
+    await stmt.run(...values);
+    return await this.findById(id);
   }
 }
 

@@ -1,22 +1,22 @@
 import db from './database.js';
 
 class RtmpDestination {
-  static getAll(channelId) {
+  static async getAll(channelId) {
     const stmt = db.prepare('SELECT * FROM rtmp_destinations WHERE channel_id = ? ORDER BY created_at DESC');
-    return stmt.all(channelId);
+    return await stmt.all(channelId);
   }
 
-  static getById(id) {
+  static async getById(id) {
     const stmt = db.prepare('SELECT * FROM rtmp_destinations WHERE id = ?');
-    return stmt.get(id);
+    return await stmt.get(id);
   }
 
-  static create(data) {
+  static async create(data) {
     const stmt = db.prepare(`
       INSERT INTO rtmp_destinations (channel_id, template_id, platform, rtmp_url, stream_key, enabled, custom_bitrate)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
-    const result = stmt.run(
+    const result = await stmt.run(
       data.channel_id,
       data.template_id || null,
       data.platform,
@@ -25,15 +25,15 @@ class RtmpDestination {
       data.enabled !== undefined ? data.enabled : 1,
       data.custom_bitrate || null
     );
-    return this.getById(result.lastInsertRowid);
+    return await this.getById(result.lastInsertRowid);
   }
 
-  static getByChannelAndTemplate(channelId, templateId) {
+  static async getByChannelAndTemplate(channelId, templateId) {
     const stmt = db.prepare('SELECT * FROM rtmp_destinations WHERE channel_id = ? AND template_id = ?');
-    return stmt.get(channelId, templateId);
+    return await stmt.get(channelId, templateId);
   }
 
-  static update(id, data) {
+  static async update(id, data) {
     const updates = [];
     const values = [];
 
@@ -66,16 +66,16 @@ class RtmpDestination {
       SET ${updates.join(', ')}
       WHERE id = ?
     `);
-    stmt.run(...values);
-    return this.getById(id);
+    await stmt.run(...values);
+    return await this.getById(id);
   }
 
-  static delete(id) {
+  static async delete(id) {
     const stmt = db.prepare('DELETE FROM rtmp_destinations WHERE id = ?');
-    return stmt.run(id);
+    return await stmt.run(id);
   }
 
-  static getEnabledForChannel(channelId) {
+  static async getEnabledForChannel(channelId) {
     const stmt = db.prepare(`
       SELECT
         d.*,
@@ -88,7 +88,7 @@ class RtmpDestination {
       LEFT JOIN rtmp_templates t ON d.template_id = t.id
       WHERE d.channel_id = ? AND d.enabled = 1
     `);
-    return stmt.all(channelId);
+    return await stmt.all(channelId);
   }
 }
 

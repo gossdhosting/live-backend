@@ -2,19 +2,19 @@ import db from './database.js';
 
 class Plan {
   // Get all plans (only visible, non-hidden plans for users)
-  static getAll() {
+  static async getAll() {
     const stmt = db.prepare('SELECT * FROM plans WHERE is_active = 1 AND (is_hidden IS NULL OR is_hidden = 0) ORDER BY price_monthly ASC');
-    return stmt.all();
+    return await stmt.all();
   }
 
   // Get all plans including hidden (for admin)
-  static getAllForAdmin() {
+  static async getAllForAdmin() {
     const stmt = db.prepare('SELECT * FROM plans WHERE is_active = 1 ORDER BY price_monthly ASC');
-    return stmt.all();
+    return await stmt.all();
   }
 
   // Get all plans with subscriber statistics (admin only - includes hidden plans)
-  static getAllWithStats() {
+  static async getAllWithStats() {
     const stmt = db.prepare(`
       SELECT
         p.*,
@@ -26,23 +26,23 @@ class Plan {
       GROUP BY p.id
       ORDER BY p.price_monthly ASC
     `);
-    return stmt.all();
+    return await stmt.all();
   }
 
   // Get plan by ID
-  static getById(id) {
+  static async getById(id) {
     const stmt = db.prepare('SELECT * FROM plans WHERE id = ?');
-    return stmt.get(id);
+    return await stmt.get(id);
   }
 
   // Get plan by name
-  static getByName(name) {
+  static async getByName(name) {
     const stmt = db.prepare('SELECT * FROM plans WHERE name = ?');
-    return stmt.get(name);
+    return await stmt.get(name);
   }
 
   // Create new plan (admin only)
-  static create({
+  static async create({
     name,
     description,
     price_monthly,
@@ -64,7 +64,7 @@ class Plan {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    const result = stmt.run(
+    const result = await stmt.run(
       name,
       description || null,
       price_monthly,
@@ -78,11 +78,11 @@ class Plan {
       youtube_restreaming ? 1 : 0
     );
 
-    return this.getById(result.lastInsertRowid);
+    return await this.getById(result.lastInsertRowid);
   }
 
   // Update plan (admin only)
-  static update(id, data) {
+  static async update(id, data) {
     const fields = [];
     const values = [];
 
@@ -122,31 +122,31 @@ class Plan {
       UPDATE plans SET ${fields.join(', ')} WHERE id = ?
     `);
 
-    stmt.run(...values);
-    return this.getById(id);
+    await stmt.run(...values);
+    return await this.getById(id);
   }
 
   // Delete plan (admin only) - soft delete by setting is_active = 0
-  static delete(id) {
+  static async delete(id) {
     // Check if any users are using this plan
-    const usersCount = db.prepare('SELECT COUNT(*) as count FROM users WHERE plan_id = ?').get(id);
+    const usersCount = await db.prepare('SELECT COUNT(*) as count FROM users WHERE plan_id = ?').get(id);
 
     if (usersCount.count > 0) {
       throw new Error(`Cannot delete plan: ${usersCount.count} user(s) are currently subscribed to this plan`);
     }
 
     const stmt = db.prepare('UPDATE plans SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
-    return stmt.run(id);
+    return await stmt.run(id);
   }
 
   // Hard delete (use with caution)
-  static hardDelete(id) {
+  static async hardDelete(id) {
     const stmt = db.prepare('DELETE FROM plans WHERE id = ?');
-    return stmt.run(id);
+    return await stmt.run(id);
   }
 
   // Get user count for each plan
-  static getPlanStats() {
+  static async getPlanStats() {
     const stmt = db.prepare(`
       SELECT
         p.id,
@@ -161,12 +161,12 @@ class Plan {
       GROUP BY p.id
       ORDER BY p.price_monthly ASC
     `);
-    return stmt.all();
+    return await stmt.all();
   }
 
   // Check if user can perform action based on plan limits
-  static checkLimit(planId, limitType) {
-    const plan = this.getById(planId);
+  static async checkLimit(planId, limitType) {
+    const plan = await this.getById(planId);
     if (!plan) return null;
 
     const limits = {
