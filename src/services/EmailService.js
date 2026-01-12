@@ -5,13 +5,24 @@ import logger from '../utils/logger.js';
 class EmailService {
   static transporter = null;
 
+  // Helper to get settings as a map
+  static async getSettingsMap() {
+    const settings = await Settings.getAll();
+    const map = {};
+    settings.forEach(s => {
+      map[s.key] = s.value;
+    });
+    return map;
+  }
+
   // Initialize transporter with current SMTP settings
   static async getTransporter() {
-    const smtp_host = Settings.get('smtp_host')?.value;
-    const smtp_port = Settings.get('smtp_port')?.value;
-    const smtp_user = Settings.get('smtp_user')?.value;
-    const smtp_password = Settings.get('smtp_password')?.value;
-    const smtp_secure = Settings.get('smtp_secure')?.value === '1';
+    const settings = await this.getSettingsMap();
+    const smtp_host = settings.smtp_host;
+    const smtp_port = settings.smtp_port;
+    const smtp_user = settings.smtp_user;
+    const smtp_password = settings.smtp_password;
+    const smtp_secure = settings.smtp_secure === '1';
 
     if (!smtp_host || !smtp_port || !smtp_user || !smtp_password) {
       logger.warn('SMTP not fully configured');
@@ -39,9 +50,10 @@ class EmailService {
   }
 
   // Apply email template (header + content + footer)
-  static applyTemplate(content) {
-    const header = Settings.get('email_header')?.value || '';
-    const footer = Settings.get('email_footer')?.value || '';
+  static async applyTemplate(content) {
+    const settings = await this.getSettingsMap();
+    const header = settings.email_header || '';
+    const footer = settings.email_footer || '';
 
     return `
       ${header}
@@ -59,9 +71,10 @@ class EmailService {
         return { success: false, message: 'SMTP not configured' };
       }
 
-      const smtp_from_email = Settings.get('smtp_from_email')?.value || 'noreply@localhost';
-      const smtp_from_name = Settings.get('smtp_from_name')?.value || 'ZebCast';
-      const template = Settings.get('email_template_registration')?.value || `
+      const settings = await this.getSettingsMap();
+      const smtp_from_email = settings.smtp_from_email || 'noreply@localhost';
+      const smtp_from_name = settings.smtp_from_name || 'ZebCast';
+      const template = settings.email_template_registration || `
         <h2>Welcome to ZebCast!</h2>
         <p>Hi ${name},</p>
         <p>Thank you for registering with ZebCast. Your account has been created successfully.</p>
@@ -69,7 +82,7 @@ class EmailService {
         <p>Best regards,<br>The ZebCast Team</p>
       `;
 
-      const htmlContent = this.applyTemplate(template);
+      const htmlContent = await this.applyTemplate(template);
 
       await transporter.sendMail({
         from: `"${smtp_from_name}" <${smtp_from_email}>`,
@@ -95,12 +108,13 @@ class EmailService {
         return { success: false, message: 'SMTP not configured' };
       }
 
-      const smtp_from_email = Settings.get('smtp_from_email')?.value || 'noreply@localhost';
-      const smtp_from_name = Settings.get('smtp_from_name')?.value || 'ZebCast';
+      const settings = await this.getSettingsMap();
+      const smtp_from_email = settings.smtp_from_email || 'noreply@localhost';
+      const smtp_from_name = settings.smtp_from_name || 'ZebCast';
       const frontendUrl = process.env.FRONTEND_URL || 'https://panel.zebcast.app';
       const resetLink = `${frontendUrl}/reset-password?token=${resetToken}`;
 
-      const template = Settings.get('email_template_forgot_password')?.value || `
+      const template = settings.email_template_forgot_password || `
         <h2>Reset Your Password</h2>
         <p>Hi,</p>
         <p>You requested to reset your password. Click the button below to reset it:</p>
@@ -112,7 +126,7 @@ class EmailService {
         <p>Best regards,<br>The ZebCast Team</p>
       `;
 
-      const htmlContent = this.applyTemplate(template.replace('${resetLink}', resetLink));
+      const htmlContent = await this.applyTemplate(template.replace('${resetLink}', resetLink));
 
       await transporter.sendMail({
         from: `"${smtp_from_name}" <${smtp_from_email}>`,
@@ -132,7 +146,8 @@ class EmailService {
   // Send admin notification
   static async sendAdminNotification(subject, content) {
     try {
-      const adminEmail = Settings.get('admin_notification_email')?.value;
+      const settings = await this.getSettingsMap();
+      const adminEmail = settings.admin_notification_email;
       if (!adminEmail) {
         logger.warn('Admin notification email not configured');
         return { success: false, message: 'Admin email not configured' };
@@ -144,8 +159,8 @@ class EmailService {
         return { success: false, message: 'SMTP not configured' };
       }
 
-      const smtp_from_email = Settings.get('smtp_from_email')?.value || 'noreply@localhost';
-      const smtp_from_name = Settings.get('smtp_from_name')?.value || 'ZebCast';
+      const smtp_from_email = settings.smtp_from_email || 'noreply@localhost';
+      const smtp_from_name = settings.smtp_from_name || 'ZebCast';
       const htmlContent = this.applyTemplate(content);
 
       await transporter.sendMail({

@@ -7,9 +7,15 @@ class PushoverService {
   // Send push notification via Pushover
   static async sendNotification(title, message, priority = 0) {
     try {
-      const pushover_token = Settings.get('pushover_token')?.value;
-      const pushover_user = Settings.get('pushover_user')?.value;
-      const pushover_enabled = Settings.get('pushover_enabled')?.value === 'true';
+      const settings = await Settings.getAll();
+      const settingsMap = {};
+      settings.forEach(s => {
+        settingsMap[s.key] = s.value;
+      });
+
+      const pushover_token = settingsMap.pushover_token;
+      const pushover_user = settingsMap.pushover_user;
+      const pushover_enabled = settingsMap.pushover_enabled === 'true';
 
       if (!pushover_enabled || !pushover_token || !pushover_user) {
         logger.debug('Pushover not configured or disabled');
