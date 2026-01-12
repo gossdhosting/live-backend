@@ -5,7 +5,6 @@ import YouTubeService from '../services/YouTubeService.js';
 import TwitchService from '../services/TwitchService.js';
 import PlatformConnection from '../models/PlatformConnection.js';
 import PlatformStream from '../models/PlatformStream.js';
-import RtmpDestination from '../models/rtmpDestination.js';
 import Channel from '../models/Channel.js';
 import logger from '../utils/logger.js';
 

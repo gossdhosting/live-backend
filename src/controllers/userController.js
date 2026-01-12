@@ -2,7 +2,7 @@ import User from '../models/User.js';
 import Plan from '../models/Plan.js';
 import Channel from '../models/Channel.js';
 import PlatformConnection from '../models/PlatformConnection.js';
-import RtmpDestination from '../models/rtmpDestination.js';
+import RtmpDestination from '../models/RtmpDestination.js';
 import logger from '../utils/logger.js';
 import { isValidEmail } from '../utils/validation.js';
 import EmailService from '../services/EmailService.js';

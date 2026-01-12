@@ -1,4 +1,4 @@
-import RtmpTemplate from '../models/rtmpTemplate.js';
+import RtmpTemplate from '../models/RtmpTemplate.js';
 import logger from '../utils/logger.js';
 
 export const getRtmpTemplates = async (req, res) => {
