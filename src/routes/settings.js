@@ -162,14 +162,14 @@ router.post('/test-smtp', requireAdmin, async (req, res) => {
 
     // Send test email
     const info = await transporter.sendMail({
-      from: `"${smtpFromName || 'ZebCast'}" <${smtpFromEmail}>`,
+      from: `"${smtpFromName || 'RexStream'}" <${smtpFromEmail}>`,
       to: testEmail,
-      subject: 'SMTP Test Email - ZebCast',
-      text: 'This is a test email from ZebCast to verify your SMTP settings are working correctly.',
+      subject: 'SMTP Test Email - RexStream',
+      text: 'This is a test email from RexStream to verify your SMTP settings are working correctly.',
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
           <h2 style="color: #3498db;">SMTP Test Successful</h2>
-          <p>This is a test email from <strong>ZebCast</strong> to verify your SMTP settings are working correctly.</p>
+          <p>This is a test email from <strong>RexStream</strong> to verify your SMTP settings are working correctly.</p>
           <p style="color: #7f8c8d; font-size: 12px; margin-top: 30px;">
             If you received this email, your SMTP configuration is properly set up.
           </p>

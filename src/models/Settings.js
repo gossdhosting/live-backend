@@ -10,7 +10,9 @@ class Settings {
   // Get all settings
   static async getAll() {
     const stmt = db.prepare('SELECT * FROM settings ORDER BY key');
-    return await stmt.all();
+    const rows = await stmt.all();
+    // Return plain objects to avoid any prototype chain pollution with connection objects
+    return rows.map(row => ({ ...row }));
   }
 
   // Set a setting value
@@ -50,7 +52,9 @@ class Settings {
       }
     });
 
-    return await this.getAll();
+    // Return fresh settings data as plain objects
+    const allSettings = await this.getAll();
+    return allSettings;
   }
 }
 

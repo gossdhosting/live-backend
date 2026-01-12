@@ -88,8 +88,8 @@ class PushoverService {
 
   // Test Pushover configuration
   static async testNotification() {
-    const message = 'This is a test notification from ZebCast. Your Pushover integration is working correctly!';
-    return await this.sendNotification('ZebCast Test Notification', message, 0);
+    const message = 'This is a test notification from RexStream. Your Pushover integration is working correctly!';
+    return await this.sendNotification('RexStream Test Notification', message, 0);
   }
 }
 

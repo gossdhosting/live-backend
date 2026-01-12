@@ -7,7 +7,8 @@ import PushoverService from '../services/PushoverService.js';
 export const getAllSettings = async (req, res) => {
   try {
     const settings = await Settings.getAll();
-    res.json({ settings });
+    // Ensure we're sending clean JSON without any database connection objects
+    res.json({ settings: JSON.parse(JSON.stringify(settings)) });
   } catch (error) {
     logger.error('Get all settings error', { error: error.message });
     res.status(500).json({ error: 'Internal server error' });
@@ -68,7 +69,8 @@ export const updateSettings = async (req, res) => {
     logger.info('Settings updated successfully', { settingsCount: Object.keys(settings).length });
     console.log('[Settings] Update successful, returning:', updatedSettings?.length || 0, 'settings');
 
-    res.json({ settings: updatedSettings });
+    // Ensure we're sending clean JSON without any database connection objects
+    res.json({ settings: JSON.parse(JSON.stringify(updatedSettings)) });
   } catch (error) {
     logger.error('Update settings error', { error: error.message });
     res.status(500).json({ error: 'Internal server error' });

@@ -73,13 +73,13 @@ class EmailService {
 
       const settings = await this.getSettingsMap();
       const smtp_from_email = settings.smtp_from_email || 'noreply@localhost';
-      const smtp_from_name = settings.smtp_from_name || 'ZebCast';
+      const smtp_from_name = settings.smtp_from_name || 'RexStream';
       const template = settings.email_template_registration || `
-        <h2>Welcome to ZebCast!</h2>
+        <h2>Welcome to RexStream!</h2>
         <p>Hi ${name},</p>
-        <p>Thank you for registering with ZebCast. Your account has been created successfully.</p>
+        <p>Thank you for registering with RexStream. Your account has been created successfully.</p>
         <p>You can now log in and start streaming to multiple platforms simultaneously.</p>
-        <p>Best regards,<br>The ZebCast Team</p>
+        <p>Best regards,<br>The RexStream Team</p>
       `;
 
       const htmlContent = await this.applyTemplate(template);
@@ -87,7 +87,7 @@ class EmailService {
       await transporter.sendMail({
         from: `"${smtp_from_name}" <${smtp_from_email}>`,
         to: email,
-        subject: 'Welcome to ZebCast',
+        subject: 'Welcome to RexStream',
         html: htmlContent,
       });
 
@@ -110,8 +110,8 @@ class EmailService {
 
       const settings = await this.getSettingsMap();
       const smtp_from_email = settings.smtp_from_email || 'noreply@localhost';
-      const smtp_from_name = settings.smtp_from_name || 'ZebCast';
-      const frontendUrl = process.env.FRONTEND_URL || 'https://panel.zebcast.app';
+      const smtp_from_name = settings.smtp_from_name || 'RexStream';
+      const frontendUrl = process.env.FRONTEND_URL || 'https://panel.rexstream.net';
       const resetLink = `${frontendUrl}/reset-password?token=${resetToken}`;
 
       const template = settings.email_template_forgot_password || `
@@ -123,7 +123,7 @@ class EmailService {
         </p>
         <p>If you didn't request this, you can safely ignore this email.</p>
         <p>This link will expire in 1 hour.</p>
-        <p>Best regards,<br>The ZebCast Team</p>
+        <p>Best regards,<br>The RexStream Team</p>
       `;
 
       const htmlContent = await this.applyTemplate(template.replace('${resetLink}', resetLink));
@@ -160,7 +160,7 @@ class EmailService {
       }
 
       const smtp_from_email = settings.smtp_from_email || 'noreply@localhost';
-      const smtp_from_name = settings.smtp_from_name || 'ZebCast';
+      const smtp_from_name = settings.smtp_from_name || 'RexStream';
       const htmlContent = this.applyTemplate(content);
 
       await transporter.sendMail({

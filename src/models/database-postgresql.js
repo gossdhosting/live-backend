@@ -86,7 +86,9 @@ class PreparedStatement {
     try {
       console.log('[DB] Executing query:', this.sql, 'with params:', params);
       const result = await client.query(this.sql, params);
-      return result.rows;
+      // Extract only the rows data, not the entire result object with connection details
+      const rows = result.rows;
+      return rows;
     } catch (error) {
       console.error('[DB] Query failed:', this.sql, 'params:', params, 'error:', error.message);
       throw error;
