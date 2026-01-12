@@ -31,31 +31,24 @@ class Settings {
 
   // Update multiple settings
   static async updateMultiple(settings) {
-    const stmt = db.prepare(`
-      INSERT INTO settings (key, value, updated_at)
-      VALUES (?, ?, CURRENT_TIMESTAMP)
-      ON CONFLICT(key)
-      DO UPDATE SET value = ?, updated_at = CURRENT_TIMESTAMP
-    `);
-
     // Filter out null/undefined values and convert to string
     const validSettings = Object.entries(settings)
       .filter(([key, value]) => value != null)
-      .map(([key, value]) => [key, String(value)]); // Ensure value is always a string
+      .map(([key, value]) => [key, String(value)]);
 
-    // Use async transaction for PostgreSQL compatibility
-    if (db.transaction) {
-      await db.transaction(async () => {
-        for (const [key, value] of validSettings) {
-          await stmt.run(key, value, value);
-        }
-      });
-    } else {
-      // Fallback for databases without transaction support
+    // Use transaction for PostgreSQL
+    await db.transaction(async (client) => {
       for (const [key, value] of validSettings) {
-        await stmt.run(key, value, value);
+        // Execute query directly with the transaction client
+        await client.query(
+          `INSERT INTO settings (key, value, updated_at)
+           VALUES ($1, $2, CURRENT_TIMESTAMP)
+           ON CONFLICT(key)
+           DO UPDATE SET value = $2, updated_at = CURRENT_TIMESTAMP`,
+          [key, value]
+        );
       }
-    }
+    });
 
     return await this.getAll();
   }
