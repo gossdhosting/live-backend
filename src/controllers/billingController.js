@@ -43,6 +43,7 @@ export async function createCheckoutSession(req, res) {
     }
 
     const stripe = stripeConfig.getStripe();
+    const mode = stripeConfig.getMode();
     const user = await User.getById(userId);
 
     // Validate coupon if provided
@@ -57,21 +58,22 @@ export async function createCheckoutSession(req, res) {
       couponId = validation.coupon.id;
     }
 
-    // Get or create Stripe customer
-    let stripeCustomer = await StripeCustomer.getByUserId(userId);
+    // Get or create Stripe customer for the current mode (sandbox or live)
+    let stripeCustomer = await StripeCustomer.getByUserId(userId, mode);
     let customerId;
 
-    if (stripeCustomer) {
+    if (stripeCustomer && stripeCustomer.stripe_customer_id) {
       customerId = stripeCustomer.stripe_customer_id;
     } else {
       const customer = await stripe.customers.create({
         email: user.email,
         metadata: {
           userId: userId.toString(),
+          mode: mode,
         },
       });
       customerId = customer.id;
-      await StripeCustomer.create(userId, customerId, user.email);
+      await StripeCustomer.create(userId, customerId, user.email, mode);
     }
 
     // Create checkout session
