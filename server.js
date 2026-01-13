@@ -24,6 +24,7 @@ import platformAuthRoutes from './src/routes/platformAuth.js';
 import platformRoutes from './src/routes/platforms.js';
 import billingRoutes from './src/routes/billing.js';
 import webhookRoutes from './src/routes/webhooks.js';
+import iapRoutes from './src/routes/iap.js';
 
 // Middleware
 import { apiLimiter } from './src/middleware/rateLimiter.js';
@@ -77,6 +78,7 @@ app.use('/api/server-stats', serverStatsRoutes);
 app.use('/api/media', mediaRoutes);
 app.use('/api/rtmp', rtmpRoutes);
 app.use('/api/billing', billingRoutes);
+app.use('/api/iap', iapRoutes);
 
 // Public API (for Flutter app)
 app.use('/api/public', publicRoutes);

@@ -9,7 +9,7 @@ import CouponCode from '../models/CouponCode.js';
 import PdfService from '../services/PdfService.js';
 import logger from '../utils/logger.js';
 import path from 'path';
-import { sendSubscriptionEmail } from '../services/emailService.js';
+import { sendSubscriptionEmail } from '../services/EmailService.js';
 
 // Create Stripe Checkout Session
 export async function createCheckoutSession(req, res) {
