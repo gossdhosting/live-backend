@@ -303,16 +303,28 @@ export async function adminCancelSubscription(req, res) {
 // ADMIN: Get payment settings
 export async function getPaymentSettings(req, res) {
   try {
-    const settings = await PaymentSettings.get();
+    // Get raw settings with both sandbox and live keys
+    const query = 'SELECT * FROM payment_settings WHERE id = $1';
+    const db = (await import('../models/database.js')).default;
+    const result = await db.query(query, [1]);
+    const settings = result.rows[0] || {};
+
     // Mask secret keys for security while showing they exist
     if (settings) {
-      if (settings.stripe_secret_key) {
-        // Show first 7 chars and mask the rest (e.g., sk_test_****...)
-        settings.stripe_secret_key = settings.stripe_secret_key.substring(0, 7) + '••••••••••••••••••••••••••••';
+      // Sandbox keys
+      if (settings.stripe_secret_key_sandbox) {
+        settings.stripe_secret_key_sandbox = settings.stripe_secret_key_sandbox.substring(0, 7) + '••••••••••••••••••••••••••••';
       }
-      if (settings.stripe_webhook_secret) {
-        // Show first 7 chars and mask the rest
-        settings.stripe_webhook_secret = settings.stripe_webhook_secret.substring(0, 7) + '••••••••••••••••••••••••••••';
+      if (settings.stripe_webhook_secret_sandbox) {
+        settings.stripe_webhook_secret_sandbox = settings.stripe_webhook_secret_sandbox.substring(0, 7) + '••••••••••••••••••••••••••••';
+      }
+
+      // Live keys
+      if (settings.stripe_secret_key_live) {
+        settings.stripe_secret_key_live = settings.stripe_secret_key_live.substring(0, 7) + '••••••••••••••••••••••••••••';
+      }
+      if (settings.stripe_webhook_secret_live) {
+        settings.stripe_webhook_secret_live = settings.stripe_webhook_secret_live.substring(0, 7) + '••••••••••••••••••••••••••••';
       }
     }
     res.json({ settings: settings || {} });
@@ -329,126 +341,93 @@ export async function getPaymentSettings(req, res) {
 export async function updatePaymentSettings(req, res) {
   try {
     let {
-      stripe_publishable_key,
-      stripe_secret_key,
-      stripe_webhook_secret,
+      stripe_publishable_key_sandbox,
+      stripe_secret_key_sandbox,
+      stripe_webhook_secret_sandbox,
+      stripe_publishable_key_live,
+      stripe_secret_key_live,
+      stripe_webhook_secret_live,
       mode,
     } = req.body;
 
-    // Get current settings to check existing keys if mode is being changed
-    const currentSettings = await PaymentSettings.get();
-
     // Don't update with masked values - treat them as unchanged
-    if (stripe_secret_key && stripe_secret_key.includes('••••')) {
-      stripe_secret_key = null; // null means don't update this field (COALESCE will keep existing)
+    if (stripe_secret_key_sandbox && stripe_secret_key_sandbox.includes('••••')) {
+      stripe_secret_key_sandbox = null;
     }
-    if (stripe_webhook_secret && stripe_webhook_secret.includes('••••')) {
-      stripe_webhook_secret = null;
+    if (stripe_webhook_secret_sandbox && stripe_webhook_secret_sandbox.includes('••••')) {
+      stripe_webhook_secret_sandbox = null;
     }
-
-    // If mode is being changed, validate existing keys match the new mode
-    if (mode && currentSettings && currentSettings.mode !== mode) {
-      const keyToCheck = stripe_secret_key || currentSettings.stripe_secret_key;
-      const pubKeyToCheck = stripe_publishable_key || currentSettings.stripe_publishable_key;
-
-      if (keyToCheck) {
-        const isTestKey = keyToCheck.startsWith('sk_test_');
-        const isLiveKey = keyToCheck.startsWith('sk_live_');
-
-        if (mode === 'sandbox' && isLiveKey) {
-          return res.status(400).json({
-            error: 'Cannot switch to sandbox mode with live API keys',
-            details: 'You have live keys configured (sk_live_...). Please update to test keys before switching to sandbox mode.',
-          });
-        }
-
-        if (mode === 'live' && isTestKey) {
-          return res.status(400).json({
-            error: 'Cannot switch to live mode with test API keys',
-            details: 'You have test keys configured (sk_test_...). Please update to live keys before switching to live mode.',
-          });
-        }
-      }
-
-      if (pubKeyToCheck) {
-        const isTestPubKey = pubKeyToCheck.startsWith('pk_test_');
-        const isLivePubKey = pubKeyToCheck.startsWith('pk_live_');
-
-        if (mode === 'sandbox' && isLivePubKey) {
-          return res.status(400).json({
-            error: 'Cannot switch to sandbox mode with live publishable key',
-            details: 'You have a live publishable key configured (pk_live_...). Please update to test key before switching to sandbox mode.',
-          });
-        }
-
-        if (mode === 'live' && isTestPubKey) {
-          return res.status(400).json({
-            error: 'Cannot switch to live mode with test publishable key',
-            details: 'You have a test publishable key configured (pk_test_...). Please update to live key before switching to live mode.',
-          });
-        }
-      }
+    if (stripe_secret_key_live && stripe_secret_key_live.includes('••••')) {
+      stripe_secret_key_live = null;
+    }
+    if (stripe_webhook_secret_live && stripe_webhook_secret_live.includes('••••')) {
+      stripe_webhook_secret_live = null;
     }
 
-    // Validate API key types match the selected mode
-    if (mode && stripe_secret_key && !stripe_secret_key.includes('••••')) {
-      const isTestKey = stripe_secret_key.startsWith('sk_test_');
-      const isLiveKey = stripe_secret_key.startsWith('sk_live_');
-
-      if (mode === 'sandbox' && !isTestKey) {
-        return res.status(400).json({
-          error: 'Sandbox mode requires test API keys (sk_test_...)',
-          details: 'You are trying to use live keys in sandbox mode. Please use test keys or switch to live mode.',
-        });
-      }
-
-      if (mode === 'live' && !isLiveKey) {
-        return res.status(400).json({
-          error: 'Live mode requires production API keys (sk_live_...)',
-          details: 'You are trying to use test keys in live mode. Please use live keys or switch to sandbox mode.',
-        });
-      }
+    // Validate sandbox keys if provided
+    if (stripe_secret_key_sandbox && !stripe_secret_key_sandbox.startsWith('sk_test_')) {
+      return res.status(400).json({
+        error: 'Invalid sandbox secret key',
+        details: 'Sandbox secret key must start with sk_test_',
+      });
+    }
+    if (stripe_publishable_key_sandbox && !stripe_publishable_key_sandbox.startsWith('pk_test_')) {
+      return res.status(400).json({
+        error: 'Invalid sandbox publishable key',
+        details: 'Sandbox publishable key must start with pk_test_',
+      });
     }
 
-    // Validate publishable key matches mode
-    if (mode && stripe_publishable_key) {
-      const isTestPubKey = stripe_publishable_key.startsWith('pk_test_');
-      const isLivePubKey = stripe_publishable_key.startsWith('pk_live_');
-
-      if (mode === 'sandbox' && !isTestPubKey) {
-        return res.status(400).json({
-          error: 'Sandbox mode requires test publishable keys (pk_test_...)',
-        });
-      }
-
-      if (mode === 'live' && !isLivePubKey) {
-        return res.status(400).json({
-          error: 'Live mode requires production publishable keys (pk_live_...)',
-        });
-      }
+    // Validate live keys if provided
+    if (stripe_secret_key_live && !stripe_secret_key_live.startsWith('sk_live_')) {
+      return res.status(400).json({
+        error: 'Invalid live secret key',
+        details: 'Live secret key must start with sk_live_',
+      });
+    }
+    if (stripe_publishable_key_live && !stripe_publishable_key_live.startsWith('pk_live_')) {
+      return res.status(400).json({
+        error: 'Invalid live publishable key',
+        details: 'Live publishable key must start with pk_live_',
+      });
     }
 
     const settings = await PaymentSettings.update({
-      stripe_publishable_key,
-      stripe_secret_key,
-      stripe_webhook_secret,
+      stripe_publishable_key_sandbox,
+      stripe_secret_key_sandbox,
+      stripe_webhook_secret_sandbox,
+      stripe_publishable_key_live,
+      stripe_secret_key_live,
+      stripe_webhook_secret_live,
       mode,
     });
 
     // Reinitialize Stripe with new settings
     await stripeConfig.reinitialize();
 
-    // Mask secret keys before sending back
-    if (settings.stripe_secret_key) {
-      settings.stripe_secret_key = settings.stripe_secret_key.substring(0, 7) + '••••••••••••••••••••••••••••';
+    // Get raw settings again to mask secrets
+    const db = (await import('../models/database.js')).default;
+    const query = 'SELECT * FROM payment_settings WHERE id = $1';
+    const result = await db.query(query, [1]);
+    const maskedSettings = result.rows[0] || {};
+
+    // Mask all secret keys
+    if (maskedSettings.stripe_secret_key_sandbox) {
+      maskedSettings.stripe_secret_key_sandbox = maskedSettings.stripe_secret_key_sandbox.substring(0, 7) + '••••••••••••••••••••••••••••';
     }
-    if (settings.stripe_webhook_secret) {
-      settings.stripe_webhook_secret = settings.stripe_webhook_secret.substring(0, 7) + '••••••••••••••••••••••••••••';
+    if (maskedSettings.stripe_webhook_secret_sandbox) {
+      maskedSettings.stripe_webhook_secret_sandbox = maskedSettings.stripe_webhook_secret_sandbox.substring(0, 7) + '••••••••••••••••••••••••••••';
+    }
+    if (maskedSettings.stripe_secret_key_live) {
+      maskedSettings.stripe_secret_key_live = maskedSettings.stripe_secret_key_live.substring(0, 7) + '••••••••••••••••••••••••••••';
+    }
+    if (maskedSettings.stripe_webhook_secret_live) {
+      maskedSettings.stripe_webhook_secret_live = maskedSettings.stripe_webhook_secret_live.substring(0, 7) + '••••••••••••••••••••••••••••';
     }
 
-    logger.info('Stripe: Payment settings updated', { mode: settings.mode });
+    logger.info('Stripe: Payment settings updated', { mode: maskedSettings.mode });
 
-    res.json({ settings, message: 'Payment settings updated successfully' });
+    res.json({ settings: maskedSettings, message: 'Payment settings updated successfully' });
   } catch (error) {
     logger.error('Stripe: Failed to update payment settings', {
       error: error.message,
