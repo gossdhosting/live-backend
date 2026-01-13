@@ -238,8 +238,9 @@ export async function getAllSubscriptions(req, res) {
   } catch (error) {
     logger.error('Stripe: Failed to get all subscriptions', {
       error: error.message,
+      stack: error.stack,
     });
-    res.status(500).json({ error: 'Failed to get subscriptions' });
+    res.status(500).json({ error: 'Failed to get subscriptions', details: error.message });
   }
 }
 
@@ -256,8 +257,9 @@ export async function getAllInvoices(req, res) {
   } catch (error) {
     logger.error('Stripe: Failed to get all invoices', {
       error: error.message,
+      stack: error.stack,
     });
-    res.status(500).json({ error: 'Failed to get invoices' });
+    res.status(500).json({ error: 'Failed to get invoices', details: error.message });
   }
 }
 
