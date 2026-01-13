@@ -48,6 +48,11 @@ class User {
     return await stmt.get(id);
   }
 
+  // Alias for consistency with other models
+  static async getById(id) {
+    return await this.findById(id);
+  }
+
   // Find user by email (includes password hash for authentication)
   static async findByEmail(email) {
     const stmt = db.prepare('SELECT * FROM users WHERE email = ?');
