@@ -69,6 +69,9 @@ export const createPlan = async (req, res) => {
       description,
       price_monthly,
       price_yearly,
+      stripe_price_id_monthly,
+      stripe_price_id_yearly,
+      stripe_product_id,
       max_concurrent_streams,
       max_bitrate,
       max_stream_duration,
@@ -98,6 +101,9 @@ export const createPlan = async (req, res) => {
       description,
       price_monthly,
       price_yearly,
+      stripe_price_id_monthly: stripe_price_id_monthly || null,
+      stripe_price_id_yearly: stripe_price_id_yearly || null,
+      stripe_product_id: stripe_product_id || null,
       max_concurrent_streams,
       max_bitrate,
       max_stream_duration: max_stream_duration || null,
@@ -128,6 +134,9 @@ export const updatePlan = async (req, res) => {
       description,
       price_monthly,
       price_yearly,
+      stripe_price_id_monthly,
+      stripe_price_id_yearly,
+      stripe_product_id,
       max_concurrent_streams,
       max_bitrate,
       max_stream_duration,
@@ -165,6 +174,9 @@ export const updatePlan = async (req, res) => {
     if (description !== undefined) updateData.description = description;
     if (price_monthly !== undefined) updateData.price_monthly = price_monthly;
     if (price_yearly !== undefined) updateData.price_yearly = price_yearly;
+    if (stripe_price_id_monthly !== undefined) updateData.stripe_price_id_monthly = stripe_price_id_monthly;
+    if (stripe_price_id_yearly !== undefined) updateData.stripe_price_id_yearly = stripe_price_id_yearly;
+    if (stripe_product_id !== undefined) updateData.stripe_product_id = stripe_product_id;
     if (max_concurrent_streams !== undefined) updateData.max_concurrent_streams = max_concurrent_streams;
     if (max_bitrate !== undefined) updateData.max_bitrate = max_bitrate;
     if (max_stream_duration !== undefined) updateData.max_stream_duration = max_stream_duration;
