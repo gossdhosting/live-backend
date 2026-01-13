@@ -849,14 +849,14 @@ export async function upgradePlan(req, res) {
         customer: stripeSubscription.customer,
         amount: Math.round(proratedAmount * 100), // Convert to cents
         currency: 'usd',
-        description: `Prorated upgrade from ${currentPlan.name} to ${newPlan.name}`,
+        description: `Prorated upgrade from ${currentPlan.name} Plan to ${newPlan.name} Plan for streaming service subscription`,
       });
 
       // Create and finalize the invoice
       invoice = await stripe.invoices.create({
         customer: stripeSubscription.customer,
         auto_advance: true, // Automatically finalize and attempt payment
-        description: `Plan upgrade proration`,
+        description: `Plan upgrade proration - Streaming service subscription upgrade`,
       });
 
       // Finalize and pay the invoice
