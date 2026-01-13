@@ -125,13 +125,20 @@ async function handleSubscriptionUpdated(subscription) {
   const interval = subscription.items.data[0]?.price.recurring?.interval;
   const billingCycle = interval === 'year' ? 'yearly' : 'monthly';
 
-  // Find plan by stripe price ID
+  // Get planId from subscription metadata (set during checkout)
+  const planId = subscription.metadata?.planId ? parseInt(subscription.metadata.planId) : null;
+
   const db = (await import('../models/database.js')).default;
-  const planQuery = billingCycle === 'monthly'
-    ? 'SELECT id FROM plans WHERE stripe_price_id_monthly = $1'
-    : 'SELECT id FROM plans WHERE stripe_price_id_yearly = $1';
-  const planResult = await db.query(planQuery, [priceId]);
-  const planId = planResult.rows[0]?.id;
+
+  // If no planId in metadata, try to find by price ID (fallback for old subscriptions)
+  let finalPlanId = planId;
+  if (!finalPlanId) {
+    const planQuery = billingCycle === 'monthly'
+      ? 'SELECT id FROM plans WHERE stripe_price_id_monthly = $1'
+      : 'SELECT id FROM plans WHERE stripe_price_id_yearly = $1';
+    const planResult = await db.query(planQuery, [priceId]);
+    finalPlanId = planResult.rows[0]?.id;
+  }
 
   // Check if subscription exists
   const existingSub = await StripeSubscription.getByStripeId(subscriptionId);
@@ -145,13 +152,14 @@ async function handleSubscriptionUpdated(subscription) {
       cancelAtPeriodEnd,
       stripePriceId: priceId,
       billingCycle,
-      ...(planId && { planId }),
+      ...(finalPlanId && { planId: finalPlanId }),
     });
 
     logger.info('Stripe Webhook: Subscription updated', {
       userId,
       subscriptionId,
       status,
+      planId: finalPlanId,
     });
   } else {
     // Before creating new subscription, cancel any other active subscriptions for this user
@@ -180,7 +188,7 @@ async function handleSubscriptionUpdated(subscription) {
       stripeCustomerId: customerId,
       stripeSubscriptionId: subscriptionId,
       stripePriceId: priceId,
-      planId,
+      planId: finalPlanId,
       status,
       billingCycle,
       currentPeriodStart,
@@ -191,13 +199,14 @@ async function handleSubscriptionUpdated(subscription) {
       userId,
       subscriptionId,
       status,
+      planId: finalPlanId,
     });
   }
 
   // Update user's subscription status
-  if (planId) {
+  if (finalPlanId) {
     await User.update(userId, {
-      plan_id: planId,
+      plan_id: finalPlanId,
       subscription_type: billingCycle,
       subscription_status: status === 'active' || status === 'trialing' ? 'active' : 'cancelled',
       subscription_started_at: currentPeriodStart.toISOString(),
@@ -211,7 +220,7 @@ async function handleSubscriptionUpdated(subscription) {
   const user = await User.getById(userId);
   if (status === 'active' && !existingSub) {
     // Get plan details
-    const plan = planId ? await db.query('SELECT * FROM plans WHERE id = $1', [planId]) : null;
+    const plan = finalPlanId ? await db.query('SELECT * FROM plans WHERE id = $1', [finalPlanId]) : null;
     const planName = plan?.rows[0]?.name || 'Unknown';
     const amount = billingCycle === 'monthly' ? plan?.rows[0]?.price_monthly : plan?.rows[0]?.price_yearly;
 
