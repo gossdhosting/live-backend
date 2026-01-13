@@ -267,6 +267,25 @@ class EmailService {
             <p>If you need to update your payment method or cancel, please do so before the renewal date.</p>
           `,
         },
+        upgraded: {
+          subject: 'Plan Upgraded Successfully',
+          html: `
+            <h2>🎉 Plan Upgraded!</h2>
+            <p>Your subscription has been upgraded to <strong>${data.planName}</strong>.</p>
+            <p><strong>Billing cycle:</strong> ${data.billingCycle}</p>
+            <p>You now have access to enhanced features and higher limits.</p>
+            <p>Thank you for upgrading!</p>
+          `,
+        },
+        downgraded: {
+          subject: 'Plan Changed',
+          html: `
+            <h2>Plan Updated</h2>
+            <p>Your subscription has been changed to <strong>${data.planName}</strong>.</p>
+            <p><strong>Billing cycle:</strong> ${data.billingCycle}</p>
+            <p>Your new plan features will take effect immediately.</p>
+          `,
+        },
         admin_payment_failed: {
           subject: `[ADMIN] Payment Failed for User ${data.userEmail}`,
           html: `

@@ -6,6 +6,7 @@ import StripeCustomer from '../models/StripeCustomer.js';
 import CouponCode from '../models/CouponCode.js';
 import logger from '../utils/logger.js';
 import { sendSubscriptionEmail } from '../services/EmailService.js';
+import PushoverService from '../services/PushoverService.js';
 
 // Stripe webhook handler
 export async function handleStripeWebhook(req, res) {
@@ -144,6 +145,10 @@ async function handleSubscriptionUpdated(subscription) {
   const existingSub = await StripeSubscription.getByStripeId(subscriptionId);
 
   if (existingSub) {
+    // Check if plan changed (upgrade/downgrade)
+    const oldPlanId = existingSub.plan_id;
+    const planChanged = finalPlanId && oldPlanId && finalPlanId !== oldPlanId;
+
     // Update existing subscription
     await StripeSubscription.update(subscriptionId, {
       status,
@@ -155,12 +160,43 @@ async function handleSubscriptionUpdated(subscription) {
       ...(finalPlanId && { planId: finalPlanId }),
     });
 
-    logger.info('Stripe Webhook: Subscription updated', {
-      userId,
-      subscriptionId,
-      status,
-      planId: finalPlanId,
-    });
+    // Send notification if plan changed
+    if (planChanged) {
+      const Plan = (await import('../models/Plan.js')).default;
+      const oldPlan = await Plan.getById(oldPlanId);
+      const newPlan = await Plan.getById(finalPlanId);
+      const User = (await import('../models/User.js')).default;
+      const user = await User.findById(userId);
+
+      const isUpgrade = parseFloat(newPlan.price_monthly) > parseFloat(oldPlan.price_monthly);
+      const action = isUpgrade ? 'upgraded' : 'downgraded';
+
+      // Send email to user
+      await sendSubscriptionEmail(user.email, action, {
+        planName: newPlan.name,
+        billingCycle: billingCycle
+      });
+
+      // Send Pushover notification to admin
+      await PushoverService.sendNotification(
+        `[ADMIN] Plan ${isUpgrade ? 'Upgrade' : 'Change'} - ${newPlan.name}`,
+        `${user.email} ${action} from ${oldPlan.name} to ${newPlan.name} (${billingCycle})`
+      );
+
+      logger.info(`Stripe Webhook: Plan ${action}`, {
+        userId,
+        oldPlan: oldPlan.name,
+        newPlan: newPlan.name,
+        subscriptionId,
+      });
+    } else {
+      logger.info('Stripe Webhook: Subscription updated', {
+        userId,
+        subscriptionId,
+        status,
+        planId: finalPlanId,
+      });
+    }
   } else {
     // Before creating new subscription, cancel any other active subscriptions for this user
     // This handles cases where Stripe creates a new subscription ID during plan changes
