@@ -1,4 +1,4 @@
-import db from '../config/database.js';
+import db from './database.js';
 import logger from '../utils/logger.js';
 
 class CouponCode {

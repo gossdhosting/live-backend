@@ -1,4 +1,4 @@
-import db from '../config/database.js';
+import db from './database.js';
 
 class PaymentSettings {
   static async get() {
