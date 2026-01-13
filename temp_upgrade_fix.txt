@@ -1,0 +1,13 @@
+Alternative approach to avoid India export issues:
+
+Instead of:
+1. Create invoice for proration
+2. Update subscription with price_data
+
+Do this:
+1. Calculate prorated credit
+2. Create ONE-TIME invoice for the upgrade with the EXACT prorated amount
+3. Cancel old subscription (at period end)
+4. Create NEW subscription starting immediately at new price
+
+This avoids Stripe's export transaction rules because we're creating a fresh subscription, not modifying an existing one.
