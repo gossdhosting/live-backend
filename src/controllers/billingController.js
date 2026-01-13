@@ -31,14 +31,14 @@ export async function createCheckoutSession(req, res) {
       return res.status(404).json({ error: 'Plan not found' });
     }
 
-    // Get Stripe price ID from plan
-    const stripePriceId = billingCycle === 'monthly'
-      ? plan.stripe_price_id_monthly
-      : plan.stripe_price_id_yearly;
+    // Calculate amount based on billing cycle
+    const amount = billingCycle === 'monthly'
+      ? parseFloat(plan.price_monthly)
+      : parseFloat(plan.price_yearly);
 
-    if (!stripePriceId) {
+    if (amount <= 0) {
       return res.status(400).json({
-        error: 'This plan is not configured for Stripe payments. Please contact administrator.',
+        error: 'This plan does not have a valid price configured for the selected billing cycle.',
       });
     }
 
@@ -76,13 +76,24 @@ export async function createCheckoutSession(req, res) {
       await StripeCustomer.create(userId, customerId, user.email, mode);
     }
 
-    // Create checkout session
+    // Create checkout session with subscription using price_data (dynamic pricing)
     const sessionConfig = {
       customer: customerId,
       payment_method_types: ['card'],
       line_items: [
         {
-          price: stripePriceId,
+          price_data: {
+            currency: 'usd',
+            product_data: {
+              name: `${plan.name} Plan`,
+              description: `${plan.description || plan.name} - ${billingCycle === 'monthly' ? 'Monthly' : 'Yearly'} billing`,
+            },
+            unit_amount: Math.round(amount * 100), // Convert to cents
+            recurring: {
+              interval: billingCycle === 'monthly' ? 'month' : 'year',
+              interval_count: 1,
+            },
+          },
           quantity: 1,
         },
       ],
@@ -696,12 +707,12 @@ export async function previewUpgrade(req, res) {
       return res.status(404).json({ error: 'Plan not found' });
     }
 
-    // Get new price ID
-    const newPriceId = billingCycle === 'monthly'
-      ? newPlan.stripe_price_id_monthly
-      : newPlan.stripe_price_id_yearly;
+    // Calculate new amount
+    const newAmount = billingCycle === 'monthly'
+      ? parseFloat(newPlan.price_monthly)
+      : parseFloat(newPlan.price_yearly);
 
-    if (!newPriceId) {
+    if (newAmount <= 0) {
       return res.status(400).json({ error: 'Plan not configured for this billing cycle' });
     }
 
@@ -712,44 +723,47 @@ export async function previewUpgrade(req, res) {
       currentSubscription.stripe_subscription_id
     );
 
-    // Use current timestamp for consistent proration calculation
-    const prorationDate = Math.floor(Date.now() / 1000);
+    // Get current plan details for proration calculation
+    const currentPlan = await Plan.getById(currentSubscription.plan_id);
+    const currentAmount = currentSubscription.billing_cycle === 'monthly'
+      ? parseFloat(currentPlan.price_monthly)
+      : parseFloat(currentPlan.price_yearly);
 
-    // Preview the upcoming invoice with the new price
-    const upcomingInvoice = await stripe.invoices.retrieveUpcoming({
-      customer: stripeSubscription.customer,
-      subscription: currentSubscription.stripe_subscription_id,
-      subscription_items: [
-        {
-          id: stripeSubscription.items.data[0].id,
-          price: newPriceId,
-        },
-      ],
-      subscription_proration_behavior: 'always_invoice',
-      subscription_proration_date: prorationDate,
-    });
+    // Calculate proration manually
+    const now = Math.floor(Date.now() / 1000);
+    const periodStart = stripeSubscription.current_period_start;
+    const periodEnd = stripeSubscription.current_period_end;
+    const totalDuration = periodEnd - periodStart;
+    const remainingDuration = periodEnd - now;
+    const usedDuration = now - periodStart;
 
-    // Calculate proration details
-    const proratedAmount = upcomingInvoice.amount_due / 100;
-    const fullAmount = billingCycle === 'monthly' ? newPlan.price_monthly : newPlan.price_yearly;
-    const credit = fullAmount - proratedAmount;
+    // Calculate unused time credit from current plan
+    const unusedCredit = (currentAmount * remainingDuration) / totalDuration;
+
+    // Calculate charge for new plan for remaining period
+    const newPlanCharge = (newAmount * remainingDuration) / totalDuration;
+
+    // Net amount due (new plan charge - unused credit)
+    const proratedAmount = Math.max(0, newPlanCharge - unusedCredit);
 
     res.json({
       newPlan: {
         id: newPlan.id,
         name: newPlan.name,
-        price: fullAmount,
+        price: newAmount,
       },
       currentPlan: {
         id: currentSubscription.plan_id,
         billingCycle: currentSubscription.billing_cycle,
+        price: currentAmount,
       },
       proration: {
         dueNow: proratedAmount,
-        fullPrice: fullAmount,
-        credit: credit,
-        currency: upcomingInvoice.currency.toUpperCase(),
-        prorationDate: prorationDate, // Pass to upgrade endpoint for consistency
+        fullPrice: newAmount,
+        credit: unusedCredit,
+        newPlanCharge: newPlanCharge,
+        remainingDays: Math.ceil(remainingDuration / 86400),
+        currency: 'USD',
       },
       nextBillingDate: new Date(stripeSubscription.current_period_end * 1000).toISOString(),
     });
@@ -781,12 +795,12 @@ export async function upgradePlan(req, res) {
       return res.status(404).json({ error: 'Plan not found' });
     }
 
-    // Get new price ID
-    const newPriceId = billingCycle === 'monthly'
-      ? newPlan.stripe_price_id_monthly
-      : newPlan.stripe_price_id_yearly;
+    // Calculate new amount
+    const newAmount = billingCycle === 'monthly'
+      ? parseFloat(newPlan.price_monthly)
+      : parseFloat(newPlan.price_yearly);
 
-    if (!newPriceId) {
+    if (newAmount <= 0) {
       return res.status(400).json({ error: 'Plan not configured for this billing cycle' });
     }
 
@@ -797,14 +811,25 @@ export async function upgradePlan(req, res) {
       currentSubscription.stripe_subscription_id
     );
 
-    // Update subscription with proration and immediate billing
+    // Update subscription with custom pricing and proration
     const updatedSubscription = await stripe.subscriptions.update(
       currentSubscription.stripe_subscription_id,
       {
         items: [
           {
             id: stripeSubscription.items.data[0].id,
-            price: newPriceId,
+            price_data: {
+              currency: 'usd',
+              product_data: {
+                name: `${newPlan.name} Plan`,
+                description: `${newPlan.description || newPlan.name} - ${billingCycle === 'monthly' ? 'Monthly' : 'Yearly'} billing`,
+              },
+              unit_amount: Math.round(newAmount * 100), // Convert to cents
+              recurring: {
+                interval: billingCycle === 'monthly' ? 'month' : 'year',
+                interval_count: 1,
+              },
+            },
           },
         ],
         proration_behavior: 'always_invoice', // Create and finalize invoice immediately
@@ -831,6 +856,9 @@ export async function upgradePlan(req, res) {
        WHERE user_id = $1 AND status IN ('active', 'trialing') AND id != $2`,
       [userId, currentSubscription.id]
     );
+
+    // Get the newly created price ID from the updated subscription
+    const newPriceId = updatedSubscription.items.data[0].price.id;
 
     // Update database with new plan
     await StripeSubscription.updatePlan(

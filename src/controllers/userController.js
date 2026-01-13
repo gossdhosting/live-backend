@@ -261,6 +261,10 @@ export const getUserStats = async (req, res) => {
     const planLimits = await User.checkPlanLimits(userId);
     const user = await User.findById(userId);
 
+    // Get full plan details
+    const Plan = (await import('../models/Plan.js')).default;
+    const planDetails = user.plan_id ? await Plan.getById(user.plan_id) : null;
+
     // Check if user has YouTube restreaming access (user level OR plan level)
     const hasYouTubeAccess = user.youtube_restreaming === true || user.plan_youtube_restreaming === true;
 
@@ -270,7 +274,12 @@ export const getUserStats = async (req, res) => {
       limits: planLimits.limits,
       usage: planLimits.usage,
       canCreate: planLimits.canCreate,
-      plan: { name: planLimits.user_plan },
+      plan: planDetails ? {
+        id: planDetails.id,
+        name: planDetails.name,
+        price_monthly: parseFloat(planDetails.price_monthly),
+        price_yearly: parseFloat(planDetails.price_yearly)
+      } : { name: planLimits.user_plan },
       youtube_restreaming: hasYouTubeAccess
     });
   } catch (error) {
