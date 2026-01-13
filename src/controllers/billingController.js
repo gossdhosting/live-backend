@@ -887,14 +887,21 @@ export async function upgradePlan(req, res) {
             },
           },
         }],
+        proration_behavior: 'always_invoice', // Immediately generate invoice for the difference
+        payment_behavior: 'pending_if_incomplete', // Don't crash if payment needs 3DS, just return pending
+      }
+    );
+
+    // Update metadata separately (metadata not supported with pending_if_incomplete)
+    await stripe.subscriptions.update(
+      currentSubscription.stripe_subscription_id,
+      {
         metadata: {
           userId: userId.toString(),
           planId: newPlanId.toString(),
           billingCycle,
           type: 'upgrade'
         },
-        proration_behavior: 'always_invoice', // Immediately generate invoice for the difference
-        payment_behavior: 'pending_if_incomplete', // Don't crash if payment needs 3DS, just return pending
       }
     );
 
