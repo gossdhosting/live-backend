@@ -5,7 +5,7 @@ import User from '../models/User.js';
 import StripeCustomer from '../models/StripeCustomer.js';
 import CouponCode from '../models/CouponCode.js';
 import logger from '../utils/logger.js';
-import { sendSubscriptionEmail } from '../services/emailService.js';
+import { sendSubscriptionEmail } from '../services/EmailService.js';
 
 // Stripe webhook handler
 export async function handleStripeWebhook(req, res) {
