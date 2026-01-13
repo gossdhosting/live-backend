@@ -134,13 +134,19 @@ router.post('/test-smtp', requireAdmin, async (req, res) => {
     }
 
     // Get SMTP settings from database
-    const smtpHost = Settings.get('smtp_host')?.value;
-    const smtpPort = Settings.get('smtp_port')?.value;
-    const smtpSecure = Settings.get('smtp_secure')?.value === '1';
-    const smtpUser = Settings.get('smtp_user')?.value;
-    const smtpPassword = Settings.get('smtp_password')?.value;
-    const smtpFromEmail = Settings.get('smtp_from_email')?.value;
-    const smtpFromName = Settings.get('smtp_from_name')?.value;
+    const settings = await Settings.getAll();
+    const settingsMap = {};
+    settings.forEach(s => {
+      settingsMap[s.key] = s.value;
+    });
+
+    const smtpHost = settingsMap.smtp_host;
+    const smtpPort = settingsMap.smtp_port;
+    const smtpSecure = settingsMap.smtp_secure === '1';
+    const smtpUser = settingsMap.smtp_user;
+    const smtpPassword = settingsMap.smtp_password;
+    const smtpFromEmail = settingsMap.smtp_from_email;
+    const smtpFromName = settingsMap.smtp_from_name;
 
     if (!smtpHost || !smtpPort || !smtpUser || !smtpPassword || !smtpFromEmail) {
       return res.status(400).json({ error: 'SMTP settings are incomplete. Please fill in all required fields.' });
