@@ -126,7 +126,7 @@ async function handleSubscriptionUpdated(subscription) {
   const billingCycle = interval === 'year' ? 'yearly' : 'monthly';
 
   // Find plan by stripe price ID
-  const db = (await import('../config/database.js')).default;
+  const db = (await import('../models/database.js')).default;
   const planQuery = billingCycle === 'monthly'
     ? 'SELECT id FROM plans WHERE stripe_price_id_monthly = $1'
     : 'SELECT id FROM plans WHERE stripe_price_id_yearly = $1';
