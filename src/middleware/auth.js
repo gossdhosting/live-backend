@@ -50,3 +50,7 @@ export const requireAdmin = (req, res, next) => {
   }
   next();
 };
+
+// Aliases for compatibility
+export const auth = authenticateToken;
+export const adminOnly = requireAdmin;
