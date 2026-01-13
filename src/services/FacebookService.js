@@ -118,7 +118,32 @@ class FacebookService {
       };
     } catch (error) {
       logger.error('Facebook: Failed to create live video', { error: error.response?.data || error.message });
-      throw new Error(error.response?.data?.error?.message || 'Failed to create Facebook live video');
+
+      // Parse specific Facebook API errors
+      let errorMessage = 'Failed to create Facebook live video';
+
+      if (error.response?.data?.error) {
+        const fbError = error.response.data.error;
+        const errorCode = fbError.code;
+        const errorType = fbError.type;
+
+        // Handle specific Facebook error codes
+        if (errorCode === 190) {
+          errorMessage = 'Facebook authentication expired. Please reconnect your Facebook account.';
+        } else if (errorCode === 200 && errorType === 'OAuthException') {
+          errorMessage = 'Missing Facebook permissions. Please reconnect your Facebook account with the required permissions.';
+        } else if (errorCode === 368) {
+          errorMessage = 'Your Facebook page has restrictions on live streaming. Check your page settings.';
+        } else if (errorCode === 100) {
+          errorMessage = 'Invalid Facebook page selected. Please select a valid page from your account.';
+        } else if (fbError.message) {
+          errorMessage = fbError.message;
+        }
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
+      throw new Error(errorMessage);
     }
   }
 

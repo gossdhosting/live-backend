@@ -200,8 +200,45 @@ class YouTubeService {
       logger.error('YouTube: Failed to create live broadcast', {
         error: error.message,
         details: error.response?.data,
+        code: error.code,
       });
-      throw new Error(error.message || 'Failed to create YouTube live broadcast');
+
+      // Parse specific YouTube API errors and provide user-friendly messages
+      let errorMessage = 'Failed to create YouTube live broadcast';
+
+      if (error.response?.data?.error) {
+        const apiError = error.response.data.error;
+        const errorCode = apiError.code;
+        const errors = apiError.errors || [];
+        const reason = errors[0]?.reason;
+
+        // Handle specific YouTube API error codes
+        if (errorCode === 403) {
+          if (reason === 'liveStreamingNotEnabled') {
+            errorMessage = 'YouTube Live Streaming is not enabled for this channel. Please enable it at https://www.youtube.com/live_dashboard';
+          } else if (reason === 'forbiddenPolicyViolation') {
+            errorMessage = 'Your YouTube channel has restrictions on live streaming due to policy violations. Check your channel status in YouTube Studio.';
+          } else if (reason === 'insufficientLivePermissions') {
+            errorMessage = 'Your YouTube channel does not have permission to create live streams. Please wait 24 hours after enabling live streaming.';
+          } else {
+            errorMessage = 'Permission denied: ' + (apiError.message || 'Insufficient permissions to create live stream');
+          }
+        } else if (errorCode === 401) {
+          errorMessage = 'YouTube authentication expired. Please reconnect your YouTube account.';
+        } else if (errorCode === 400) {
+          if (reason === 'invalidScheduledStartTime') {
+            errorMessage = 'Invalid scheduled start time for the broadcast';
+          } else {
+            errorMessage = 'Invalid request: ' + (apiError.message || 'Check your broadcast settings');
+          }
+        } else if (apiError.message) {
+          errorMessage = apiError.message;
+        }
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
+      throw new Error(errorMessage);
     }
   }
 

@@ -154,7 +154,26 @@ class TwitchService {
       return response.data.data[0].stream_key;
     } catch (error) {
       logger.error('Twitch: Failed to get stream key', { error: error.response?.data || error.message });
-      throw new Error('Failed to get Twitch stream key. Make sure you have the required permissions.');
+
+      // Parse specific Twitch API errors
+      let errorMessage = 'Failed to get Twitch stream key';
+
+      if (error.response?.data) {
+        const twitchError = error.response.data;
+        const status = error.response.status;
+
+        if (status === 401) {
+          errorMessage = 'Twitch authentication expired. Please reconnect your Twitch account.';
+        } else if (status === 403) {
+          errorMessage = 'Missing required Twitch permissions. Please reconnect your account with channel:read:stream_key scope.';
+        } else if (twitchError.message) {
+          errorMessage = twitchError.message;
+        }
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
+      throw new Error(errorMessage);
     }
   }
 
