@@ -40,4 +40,7 @@ router.post('/admin/cleanup-duplicates', auth, adminOnly, billingController.clea
 // Admin sync subscription endpoint
 router.post('/admin/sync-subscription/:subscriptionId', auth, adminOnly, billingController.syncSubscriptionFromStripe);
 
+// Admin get Stripe invoice details endpoint
+router.get('/admin/stripe-invoice/:invoiceId', auth, adminOnly, billingController.getStripeInvoiceDetails);
+
 export default router;

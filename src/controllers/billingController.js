@@ -819,6 +819,33 @@ export async function upgradePlan(req, res) {
       currentSubscription.stripe_subscription_id
     );
 
+    // Check for any pending invoice items before upgrade
+    const pendingInvoiceItems = await stripe.invoiceItems.list({
+      customer: stripeSubscription.customer,
+      limit: 100
+    });
+
+    logger.info('Pending invoice items before upgrade', {
+      count: pendingInvoiceItems.data.length,
+      items: pendingInvoiceItems.data.map(item => ({
+        id: item.id,
+        amount: item.amount / 100,
+        description: item.description,
+        date: new Date(item.date * 1000).toISOString()
+      }))
+    });
+
+    // Delete all pending invoice items to ensure clean upgrade
+    // These are usually proration items that we don't want to charge
+    for (const item of pendingInvoiceItems.data) {
+      await stripe.invoiceItems.del(item.id);
+      logger.info('Deleted pending invoice item', {
+        id: item.id,
+        amount: item.amount / 100,
+        description: item.description
+      });
+    }
+
     // Cancel the old subscription and create a new one
     // This is the simplest approach that avoids India export compliance issues
     await stripe.subscriptions.update(currentSubscription.stripe_subscription_id, {
@@ -855,12 +882,32 @@ export async function upgradePlan(req, res) {
       },
     });
 
-    // Get the invoice that was just created
-    const latestInvoice = await stripe.invoices.retrieve(updatedSubscription.latest_invoice);
+    // Get the invoice that was just created with expanded line items
+    const latestInvoice = await stripe.invoices.retrieve(updatedSubscription.latest_invoice, {
+      expand: ['lines.data.price', 'lines.data.proration_details']
+    });
 
     const actualCharged = latestInvoice.amount_paid / 100;
     const totalBeforeCredits = latestInvoice.total / 100;
     const credits = 0; // No proration with new subscription approach
+
+    // Log detailed invoice breakdown
+    logger.info('Stripe: Invoice breakdown', {
+      invoiceId: latestInvoice.id,
+      total: latestInvoice.total / 100,
+      amountPaid: latestInvoice.amount_paid / 100,
+      amountDue: latestInvoice.amount_due / 100,
+      lineItems: latestInvoice.lines.data.map(item => ({
+        description: item.description,
+        amount: item.amount / 100,
+        quantity: item.quantity,
+        proration: item.proration,
+        period: item.period ? {
+          start: new Date(item.period.start * 1000).toISOString(),
+          end: new Date(item.period.end * 1000).toISOString()
+        } : null
+      }))
+    });
 
     // The webhook will handle creating the new subscription record and updating the user
     // Just return success
@@ -1056,50 +1103,86 @@ export async function cleanupDuplicateSubscriptions(req, res) {
   }
 }
 
+// Get Stripe invoice details (admin only - for debugging)
+export async function getStripeInvoiceDetails(req, res) {
+  try {
+    const { invoiceId } = req.params;
+    const stripe = stripeConfig.getStripe();
+
+    // Retrieve invoice with expanded line items
+    const invoice = await stripe.invoices.retrieve(invoiceId, {
+      expand: ['lines.data.price', 'lines.data.proration_details']
+    });
+
+    res.json({
+      id: invoice.id,
+      total: invoice.total / 100,
+      amountPaid: invoice.amount_paid / 100,
+      amountDue: invoice.amount_due / 100,
+      status: invoice.status,
+      billingReason: invoice.billing_reason,
+      lineItems: invoice.lines.data.map(item => ({
+        id: item.id,
+        description: item.description,
+        amount: item.amount / 100,
+        quantity: item.quantity,
+        proration: item.proration,
+        period: item.period ? {
+          start: new Date(item.period.start * 1000).toISOString(),
+          end: new Date(item.period.end * 1000).toISOString()
+        } : null
+      }))
+    });
+  } catch (error) {
+    logger.error('Failed to get Stripe invoice details', { error: error.message });
+    res.status(500).json({ error: error.message || 'Failed to get invoice details' });
+  }
+}
+
 // Sync subscription from Stripe (admin only - for fixing missing plan_id)
 export async function syncSubscriptionFromStripe(req, res) {
   try {
     const { subscriptionId } = req.params;
-    
+
     const stripe = stripeConfig.getStripe();
-    
+
     // Get subscription from Stripe
     const stripeSubscription = await stripe.subscriptions.retrieve(subscriptionId);
-    
+
     if (!stripeSubscription) {
       return res.status(404).json({ error: 'Subscription not found in Stripe' });
     }
-    
+
     // Get plan ID from metadata
     const planId = stripeSubscription.metadata?.planId ? parseInt(stripeSubscription.metadata.planId) : null;
-    
+
     if (!planId) {
       return res.status(400).json({ error: 'No planId found in subscription metadata' });
     }
-    
+
     // Get local subscription
     const localSub = await StripeSubscription.getByStripeId(subscriptionId);
-    
+
     if (!localSub) {
       return res.status(404).json({ error: 'Subscription not found in database' });
     }
-    
+
     // Update local subscription with plan ID
     await StripeSubscription.update(subscriptionId, {
       planId: planId,
     });
-    
+
     // Update user's plan
     await User.update(localSub.user_id, {
       plan_id: planId,
     });
-    
+
     logger.info('Synced subscription from Stripe', {
       subscriptionId,
       planId,
       userId: localSub.user_id,
     });
-    
+
     res.json({
       message: 'Subscription synced successfully',
       subscriptionId,
