@@ -847,6 +847,7 @@ export async function upgradePlan(req, res) {
           },
         },
       ],
+      default_payment_method: stripeSubscription.default_payment_method,
       metadata: {
         userId: userId.toString(),
         planId: newPlanId.toString(),
