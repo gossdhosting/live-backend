@@ -792,7 +792,7 @@ export async function upgradePlan(req, res) {
       currentSubscription.stripe_subscription_id
     );
 
-    // Update subscription with proration
+    // Update subscription with proration and immediate billing
     const updatedSubscription = await stripe.subscriptions.update(
       currentSubscription.stripe_subscription_id,
       {
@@ -802,29 +802,36 @@ export async function upgradePlan(req, res) {
             price: newPriceId,
           },
         ],
-        proration_behavior: 'create_prorations',
+        proration_behavior: 'always_invoice', // Create and finalize invoice immediately
         billing_cycle_anchor: 'unchanged', // Keep the same billing cycle
       }
     );
 
-    // Get upcoming invoice to show proration details
-    const upcomingInvoice = await stripe.invoices.retrieveUpcoming({
-      customer: stripeSubscription.customer,
-      subscription: currentSubscription.stripe_subscription_id,
-    });
+    // Retrieve the latest invoice (which was just created and finalized)
+    const latestInvoice = await stripe.invoices.retrieve(updatedSubscription.latest_invoice);
+
+    // Update database with new plan
+    await StripeSubscription.updatePlan(
+      currentSubscription.id,
+      newPlanId,
+      billingCycle,
+      newPriceId
+    );
 
     logger.info('Stripe: Plan upgraded', {
       userId,
       oldPlanId: currentSubscription.plan_id,
       newPlanId,
-      proratedAmount: upcomingInvoice.amount_due,
+      proratedAmount: latestInvoice.amount_paid,
+      invoiceId: latestInvoice.id,
     });
 
     res.json({
       message: 'Plan upgraded successfully',
       subscription: updatedSubscription,
-      proratedAmount: upcomingInvoice.amount_due / 100, // Convert from cents to dollars
-      currency: upcomingInvoice.currency,
+      proratedAmount: latestInvoice.amount_paid / 100, // Convert from cents to dollars
+      currency: latestInvoice.currency,
+      invoiceUrl: latestInvoice.hosted_invoice_url,
     });
   } catch (error) {
     logger.error('Failed to upgrade plan', { error: error.message });

@@ -133,6 +133,17 @@ class StripeSubscription {
     return result.rows[0];
   }
 
+  static async updatePlan(subscriptionId, planId, billingCycle, stripePriceId) {
+    const query = `
+      UPDATE stripe_subscriptions
+      SET plan_id = $2, billing_cycle = $3, stripe_price_id = $4, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+      RETURNING *
+    `;
+    const result = await db.query(query, [subscriptionId, planId, billingCycle, stripePriceId]);
+    return result.rows[0];
+  }
+
   static async cancel(stripeSubscriptionId, cancelAtPeriodEnd = true) {
     const query = `
       UPDATE stripe_subscriptions
