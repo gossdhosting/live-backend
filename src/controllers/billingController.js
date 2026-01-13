@@ -781,7 +781,7 @@ export async function previewUpgrade(req, res) {
   }
 }
 
-// Upgrade plan with prorated pricing
+// Upgrade plan with proper proration and India compliance handling
 export async function upgradePlan(req, res) {
   try {
     const userId = req.user.id;
@@ -791,13 +791,13 @@ export async function upgradePlan(req, res) {
       return res.status(400).json({ error: 'New plan ID and billing cycle are required' });
     }
 
-    // Get current subscription
+    // 1. Get current subscription from DB
     const currentSubscription = await StripeSubscription.getActiveByUserId(userId);
     if (!currentSubscription) {
       return res.status(404).json({ error: 'No active subscription found' });
     }
 
-    // Get new plan details
+    // 2. Get new plan details from DB
     const newPlan = await Plan.getById(newPlanId);
     if (!newPlan) {
       return res.status(404).json({ error: 'Plan not found' });
@@ -814,122 +814,106 @@ export async function upgradePlan(req, res) {
 
     const stripe = stripeConfig.getStripe();
 
-    // Get current subscription from Stripe
+    // 3. Retrieve the full subscription object from Stripe
+    // We need this to get the specific 'subscription_item' ID (si_...)
     const stripeSubscription = await stripe.subscriptions.retrieve(
       currentSubscription.stripe_subscription_id
     );
 
-    // Check for any pending invoice items before upgrade
+    // 4. CRITICAL: Clean up ANY pending invoice items before calculating proration.
+    // This fixes the "accumulated charges" issue and the India "missing description" error
+    // because pending items from failed attempts often lack descriptions.
     const pendingInvoiceItems = await stripe.invoiceItems.list({
       customer: stripeSubscription.customer,
-      limit: 100
+      pending: true,
     });
 
-    logger.info('Pending invoice items before upgrade', {
-      count: pendingInvoiceItems.data.length,
-      items: pendingInvoiceItems.data.map(item => ({
-        id: item.id,
-        amount: item.amount / 100,
-        description: item.description,
-        date: new Date(item.date * 1000).toISOString()
-      }))
-    });
-
-    // Delete all pending invoice items to ensure clean upgrade
-    // These are usually proration items that we don't want to charge
     for (const item of pendingInvoiceItems.data) {
       await stripe.invoiceItems.del(item.id);
-      logger.info('Deleted pending invoice item', {
-        id: item.id,
-        amount: item.amount / 100,
-        description: item.description
-      });
     }
 
-    // Cancel the old subscription and create a new one
-    // This is the simplest approach that avoids India export compliance issues
-    await stripe.subscriptions.update(currentSubscription.stripe_subscription_id, {
-      cancel_at_period_end: true,
-    });
+    if (pendingInvoiceItems.data.length > 0) {
+      logger.info(`Cleaned up ${pendingInvoiceItems.data.length} pending invoice items before upgrade`);
+    }
 
-    // Create a product first
-    const product = await stripe.products.create({
-      name: `${newPlan.name} Plan`,
-      description: `Video streaming platform ${newPlan.name} subscription plan`,
-    });
+    // 5. Identify the subscription item to update
+    // Since you are using a single-plan model, it's usually the first item.
+    const subscriptionItemId = stripeSubscription.items.data[0].id;
 
-    // Create a new subscription with the new plan
-    const updatedSubscription = await stripe.subscriptions.create({
-      customer: stripeSubscription.customer,
-      items: [
-        {
+    if (!subscriptionItemId) {
+      throw new Error('Could not find subscription item ID to update');
+    }
+
+    // 6. Perform the Update
+    // We update the EXISTING item (si_...) with the NEW price_data.
+    // 'always_invoice' forces Stripe to calculate proration immediately and attempt payment.
+    const updatedSubscription = await stripe.subscriptions.update(
+      currentSubscription.stripe_subscription_id,
+      {
+        items: [{
+          id: subscriptionItemId, // updating this specific item ensures proper credit for old plan
           price_data: {
             currency: 'usd',
-            product: product.id,
-            unit_amount: Math.round(newAmount * 100),
+            product_data: {
+              name: `${newPlan.name} Plan`,
+              description: `${newPlan.name} (${billingCycle}) - Upgraded`,
+            },
+            unit_amount: Math.round(newAmount * 100), // Stripe expects cents
             recurring: {
               interval: billingCycle === 'monthly' ? 'month' : 'year',
               interval_count: 1,
             },
           },
+        }],
+        metadata: {
+          userId: userId.toString(),
+          planId: newPlanId.toString(),
+          billingCycle,
+          type: 'upgrade'
         },
-      ],
-      default_payment_method: stripeSubscription.default_payment_method,
-      metadata: {
-        userId: userId.toString(),
-        planId: newPlanId.toString(),
-        billingCycle,
-      },
-    });
+        proration_behavior: 'always_invoice', // Immediately generate invoice for the difference
+        payment_behavior: 'pending_if_incomplete', // Don't crash if payment needs 3DS, just return pending
+      }
+    );
 
-    // Get the invoice that was just created with expanded line items
+    // 7. Retrieve the invoice generated by the update to show details
     const latestInvoice = await stripe.invoices.retrieve(updatedSubscription.latest_invoice, {
-      expand: ['lines.data.price', 'lines.data.proration_details']
+      expand: ['payment_intent']
     });
 
-    const actualCharged = latestInvoice.amount_paid / 100;
-    const totalBeforeCredits = latestInvoice.total / 100;
-    const credits = 0; // No proration with new subscription approach
-
-    // Log detailed invoice breakdown
-    logger.info('Stripe: Invoice breakdown', {
-      invoiceId: latestInvoice.id,
-      total: latestInvoice.total / 100,
-      amountPaid: latestInvoice.amount_paid / 100,
-      amountDue: latestInvoice.amount_due / 100,
-      lineItems: latestInvoice.lines.data.map(item => ({
-        description: item.description,
-        amount: item.amount / 100,
-        quantity: item.quantity,
-        proration: item.proration,
-        period: item.period ? {
-          start: new Date(item.period.start * 1000).toISOString(),
-          end: new Date(item.period.end * 1000).toISOString()
-        } : null
-      }))
-    });
-
-    // The webhook will handle creating the new subscription record and updating the user
-    // Just return success
-    logger.info('Stripe: Plan upgraded via new subscription', {
+    // 8. DB Updates will be handled by your webhook (invoice.paid / subscription.updated)
+    // But we can log it here for debugging
+    logger.info('Stripe: Plan upgrade initiated', {
       userId,
       oldSubscriptionId: currentSubscription.stripe_subscription_id,
-      newSubscriptionId: updatedSubscription.id,
-      oldPlanId: currentSubscription.plan_id,
-      newPlanId,
-      actualCharged,
+      newAmount: newAmount,
+      invoiceTotal: latestInvoice.total / 100,
+      status: latestInvoice.status
     });
 
     res.json({
-      message: 'Plan upgraded successfully. Your new subscription is now active.',
+      message: 'Plan upgrade initiated successfully.',
       subscription: updatedSubscription,
-      amountCharged: actualCharged,
-      currency: 'usd',
-      invoiceUrl: latestInvoice.hosted_invoice_url,
-      note: 'Your previous subscription will be canceled at the end of its billing period.',
+      invoice: {
+        id: latestInvoice.id,
+        amount_due: latestInvoice.amount_due / 100,
+        amount_paid: latestInvoice.amount_paid / 100,
+        status: latestInvoice.status,
+        url: latestInvoice.hosted_invoice_url,
+        // If 3DS is required, the frontend needs the client_secret
+        client_secret: latestInvoice.payment_intent?.client_secret
+      },
+      paymentStatus: latestInvoice.status === 'paid' ? 'success' : 'pending'
     });
+
   } catch (error) {
-    logger.error('Failed to upgrade plan', { error: error.message });
+    logger.error('Failed to upgrade plan', { error: error.message, stack: error.stack });
+
+    // Handle specific Stripe errors nicely
+    if (error.type === 'StripeCardError') {
+      return res.status(402).json({ error: 'Your card was declined. Please update your payment method.' });
+    }
+
     res.status(500).json({ error: error.message || 'Failed to upgrade plan' });
   }
 }
