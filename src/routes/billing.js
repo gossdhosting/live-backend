@@ -34,4 +34,7 @@ router.put('/admin/coupons/:id', auth, adminOnly, billingController.updateCoupon
 router.delete('/admin/coupons/:id', auth, adminOnly, billingController.deleteCoupon);
 router.get('/admin/coupons/:id/redemptions', auth, adminOnly, billingController.getCouponRedemptions);
 
+// Admin cleanup endpoint
+router.post('/admin/cleanup-duplicates', auth, adminOnly, billingController.cleanupDuplicateSubscriptions);
+
 export default router;

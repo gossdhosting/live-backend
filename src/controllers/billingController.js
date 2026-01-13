@@ -956,3 +956,80 @@ export async function adminGeneratePdfInvoice(req, res) {
     res.status(500).json({ error: 'Failed to generate invoice PDF' });
   }
 }
+
+// Clean up duplicate subscriptions
+export async function cleanupDuplicateSubscriptions(req, res) {
+  try {
+    const db = (await import('../models/database.js')).default;
+
+    // Find users with multiple active subscriptions
+    const duplicatesQuery = `
+      SELECT user_id, COUNT(*) as sub_count
+      FROM stripe_subscriptions
+      WHERE status IN ('active', 'trialing')
+      GROUP BY user_id
+      HAVING COUNT(*) > 1
+    `;
+
+    const duplicates = await db.query(duplicatesQuery);
+
+    if (duplicates.rows.length === 0) {
+      return res.json({
+        message: 'No duplicate subscriptions found',
+        cleanedCount: 0,
+      });
+    }
+
+    let totalCleaned = 0;
+    const cleanupDetails = [];
+
+    // For each user with duplicates, keep only the most recent subscription
+    for (const dup of duplicates.rows) {
+      const userId = dup.user_id;
+
+      // Get all active subscriptions for this user, ordered by creation date (newest first)
+      const subsQuery = `
+        SELECT id, stripe_subscription_id, plan_id, created_at
+        FROM stripe_subscriptions
+        WHERE user_id = $1 AND status IN ('active', 'trialing')
+        ORDER BY created_at DESC
+      `;
+
+      const subs = await db.query(subsQuery, [userId]);
+
+      // Keep the first (newest) subscription, cancel the rest
+      const [keepSub, ...cancelSubs] = subs.rows;
+
+      for (const oldSub of cancelSubs) {
+        await db.query(
+          `UPDATE stripe_subscriptions
+           SET status = 'canceled', canceled_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+           WHERE id = $1`,
+          [oldSub.id]
+        );
+
+        totalCleaned++;
+        cleanupDetails.push({
+          userId,
+          canceledSubscriptionId: oldSub.stripe_subscription_id,
+          keptSubscriptionId: keepSub.stripe_subscription_id,
+        });
+
+        logger.info('Cleaned up duplicate subscription', {
+          userId,
+          canceledId: oldSub.stripe_subscription_id,
+          keptId: keepSub.stripe_subscription_id,
+        });
+      }
+    }
+
+    res.json({
+      message: `Successfully cleaned up ${totalCleaned} duplicate subscription(s)`,
+      cleanedCount: totalCleaned,
+      details: cleanupDetails,
+    });
+  } catch (error) {
+    logger.error('Failed to cleanup duplicate subscriptions', { error: error.message });
+    res.status(500).json({ error: 'Failed to cleanup duplicate subscriptions' });
+  }
+}
