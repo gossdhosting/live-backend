@@ -2,7 +2,7 @@ import User from '../models/User.js';
 import Plan from '../models/Plan.js';
 import StripeSubscription from '../models/StripeSubscription.js';
 import logger from '../utils/logger.js';
-import { sendSubscriptionEmail } from '../services/emailService.js';
+import { sendSubscriptionEmail } from '../services/EmailService.js';
 
 // Platform commission rates
 const PLATFORM_MARKUP = {
