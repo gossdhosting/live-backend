@@ -822,13 +822,32 @@ export async function upgradePlan(req, res) {
       return res.status(404).json({ error: 'Plan not found' });
     }
 
+    // Get current plan to check if this is a downgrade
+    const currentPlan = await Plan.getById(currentSubscription.plan_id);
+    if (!currentPlan) {
+      return res.status(404).json({ error: 'Current plan not found' });
+    }
+
     // Calculate new amount
     const newAmount = billingCycle === 'monthly'
       ? parseFloat(newPlan.price_monthly)
       : parseFloat(newPlan.price_yearly);
 
+    const currentAmount = currentSubscription.billing_cycle === 'monthly'
+      ? parseFloat(currentPlan.price_monthly)
+      : parseFloat(currentPlan.price_yearly);
+
     if (newAmount <= 0) {
       return res.status(400).json({ error: 'Plan not configured for this billing cycle' });
+    }
+
+    // Prevent downgrades to avoid credit balance issues
+    if (newAmount < currentAmount) {
+      return res.status(400).json({
+        error: 'Downgrades are not supported. Please contact support to change to a lower plan.',
+        currentPlan: currentPlan.name,
+        requestedPlan: newPlan.name
+      });
     }
 
     const stripe = stripeConfig.getStripe();
