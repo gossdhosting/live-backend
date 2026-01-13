@@ -106,6 +106,14 @@ export async function createCheckoutSession(req, res) {
         billingCycle,
         ...(couponId && { couponId: couponId.toString() }),
       },
+      subscription_data: {
+        metadata: {
+          userId: userId.toString(),
+          planId: planId.toString(),
+          billingCycle,
+          ...(couponId && { couponId: couponId.toString() }),
+        },
+      },
     };
 
     // Add coupon if provided
@@ -834,6 +842,11 @@ export async function upgradePlan(req, res) {
         ],
         proration_behavior: 'always_invoice', // Create and finalize invoice immediately
         billing_cycle_anchor: 'unchanged', // Keep the same billing cycle
+        metadata: {
+          userId: userId.toString(),
+          planId: newPlanId.toString(),
+          billingCycle,
+        },
       }
     );
 
