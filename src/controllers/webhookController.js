@@ -12,9 +12,22 @@ export async function handleStripeWebhook(req, res) {
   const sig = req.headers['stripe-signature'];
   const webhookSecret = stripeConfig.getWebhookSecret();
 
+  logger.info('Stripe Webhook: Received webhook request', {
+    hasSignature: !!sig,
+    hasSecret: !!webhookSecret,
+    bodyType: typeof req.body,
+    isBuffer: Buffer.isBuffer(req.body),
+    contentType: req.headers['content-type'],
+  });
+
   if (!webhookSecret) {
     logger.error('Stripe Webhook: No webhook secret configured');
     return res.status(400).send('Webhook secret not configured');
+  }
+
+  if (!sig) {
+    logger.error('Stripe Webhook: No signature header found');
+    return res.status(400).send('No signature header found');
   }
 
   let event;
@@ -25,6 +38,7 @@ export async function handleStripeWebhook(req, res) {
   } catch (err) {
     logger.error('Stripe Webhook: Signature verification failed', {
       error: err.message,
+      bodyPreview: req.body ? req.body.toString().substring(0, 100) : 'null',
     });
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
