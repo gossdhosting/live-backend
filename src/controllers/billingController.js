@@ -793,8 +793,27 @@ export async function upgradePlan(req, res) {
 
     // 1. Get current subscription from DB
     const currentSubscription = await StripeSubscription.getActiveByUserId(userId);
+
+    // Debug: Check all subscriptions if no active found
     if (!currentSubscription) {
-      return res.status(404).json({ error: 'No active subscription found' });
+      const allSubscriptions = await StripeSubscription.getByUserId(userId);
+      logger.error('No active subscription found for upgrade', {
+        userId,
+        allSubscriptionsCount: allSubscriptions.length,
+        allSubscriptions: allSubscriptions.map(s => ({
+          id: s.id,
+          stripe_subscription_id: s.stripe_subscription_id,
+          status: s.status,
+          plan_id: s.plan_id
+        }))
+      });
+      return res.status(404).json({
+        error: 'No active subscription found',
+        debug: {
+          foundSubscriptions: allSubscriptions.length,
+          subscriptionStatuses: allSubscriptions.map(s => s.status)
+        }
+      });
     }
 
     // 2. Get new plan details from DB
