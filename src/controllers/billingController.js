@@ -825,6 +825,12 @@ export async function upgradePlan(req, res) {
       cancel_at_period_end: true,
     });
 
+    // Create a product first
+    const product = await stripe.products.create({
+      name: `${newPlan.name} Plan`,
+      description: `Video streaming platform ${newPlan.name} subscription plan`,
+    });
+
     // Create a new subscription with the new plan
     const updatedSubscription = await stripe.subscriptions.create({
       customer: stripeSubscription.customer,
@@ -832,10 +838,7 @@ export async function upgradePlan(req, res) {
         {
           price_data: {
             currency: 'usd',
-            product_data: {
-              name: `${newPlan.name} Plan`,
-              description: `${newPlan.description || newPlan.name} - Video streaming platform subscription for ${billingCycle === 'monthly' ? 'Monthly' : 'Yearly'} billing`,
-            },
+            product: product.id,
             unit_amount: Math.round(newAmount * 100),
             recurring: {
               interval: billingCycle === 'monthly' ? 'month' : 'year',
