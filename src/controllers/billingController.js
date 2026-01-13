@@ -819,7 +819,52 @@ export async function upgradePlan(req, res) {
       currentSubscription.stripe_subscription_id
     );
 
-    // Update subscription with custom pricing and proration
+    // Get current plan details for proration calculation
+    const currentPlan = await Plan.getById(currentSubscription.plan_id);
+    const currentAmount = currentSubscription.billing_cycle === 'monthly'
+      ? parseFloat(currentPlan.price_monthly)
+      : parseFloat(currentPlan.price_yearly);
+
+    // Calculate proration manually
+    const now = Math.floor(Date.now() / 1000);
+    const periodStart = stripeSubscription.current_period_start;
+    const periodEnd = stripeSubscription.current_period_end;
+    const totalDuration = periodEnd - periodStart;
+    const remainingDuration = periodEnd - now;
+
+    // Calculate unused time credit from current plan
+    const unusedCredit = (currentAmount * remainingDuration) / totalDuration;
+
+    // Calculate charge for new plan for remaining period
+    const newPlanCharge = (newAmount * remainingDuration) / totalDuration;
+
+    // Net amount due (new plan charge - unused credit)
+    const proratedAmount = Math.max(0, newPlanCharge - unusedCredit);
+
+    // First, create a manual invoice for the prorated difference
+    let invoice = null;
+    if (proratedAmount > 0.5) { // Only charge if amount is significant (> $0.50)
+      // Create invoice item for the prorated upgrade
+      await stripe.invoiceItems.create({
+        customer: stripeSubscription.customer,
+        amount: Math.round(proratedAmount * 100), // Convert to cents
+        currency: 'usd',
+        description: `Prorated upgrade from ${currentPlan.name} to ${newPlan.name}`,
+      });
+
+      // Create and finalize the invoice
+      invoice = await stripe.invoices.create({
+        customer: stripeSubscription.customer,
+        auto_advance: true, // Automatically finalize and attempt payment
+        description: `Plan upgrade proration`,
+      });
+
+      // Finalize and pay the invoice
+      await stripe.invoices.finalizeInvoice(invoice.id);
+      invoice = await stripe.invoices.pay(invoice.id);
+    }
+
+    // Now update the subscription for future billing (without proration since we handled it manually)
     const updatedSubscription = await stripe.subscriptions.update(
       currentSubscription.stripe_subscription_id,
       {
@@ -840,7 +885,7 @@ export async function upgradePlan(req, res) {
             },
           },
         ],
-        proration_behavior: 'always_invoice', // Create and finalize invoice immediately
+        proration_behavior: 'none', // Don't create proration - we handled it manually
         billing_cycle_anchor: 'unchanged', // Keep the same billing cycle
         metadata: {
           userId: userId.toString(),
@@ -850,16 +895,9 @@ export async function upgradePlan(req, res) {
       }
     );
 
-    // Retrieve the latest invoice (which was just created and finalized)
-    const latestInvoice = await stripe.invoices.retrieve(updatedSubscription.latest_invoice, {
-      expand: ['lines'],
-    });
-
-    // Calculate actual amount charged (total - starting_balance)
-    // The total shows gross charge, but starting_balance includes credits
-    const actualCharged = latestInvoice.amount_paid / 100;
-    const totalBeforeCredits = latestInvoice.total / 100;
-    const credits = (latestInvoice.starting_balance || 0) / 100;
+    const actualCharged = proratedAmount;
+    const totalBeforeCredits = newPlanCharge;
+    const credits = unusedCredit;
 
     // Cancel any other active subscriptions for this user (cleanup duplicates)
     const db = (await import('../models/database.js')).default;
@@ -888,7 +926,7 @@ export async function upgradePlan(req, res) {
       totalBeforeCredits,
       credits,
       actualCharged,
-      invoiceId: latestInvoice.id,
+      invoiceId: invoice?.id,
     });
 
     res.json({
@@ -897,8 +935,9 @@ export async function upgradePlan(req, res) {
       proratedAmount: actualCharged, // Actual amount charged after credits
       totalBeforeCredits,
       credits,
-      currency: latestInvoice.currency,
-      invoiceUrl: latestInvoice.hosted_invoice_url,
+      currency: 'usd',
+      invoiceUrl: invoice?.hosted_invoice_url || null,
+      invoiceId: invoice?.id || null,
     });
   } catch (error) {
     logger.error('Failed to upgrade plan', { error: error.message });
