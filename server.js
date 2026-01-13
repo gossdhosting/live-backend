@@ -22,12 +22,17 @@ import serverStatsRoutes from './src/routes/serverStats.js';
 import mediaRoutes from './src/routes/media.js';
 import platformAuthRoutes from './src/routes/platformAuth.js';
 import platformRoutes from './src/routes/platforms.js';
+import billingRoutes from './src/routes/billing.js';
+import webhookRoutes from './src/routes/webhooks.js';
 
 // Middleware
 import { apiLimiter } from './src/middleware/rateLimiter.js';
 
 // Utils
 import logger from './src/utils/logger.js';
+
+// Stripe configuration
+import stripeConfig from './src/config/stripe.js';
 
 // Initialize database (imported for side effects)
 import './src/models/database.js';
@@ -41,6 +46,11 @@ const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
+
+// Webhook route needs raw body for Stripe signature verification
+// Must come BEFORE express.json() middleware
+app.use('/api/webhooks', webhookRoutes);
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -66,6 +76,7 @@ app.use('/api/watermark', watermarkRoutes);
 app.use('/api/server-stats', serverStatsRoutes);
 app.use('/api/media', mediaRoutes);
 app.use('/api/rtmp', rtmpRoutes);
+app.use('/api/billing', billingRoutes);
 
 // Public API (for Flutter app)
 app.use('/api/public', publicRoutes);
@@ -139,10 +150,14 @@ app.use((err, req, res, next) => {
 // Start server
 const startServer = async () => {
   try {
+    // Initialize Stripe configuration
+    const stripeInitialized = await stripeConfig.initialize();
+
     app.listen(PORT, () => {
       logger.info(`Server started on port ${PORT}`, {
         nodeEnv: process.env.NODE_ENV,
         hlsBasePath,
+        stripeConfigured: stripeInitialized,
       });
 
       console.log('');
@@ -151,6 +166,7 @@ const startServer = async () => {
       console.log(`Server running on: http://localhost:${PORT}`);
       console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log(`HLS Base Path: ${hlsBasePath}`);
+      console.log(`Stripe: ${stripeInitialized ? '✓ Configured' : '✗ Not configured'}`);
       console.log('='.repeat(60));
       console.log('');
       console.log('API Endpoints:');
@@ -160,6 +176,8 @@ const startServer = async () => {
       console.log(`  POST   http://localhost:${PORT}/api/channels/:id/start`);
       console.log(`  POST   http://localhost:${PORT}/api/channels/:id/stop`);
       console.log(`  GET    http://localhost:${PORT}/api/public/channels`);
+      console.log(`  POST   http://localhost:${PORT}/api/billing/create-checkout-session`);
+      console.log(`  POST   http://localhost:${PORT}/api/webhooks/stripe`);
       console.log('='.repeat(60));
       console.log('');
     });
