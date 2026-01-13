@@ -1061,3 +1061,58 @@ export async function cleanupDuplicateSubscriptions(req, res) {
     res.status(500).json({ error: 'Failed to cleanup duplicate subscriptions' });
   }
 }
+
+// Sync subscription from Stripe (admin only - for fixing missing plan_id)
+export async function syncSubscriptionFromStripe(req, res) {
+  try {
+    const { subscriptionId } = req.params;
+    
+    const stripe = stripeConfig.getStripe();
+    
+    // Get subscription from Stripe
+    const stripeSubscription = await stripe.subscriptions.retrieve(subscriptionId);
+    
+    if (!stripeSubscription) {
+      return res.status(404).json({ error: 'Subscription not found in Stripe' });
+    }
+    
+    // Get plan ID from metadata
+    const planId = stripeSubscription.metadata?.planId ? parseInt(stripeSubscription.metadata.planId) : null;
+    
+    if (!planId) {
+      return res.status(400).json({ error: 'No planId found in subscription metadata' });
+    }
+    
+    // Get local subscription
+    const localSub = await StripeSubscription.getByStripeId(subscriptionId);
+    
+    if (!localSub) {
+      return res.status(404).json({ error: 'Subscription not found in database' });
+    }
+    
+    // Update local subscription with plan ID
+    await StripeSubscription.update(subscriptionId, {
+      planId: planId,
+    });
+    
+    // Update user's plan
+    await User.update(localSub.user_id, {
+      plan_id: planId,
+    });
+    
+    logger.info('Synced subscription from Stripe', {
+      subscriptionId,
+      planId,
+      userId: localSub.user_id,
+    });
+    
+    res.json({
+      message: 'Subscription synced successfully',
+      subscriptionId,
+      planId,
+    });
+  } catch (error) {
+    logger.error('Failed to sync subscription', { error: error.message });
+    res.status(500).json({ error: 'Failed to sync subscription' });
+  }
+}

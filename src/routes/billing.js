@@ -37,4 +37,7 @@ router.get('/admin/coupons/:id/redemptions', auth, adminOnly, billingController.
 // Admin cleanup endpoint
 router.post('/admin/cleanup-duplicates', auth, adminOnly, billingController.cleanupDuplicateSubscriptions);
 
+// Admin sync subscription endpoint
+router.post('/admin/sync-subscription/:subscriptionId', auth, adminOnly, billingController.syncSubscriptionFromStripe);
+
 export default router;
