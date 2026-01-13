@@ -14,6 +14,7 @@ router.get('/subscription', auth, billingController.getSubscription);
 router.get('/invoices', auth, billingController.getInvoices);
 router.post('/cancel-subscription', auth, billingController.cancelSubscription);
 router.post('/validate-coupon', auth, billingController.validateCoupon);
+router.get('/preview-upgrade', auth, billingController.previewUpgrade);
 router.post('/upgrade-plan', auth, billingController.upgradePlan);
 router.get('/invoice/:invoiceId/pdf', auth, billingController.generatePdfInvoice);
 

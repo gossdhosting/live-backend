@@ -674,6 +674,86 @@ export async function getCouponRedemptions(req, res) {
   }
 }
 
+// Preview upgrade cost with proration
+export async function previewUpgrade(req, res) {
+  try {
+    const userId = req.user.id;
+    const { newPlanId, billingCycle } = req.query;
+
+    if (!newPlanId || !billingCycle) {
+      return res.status(400).json({ error: 'New plan ID and billing cycle are required' });
+    }
+
+    // Get current subscription
+    const currentSubscription = await StripeSubscription.getActiveByUserId(userId);
+    if (!currentSubscription) {
+      return res.status(404).json({ error: 'No active subscription found' });
+    }
+
+    // Get new plan details
+    const newPlan = await Plan.getById(newPlanId);
+    if (!newPlan) {
+      return res.status(404).json({ error: 'Plan not found' });
+    }
+
+    // Get new price ID
+    const newPriceId = billingCycle === 'monthly'
+      ? newPlan.stripe_price_id_monthly
+      : newPlan.stripe_price_id_yearly;
+
+    if (!newPriceId) {
+      return res.status(400).json({ error: 'Plan not configured for this billing cycle' });
+    }
+
+    const stripe = stripeConfig.getStripe();
+
+    // Get current subscription from Stripe
+    const stripeSubscription = await stripe.subscriptions.retrieve(
+      currentSubscription.stripe_subscription_id
+    );
+
+    // Preview the upcoming invoice with the new price
+    const upcomingInvoice = await stripe.invoices.retrieveUpcoming({
+      customer: stripeSubscription.customer,
+      subscription: currentSubscription.stripe_subscription_id,
+      subscription_items: [
+        {
+          id: stripeSubscription.items.data[0].id,
+          price: newPriceId,
+        },
+      ],
+      subscription_proration_behavior: 'create_prorations',
+    });
+
+    // Calculate proration details
+    const proratedAmount = upcomingInvoice.amount_due / 100;
+    const fullAmount = billingCycle === 'monthly' ? newPlan.price_monthly : newPlan.price_yearly;
+    const credit = fullAmount - proratedAmount;
+
+    res.json({
+      newPlan: {
+        id: newPlan.id,
+        name: newPlan.name,
+        price: fullAmount,
+      },
+      currentPlan: {
+        id: currentSubscription.plan_id,
+        billingCycle: currentSubscription.billing_cycle,
+      },
+      proration: {
+        dueNow: proratedAmount,
+        fullPrice: fullAmount,
+        credit: credit,
+        currency: upcomingInvoice.currency.toUpperCase(),
+      },
+      nextBillingDate: new Date(stripeSubscription.current_period_end * 1000).toISOString(),
+    });
+  } catch (error) {
+    logger.error('Failed to preview upgrade', { error: error.message });
+    res.status(500).json({ error: error.message || 'Failed to preview upgrade' });
+  }
+}
+
 // Upgrade plan with prorated pricing
 export async function upgradePlan(req, res) {
   try {
@@ -723,18 +803,28 @@ export async function upgradePlan(req, res) {
           },
         ],
         proration_behavior: 'create_prorations',
+        billing_cycle_anchor: 'unchanged', // Keep the same billing cycle
       }
     );
+
+    // Get upcoming invoice to show proration details
+    const upcomingInvoice = await stripe.invoices.retrieveUpcoming({
+      customer: stripeSubscription.customer,
+      subscription: currentSubscription.stripe_subscription_id,
+    });
 
     logger.info('Stripe: Plan upgraded', {
       userId,
       oldPlanId: currentSubscription.plan_id,
       newPlanId,
+      proratedAmount: upcomingInvoice.amount_due,
     });
 
     res.json({
       message: 'Plan upgraded successfully',
       subscription: updatedSubscription,
+      proratedAmount: upcomingInvoice.amount_due / 100, // Convert from cents to dollars
+      currency: upcomingInvoice.currency,
     });
   } catch (error) {
     logger.error('Failed to upgrade plan', { error: error.message });
