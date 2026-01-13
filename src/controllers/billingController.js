@@ -304,10 +304,16 @@ export async function adminCancelSubscription(req, res) {
 export async function getPaymentSettings(req, res) {
   try {
     const settings = await PaymentSettings.get();
-    // Don't send secret key to frontend
+    // Mask secret keys for security while showing they exist
     if (settings) {
-      delete settings.stripe_secret_key;
-      delete settings.stripe_webhook_secret;
+      if (settings.stripe_secret_key) {
+        // Show first 7 chars and mask the rest (e.g., sk_test_****...)
+        settings.stripe_secret_key = settings.stripe_secret_key.substring(0, 7) + '••••••••••••••••••••••••••••';
+      }
+      if (settings.stripe_webhook_secret) {
+        // Show first 7 chars and mask the rest
+        settings.stripe_webhook_secret = settings.stripe_webhook_secret.substring(0, 7) + '••••••••••••••••••••••••••••';
+      }
     }
     res.json({ settings: settings || {} });
   } catch (error) {
@@ -322,12 +328,20 @@ export async function getPaymentSettings(req, res) {
 // ADMIN: Update payment settings
 export async function updatePaymentSettings(req, res) {
   try {
-    const {
+    let {
       stripe_publishable_key,
       stripe_secret_key,
       stripe_webhook_secret,
       mode,
     } = req.body;
+
+    // Don't update with masked values - treat them as unchanged
+    if (stripe_secret_key && stripe_secret_key.includes('••••')) {
+      stripe_secret_key = null; // null means don't update this field (COALESCE will keep existing)
+    }
+    if (stripe_webhook_secret && stripe_webhook_secret.includes('••••')) {
+      stripe_webhook_secret = null;
+    }
 
     const settings = await PaymentSettings.update({
       stripe_publishable_key,
@@ -339,9 +353,13 @@ export async function updatePaymentSettings(req, res) {
     // Reinitialize Stripe with new settings
     await stripeConfig.reinitialize();
 
-    // Don't send secrets back
-    delete settings.stripe_secret_key;
-    delete settings.stripe_webhook_secret;
+    // Mask secret keys before sending back
+    if (settings.stripe_secret_key) {
+      settings.stripe_secret_key = settings.stripe_secret_key.substring(0, 7) + '••••••••••••••••••••••••••••';
+    }
+    if (settings.stripe_webhook_secret) {
+      settings.stripe_webhook_secret = settings.stripe_webhook_secret.substring(0, 7) + '••••••••••••••••••••••••••••';
+    }
 
     logger.info('Stripe: Payment settings updated', { mode: settings.mode });
 
