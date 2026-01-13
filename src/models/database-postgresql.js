@@ -44,6 +44,21 @@ class DatabaseWrapper {
     }
   }
 
+  // Direct query method for raw SQL with parameters (for Stripe models)
+  async query(sql, params = []) {
+    const client = await this.pool.connect();
+    try {
+      console.log('[DB] Executing query:', sql, 'with params:', params);
+      const result = await client.query(sql, params);
+      return result;
+    } catch (error) {
+      console.error('[DB] Query failed:', sql, 'params:', params, 'error:', error.message);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   // Prepare a statement for execution
   prepare(sql) {
     return new PreparedStatement(this.pool, sql);
