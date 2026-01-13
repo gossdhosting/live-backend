@@ -313,8 +313,9 @@ export async function getPaymentSettings(req, res) {
   } catch (error) {
     logger.error('Stripe: Failed to get payment settings', {
       error: error.message,
+      stack: error.stack,
     });
-    res.status(500).json({ error: 'Failed to get payment settings' });
+    res.status(500).json({ error: 'Failed to get payment settings', details: error.message });
   }
 }
 
@@ -348,8 +349,9 @@ export async function updatePaymentSettings(req, res) {
   } catch (error) {
     logger.error('Stripe: Failed to update payment settings', {
       error: error.message,
+      stack: error.stack,
     });
-    res.status(500).json({ error: 'Failed to update payment settings' });
+    res.status(500).json({ error: 'Failed to update payment settings', details: error.message });
   }
 }
 
