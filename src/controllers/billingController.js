@@ -712,6 +712,9 @@ export async function previewUpgrade(req, res) {
       currentSubscription.stripe_subscription_id
     );
 
+    // Use current timestamp for consistent proration calculation
+    const prorationDate = Math.floor(Date.now() / 1000);
+
     // Preview the upcoming invoice with the new price
     const upcomingInvoice = await stripe.invoices.retrieveUpcoming({
       customer: stripeSubscription.customer,
@@ -722,7 +725,8 @@ export async function previewUpgrade(req, res) {
           price: newPriceId,
         },
       ],
-      subscription_proration_behavior: 'create_prorations',
+      subscription_proration_behavior: 'always_invoice',
+      subscription_proration_date: prorationDate,
     });
 
     // Calculate proration details
@@ -745,6 +749,7 @@ export async function previewUpgrade(req, res) {
         fullPrice: fullAmount,
         credit: credit,
         currency: upcomingInvoice.currency.toUpperCase(),
+        prorationDate: prorationDate, // Pass to upgrade endpoint for consistency
       },
       nextBillingDate: new Date(stripeSubscription.current_period_end * 1000).toISOString(),
     });
@@ -808,7 +813,15 @@ export async function upgradePlan(req, res) {
     );
 
     // Retrieve the latest invoice (which was just created and finalized)
-    const latestInvoice = await stripe.invoices.retrieve(updatedSubscription.latest_invoice);
+    const latestInvoice = await stripe.invoices.retrieve(updatedSubscription.latest_invoice, {
+      expand: ['lines'],
+    });
+
+    // Calculate actual amount charged (total - starting_balance)
+    // The total shows gross charge, but starting_balance includes credits
+    const actualCharged = latestInvoice.amount_paid / 100;
+    const totalBeforeCredits = latestInvoice.total / 100;
+    const credits = (latestInvoice.starting_balance || 0) / 100;
 
     // Update database with new plan
     await StripeSubscription.updatePlan(
@@ -822,14 +835,18 @@ export async function upgradePlan(req, res) {
       userId,
       oldPlanId: currentSubscription.plan_id,
       newPlanId,
-      proratedAmount: latestInvoice.amount_paid,
+      totalBeforeCredits,
+      credits,
+      actualCharged,
       invoiceId: latestInvoice.id,
     });
 
     res.json({
       message: 'Plan upgraded successfully',
       subscription: updatedSubscription,
-      proratedAmount: latestInvoice.amount_paid / 100, // Convert from cents to dollars
+      proratedAmount: actualCharged, // Actual amount charged after credits
+      totalBeforeCredits,
+      credits,
       currency: latestInvoice.currency,
       invoiceUrl: latestInvoice.hosted_invoice_url,
     });
