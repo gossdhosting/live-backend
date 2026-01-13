@@ -351,17 +351,26 @@ export async function updatePaymentSettings(req, res) {
     } = req.body;
 
     // Don't update with masked values - treat them as unchanged
-    if (stripe_secret_key_sandbox && stripe_secret_key_sandbox.includes('••••')) {
+    // Also convert undefined to null for COALESCE to work properly
+    if (stripe_secret_key_sandbox === undefined || (stripe_secret_key_sandbox && stripe_secret_key_sandbox.includes('••••'))) {
       stripe_secret_key_sandbox = null;
     }
-    if (stripe_webhook_secret_sandbox && stripe_webhook_secret_sandbox.includes('••••')) {
+    if (stripe_webhook_secret_sandbox === undefined || (stripe_webhook_secret_sandbox && stripe_webhook_secret_sandbox.includes('••••'))) {
       stripe_webhook_secret_sandbox = null;
     }
-    if (stripe_secret_key_live && stripe_secret_key_live.includes('••••')) {
+    if (stripe_secret_key_live === undefined || (stripe_secret_key_live && stripe_secret_key_live.includes('••••'))) {
       stripe_secret_key_live = null;
     }
-    if (stripe_webhook_secret_live && stripe_webhook_secret_live.includes('••••')) {
+    if (stripe_webhook_secret_live === undefined || (stripe_webhook_secret_live && stripe_webhook_secret_live.includes('••••'))) {
       stripe_webhook_secret_live = null;
+    }
+
+    // For publishable keys, convert undefined to null as well
+    if (stripe_publishable_key_sandbox === undefined) {
+      stripe_publishable_key_sandbox = null;
+    }
+    if (stripe_publishable_key_live === undefined) {
+      stripe_publishable_key_live = null;
     }
 
     // Validate sandbox keys if provided
