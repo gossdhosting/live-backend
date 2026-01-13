@@ -187,13 +187,41 @@ async function handleSubscriptionUpdated(subscription) {
     });
   }
 
-  // Send email notification
+  // Send email notifications
   const user = await User.getById(userId);
   if (status === 'active' && !existingSub) {
+    // Get plan details
+    const plan = planId ? await db.query('SELECT * FROM plans WHERE id = $1', [planId]) : null;
+    const planName = plan?.rows[0]?.name || 'Unknown';
+    const amount = billingCycle === 'monthly' ? plan?.rows[0]?.price_monthly : plan?.rows[0]?.price_yearly;
+
+    // Send email to customer
     await sendSubscriptionEmail(user.email, 'activated', {
-      planName: planResult.rows[0]?.name || 'Unknown',
+      planName,
       billingCycle,
     });
+
+    // Send admin notification email
+    const settings = await db.query('SELECT value FROM settings WHERE key = $1', ['admin_notification_email']);
+    const adminEmail = settings.rows[0]?.value;
+
+    if (adminEmail) {
+      await sendSubscriptionEmail(adminEmail, 'admin_new_subscription', {
+        userId,
+        userEmail: user.email,
+        planName,
+        billingCycle,
+        amount: amount || 0,
+        currency: 'USD',
+      });
+    }
+
+    // Send Pushover notification to admin
+    const PushoverService = (await import('../services/PushoverService.js')).default;
+    await PushoverService.sendNotification(
+      `New Subscription`,
+      `${user.email} subscribed to ${planName} (${billingCycle}) - $${amount || 0}`
+    );
   }
 
   // Record coupon redemption if applicable
