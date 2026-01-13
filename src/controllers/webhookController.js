@@ -154,6 +154,26 @@ async function handleSubscriptionUpdated(subscription) {
       status,
     });
   } else {
+    // Before creating new subscription, cancel any other active subscriptions for this user
+    // This handles cases where Stripe creates a new subscription ID during plan changes
+    const activeSubscriptions = await db.query(
+      `SELECT stripe_subscription_id FROM stripe_subscriptions
+       WHERE user_id = $1 AND status IN ('active', 'trialing') AND stripe_subscription_id != $2`,
+      [userId, subscriptionId]
+    );
+
+    for (const oldSub of activeSubscriptions.rows) {
+      await StripeSubscription.update(oldSub.stripe_subscription_id, {
+        status: 'canceled',
+        canceledAt: new Date(),
+      });
+      logger.info('Stripe Webhook: Auto-cancelled old subscription', {
+        userId,
+        oldSubscriptionId: oldSub.stripe_subscription_id,
+        newSubscriptionId: subscriptionId,
+      });
+    }
+
     // Create new subscription
     await StripeSubscription.create({
       userId,

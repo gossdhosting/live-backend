@@ -823,6 +823,15 @@ export async function upgradePlan(req, res) {
     const totalBeforeCredits = latestInvoice.total / 100;
     const credits = (latestInvoice.starting_balance || 0) / 100;
 
+    // Cancel any other active subscriptions for this user (cleanup duplicates)
+    const db = (await import('../models/database.js')).default;
+    await db.query(
+      `UPDATE stripe_subscriptions
+       SET status = 'canceled', canceled_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+       WHERE user_id = $1 AND status IN ('active', 'trialing') AND id != $2`,
+      [userId, currentSubscription.id]
+    );
+
     // Update database with new plan
     await StripeSubscription.updatePlan(
       currentSubscription.id,
