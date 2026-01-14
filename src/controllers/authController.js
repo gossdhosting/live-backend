@@ -73,15 +73,37 @@ export const login = async (req, res) => {
 };
 
 // Get current user
-export const getCurrentUser = (req, res) => {
-  res.json({
-    user: {
-      id: req.user.id,
-      email: req.user.email,
-      name: req.user.name,
-      role: req.user.role,
-    },
-  });
+export const getCurrentUser = async (req, res) => {
+  try {
+    // Fetch full user data with plan details
+    const userWithPlan = await User.findById(req.user.id);
+
+    if (!userWithPlan) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({
+      user: {
+        id: userWithPlan.id,
+        email: userWithPlan.email,
+        name: userWithPlan.name,
+        role: userWithPlan.role,
+        plan_name: userWithPlan.plan_name,
+        plan_id: userWithPlan.plan_id,
+        subscription_status: userWithPlan.subscription_status,
+        max_concurrent_streams: userWithPlan.max_concurrent_streams,
+        max_bitrate: userWithPlan.max_bitrate,
+        max_stream_duration: userWithPlan.max_stream_duration,
+        storage_limit_mb: userWithPlan.storage_limit_mb,
+        custom_watermark: userWithPlan.custom_watermark,
+        profile_picture: userWithPlan.profile_picture,
+        auth_provider: userWithPlan.auth_provider
+      },
+    });
+  } catch (error) {
+    logger.error('Get current user error', { error: error.message });
+    res.status(500).json({ error: 'Failed to get user data' });
+  }
 };
 
 // Update profile (email and name)

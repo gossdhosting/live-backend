@@ -6,7 +6,7 @@ export const platformConfig = {
     clientId: process.env.FACEBOOK_CLIENT_ID,
     clientSecret: process.env.FACEBOOK_CLIENT_SECRET,
     redirectUri: process.env.FACEBOOK_REDIRECT_URI || 'http://localhost:3001/api/platforms/auth/facebook/callback',
-    scopes: ['public_profile', 'pages_show_list', 'pages_manage_posts', 'pages_read_engagement'],
+    scopes: ['public_profile', 'email', 'pages_show_list', 'pages_manage_posts', 'pages_read_engagement', 'publish_video'],
   },
 
   youtube: {

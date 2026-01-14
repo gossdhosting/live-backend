@@ -46,7 +46,28 @@ router.get('/facebook/callback', async (req, res) => {
 
     // Get user's pages
     const pages = await FacebookService.getPages(longLivedToken.access_token);
-    const firstPage = pages.length > 0 ? pages[0] : null;
+
+    // Create profile option (user's timeline) and add pages
+    const profileOption = {
+      id: userInfo.id,
+      name: `${userInfo.name}'s Profile (Timeline)`,
+      access_token: longLivedToken.access_token,
+      isProfile: true
+    };
+
+    // Combine profile + pages for available options
+    const allDestinations = [
+      profileOption,
+      ...pages.map(page => ({
+        id: page.id,
+        name: page.name,
+        access_token: page.access_token,
+        isProfile: false
+      }))
+    ];
+
+    // Default to profile if no pages, otherwise first page
+    const defaultDestination = pages.length > 0 ? pages[0] : profileOption;
 
     // Calculate token expiry (Facebook long-lived tokens last ~60 days)
     const expiresAt = new Date(Date.now() + (longLivedToken.expires_in || 5184000) * 1000);
@@ -63,14 +84,10 @@ router.get('/facebook/callback', async (req, res) => {
       platform_user_id: userInfo.id,
       platform_user_name: userInfo.name,
       platform_user_email: userInfo.email,
-      platform_page_id: firstPage?.id,
-      platform_page_name: firstPage?.name,
-      available_pages: JSON.stringify(pages.map(page => ({
-        id: page.id,
-        name: page.name,
-        access_token: page.access_token
-      }))),
-      scopes: ['public_profile', 'pages_show_list', 'pages_manage_posts', 'publish_video'],
+      platform_page_id: defaultDestination.id,
+      platform_page_name: defaultDestination.name,
+      available_pages: JSON.stringify(allDestinations),
+      scopes: ['public_profile', 'email', 'pages_show_list', 'pages_manage_posts', 'pages_read_engagement', 'publish_video'],
     });
 
     logger.info('Facebook account connected', { userId, fbUserId: userInfo.id });
