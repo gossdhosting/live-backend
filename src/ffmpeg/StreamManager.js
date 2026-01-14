@@ -659,13 +659,14 @@ class StreamManager {
 
         logger.info(`Title-only filter with scaling to ${qualityPreset} (${resolution.width}x${resolution.height}) applied for channel ${channelId}`);
         Channel.addLog(channelId, 'info', `Output quality: ${qualityPreset} (${resolution.width}x${resolution.height}) with title overlay`);
-      } else if (isRtmpInput) {
-        // RTMP input without watermark/title - still need to scale for proper resolution
+      } else if (isRtmpInput || isVideoFile) {
+        // RTMP input or video file without watermark/title - still need to scale for proper resolution
         const scaleFilter = `[0:v]scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=decrease,pad=${resolution.width}:${resolution.height}:(ow-iw)/2:(oh-ih)/2[vout]`;
 
         ffmpegArgs.push('-filter_complex', scaleFilter);
 
-        logger.info(`RTMP input scaling to ${qualityPreset} (${resolution.width}x${resolution.height}) for channel ${channelId}`);
+        const inputTypeLabel = isRtmpInput ? 'RTMP input' : 'Video file';
+        logger.info(`${inputTypeLabel} scaling to ${qualityPreset} (${resolution.width}x${resolution.height}) for channel ${channelId}`);
         Channel.addLog(channelId, 'info', `Output quality: ${qualityPreset} (${resolution.width}x${resolution.height})`);
       }
 
@@ -679,10 +680,12 @@ class StreamManager {
         Channel.addLog(channelId, 'info', `Title overlay: "${streamTitle}" at ${titlePosition}`);
       }
 
-      // OPTIMIZATION: Only encode if we need to apply filters (watermark or title)
-      // OR if using RTMP input (to control bitrate and keyframe interval for platforms)
-      // If no filters needed and not RTMP input, use stream copy for maximum performance
-      const needsEncoding = hasWatermark || (titleEnabled && streamTitle) || isRtmpInput;
+      // ENCODING DECISION: Encode in these cases:
+      // 1. Watermark or title overlay needs to be applied
+      // 2. RTMP input (to control bitrate and keyframe interval for platforms)
+      // 3. Video file input (to control bitrate - source files may have higher bitrate than platform limits)
+      // Stream copy (-c:v copy) is only used for pre-encoded streams that already match target specs
+      const needsEncoding = hasWatermark || (titleEnabled && streamTitle) || isRtmpInput || isVideoFile;
 
       if (needsEncoding) {
         // Single encoder for all outputs
