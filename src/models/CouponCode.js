@@ -16,6 +16,20 @@ class CouponCode {
       validUntil,
     } = data;
 
+    // Helper to convert empty strings to null for integer fields
+    const toIntOrNull = (val) => {
+      if (val === '' || val === undefined || val === null) return null;
+      const parsed = parseInt(val, 10);
+      return isNaN(parsed) ? null : parsed;
+    };
+
+    // Helper to convert empty strings to null for decimal fields
+    const toDecimalOrNull = (val) => {
+      if (val === '' || val === undefined || val === null) return null;
+      const parsed = parseFloat(val);
+      return isNaN(parsed) ? null : parsed;
+    };
+
     const query = `
       INSERT INTO coupon_codes (
         code, stripe_coupon_id, discount_type, discount_value,
@@ -30,12 +44,12 @@ class CouponCode {
         code.toUpperCase(),
         stripeCouponId,
         discountType,
-        discountValue,
+        toDecimalOrNull(discountValue),
         duration,
-        durationMonths,
-        maxRedemptions,
+        toIntOrNull(durationMonths),
+        toIntOrNull(maxRedemptions),
         validFrom || new Date(),
-        validUntil,
+        validUntil || null,
       ]);
 
       logger.info('Coupon code created', { code });
@@ -160,6 +174,20 @@ class CouponCode {
       isActive,
     } = data;
 
+    // Helper to convert empty strings to null for integer fields
+    const toIntOrNull = (val) => {
+      if (val === '' || val === undefined || val === null) return null;
+      const parsed = parseInt(val, 10);
+      return isNaN(parsed) ? null : parsed;
+    };
+
+    // Helper to convert empty strings to null for decimal fields
+    const toDecimalOrNull = (val) => {
+      if (val === '' || val === undefined || val === null) return null;
+      const parsed = parseFloat(val);
+      return isNaN(parsed) ? null : parsed;
+    };
+
     const query = `
       UPDATE coupon_codes
       SET
@@ -180,13 +208,13 @@ class CouponCode {
     try {
       const result = await db.query(query, [
         code ? code.toUpperCase() : null,
-        discountType,
-        discountValue,
-        duration,
-        durationMonths,
-        maxRedemptions,
-        validFrom,
-        validUntil,
+        discountType || null,
+        toDecimalOrNull(discountValue),
+        duration || null,
+        toIntOrNull(durationMonths),
+        toIntOrNull(maxRedemptions),
+        validFrom || null,
+        validUntil || null,
         isActive,
         id,
       ]);

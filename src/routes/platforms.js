@@ -157,7 +157,7 @@ router.put('/facebook/select-page', authenticateToken, async (req, res) => {
 // Create Facebook live stream
 router.post('/facebook/create-stream', authenticateToken, async (req, res) => {
   try {
-    const { channelId, pageId, pageAccessToken, title, description, isProfile } = req.body;
+    const { channelId, pageId, pageAccessToken, title, description } = req.body;
 
     if (!channelId || !pageId || !pageAccessToken || !title) {
       return res.status(400).json({ error: 'Missing required fields' });
@@ -192,8 +192,8 @@ router.post('/facebook/create-stream', authenticateToken, async (req, res) => {
     // Refresh token if needed
     await FacebookService.refreshTokenIfNeeded(connection);
 
-    // Create live video (pass isProfile flag to use correct endpoint)
-    const liveVideo = await FacebookService.createLiveVideo(pageId, pageAccessToken, title, description, isProfile === true);
+    // Create live video on selected page
+    const liveVideo = await FacebookService.createLiveVideo(pageId, pageAccessToken, title, description);
 
     // Save platform stream (single source of truth)
     const platformStream = await PlatformStream.create({

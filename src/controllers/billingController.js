@@ -116,9 +116,12 @@ export async function createCheckoutSession(req, res) {
       },
     };
 
-    // Add coupon if provided
+    // Add coupon if provided, otherwise allow promotion codes input
     if (stripeCouponId) {
       sessionConfig.discounts = [{ coupon: stripeCouponId }];
+    } else {
+      // Allow customers to enter promotion codes at checkout
+      sessionConfig.allow_promotion_codes = true;
     }
 
     const session = await stripe.checkout.sessions.create(sessionConfig);

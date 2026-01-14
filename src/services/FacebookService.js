@@ -93,16 +93,11 @@ class FacebookService {
     }
   }
 
-  // Create live video on a page or profile
-  static async createLiveVideo(targetId, accessToken, title, description, isProfile = false) {
+  // Create live video on a page
+  static async createLiveVideo(pageId, accessToken, title, description) {
     try {
-      // For profile streaming, use 'me/live_videos', for pages use '{pageId}/live_videos'
-      const endpoint = isProfile
-        ? 'https://graph.facebook.com/v18.0/me/live_videos'
-        : `https://graph.facebook.com/v18.0/${targetId}/live_videos`;
-
       const response = await axios.post(
-        endpoint,
+        `https://graph.facebook.com/v18.0/${pageId}/live_videos`,
         {
           title: title,
           description: description,
@@ -120,10 +115,9 @@ class FacebookService {
         rtmp_url: response.data.secure_stream_url,
         stream_key: '', // Facebook combines URL and key in secure_stream_url
         dashboard_url: response.data.permalink_url,
-        isProfile: isProfile,
       };
     } catch (error) {
-      logger.error('Facebook: Failed to create live video', { error: error.response?.data || error.message, isProfile });
+      logger.error('Facebook: Failed to create live video', { error: error.response?.data || error.message });
 
       // Parse specific Facebook API errors
       let errorMessage = 'Failed to create Facebook live video';
@@ -139,13 +133,9 @@ class FacebookService {
         } else if (errorCode === 200 && errorType === 'OAuthException') {
           errorMessage = 'Missing Facebook permissions. Please reconnect your Facebook account with the required permissions.';
         } else if (errorCode === 368) {
-          errorMessage = isProfile
-            ? 'Your Facebook account has restrictions on live streaming. Check your account settings.'
-            : 'Your Facebook page has restrictions on live streaming. Check your page settings.';
+          errorMessage = 'Your Facebook page has restrictions on live streaming. Check your page settings.';
         } else if (errorCode === 100) {
-          errorMessage = isProfile
-            ? 'Unable to stream to your profile. Please check your account permissions.'
-            : 'Invalid Facebook page selected. Please select a valid page from your account.';
+          errorMessage = 'Invalid Facebook page selected. Please select a valid page from your account.';
         } else if (fbError.message) {
           errorMessage = fbError.message;
         }
