@@ -580,24 +580,39 @@ export async function createCoupon(req, res) {
 
     // Create coupon in Stripe first
     const stripe = stripeConfig.getStripe();
-    const stripeCouponData = {
-      id: code.toUpperCase().replace(/\s+/g, ''),
-      name: code.toUpperCase(),
-      duration: duration,
-    };
+    const stripeCouponId = code.toUpperCase().replace(/\s+/g, '');
 
-    if (discountType === 'percentage') {
-      stripeCouponData.percent_off = parseFloat(discountValue);
-    } else {
-      stripeCouponData.amount_off = Math.round(parseFloat(discountValue) * 100); // Convert to cents
-      stripeCouponData.currency = 'usd';
+    let stripeCoupon;
+
+    try {
+      // Try to create the coupon in Stripe
+      const stripeCouponData = {
+        id: stripeCouponId,
+        name: code.toUpperCase(),
+        duration: duration,
+      };
+
+      if (discountType === 'percentage') {
+        stripeCouponData.percent_off = parseFloat(discountValue);
+      } else {
+        stripeCouponData.amount_off = Math.round(parseFloat(discountValue) * 100); // Convert to cents
+        stripeCouponData.currency = 'usd';
+      }
+
+      if (duration === 'repeating' && durationMonths) {
+        stripeCouponData.duration_in_months = parseInt(durationMonths);
+      }
+
+      stripeCoupon = await stripe.coupons.create(stripeCouponData);
+    } catch (stripeError) {
+      // If coupon already exists in Stripe, retrieve it
+      if (stripeError.code === 'resource_already_exists') {
+        stripeCoupon = await stripe.coupons.retrieve(stripeCouponId);
+        logger.info('Using existing Stripe coupon', { id: stripeCouponId });
+      } else {
+        throw stripeError;
+      }
     }
-
-    if (duration === 'repeating' && durationMonths) {
-      stripeCouponData.duration_in_months = parseInt(durationMonths);
-    }
-
-    const stripeCoupon = await stripe.coupons.create(stripeCouponData);
 
     // Create in database
     const coupon = await CouponCode.create({
