@@ -13,6 +13,7 @@ class FacebookService {
       scope: config.scopes.join(','),
       response_type: 'code',
       state: state,
+      config_id: config.configId,
     });
 
     return `https://www.facebook.com/v18.0/dialog/oauth?${params.toString()}`;
