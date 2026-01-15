@@ -466,9 +466,9 @@ class StreamManager {
       this.rtmpConnectionStatus.set(channelId, rtmpStatusMap);
       logger.info(`[RTMP-INIT] Set rtmpConnectionStatus for channel ${channelId}, map size: ${rtmpStatusMap.size}`);
 
-      // Check watermark availability based on plan
-      const channelUser = User.findById(channel.user_id);
-      const userPlan = channelUser ? Plan.getById(channelUser.plan_id) : null;
+      // Check watermark availability based on plan (async calls)
+      const channelUser = await User.findById(channel.user_id);
+      const userPlan = channelUser ? await Plan.getById(channelUser.plan_id) : null;
       const hasCustomWatermark = userPlan && userPlan.custom_watermark === 1;
 
       // Get default watermark settings
