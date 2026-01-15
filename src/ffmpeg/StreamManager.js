@@ -475,11 +475,16 @@ class StreamManager {
       const defaultWatermarkEnabled = Settings.get('default_watermark_enabled')?.value === '1';
       const defaultWatermarkPath = Settings.get('default_watermark_path')?.value;
 
-      // Get user-level watermark settings
-      const userWatermarkPath = UserSettings.get(channel.user_id, 'watermark_path')?.value;
-      const userWatermarkPosition = UserSettings.get(channel.user_id, 'watermark_position')?.value;
-      const userWatermarkOpacity = UserSettings.get(channel.user_id, 'watermark_opacity')?.value;
-      const userWatermarkScale = UserSettings.get(channel.user_id, 'watermark_scale')?.value;
+      // Get user-level watermark settings (async calls)
+      const userWatermarkPathSetting = await UserSettings.get(channel.user_id, 'watermark_path');
+      const userWatermarkPositionSetting = await UserSettings.get(channel.user_id, 'watermark_position');
+      const userWatermarkOpacitySetting = await UserSettings.get(channel.user_id, 'watermark_opacity');
+      const userWatermarkScaleSetting = await UserSettings.get(channel.user_id, 'watermark_scale');
+
+      const userWatermarkPath = userWatermarkPathSetting?.value;
+      const userWatermarkPosition = userWatermarkPositionSetting?.value;
+      const userWatermarkOpacity = userWatermarkOpacitySetting?.value;
+      const userWatermarkScale = userWatermarkScaleSetting?.value;
 
       // Determine watermark to use
       let watermarkPath = null;

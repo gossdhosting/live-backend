@@ -614,6 +614,33 @@ export async function createCoupon(req, res) {
       }
     }
 
+    // Create a Promotion Code for the coupon (customer-facing code)
+    // This is what customers enter at checkout with allow_promotion_codes: true
+    try {
+      const promoCodeData = {
+        coupon: stripeCoupon.id,
+        code: stripeCouponId, // Use same code as coupon ID
+      };
+
+      // Add max redemptions if specified
+      if (maxRedemptions) {
+        promoCodeData.max_redemptions = parseInt(maxRedemptions);
+      }
+
+      // Add expiration if specified
+      if (validUntil) {
+        promoCodeData.expires_at = Math.floor(new Date(validUntil).getTime() / 1000);
+      }
+
+      await stripe.promotionCodes.create(promoCodeData);
+      logger.info('Stripe promotion code created', { code: stripeCouponId });
+    } catch (promoError) {
+      // If promotion code already exists, that's okay - continue
+      if (promoError.code !== 'resource_already_exists') {
+        logger.warn('Failed to create promotion code', { error: promoError.message });
+      }
+    }
+
     // Create in database
     const coupon = await CouponCode.create({
       code,
