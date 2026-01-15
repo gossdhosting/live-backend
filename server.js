@@ -84,11 +84,17 @@ app.use('/api/iap', iapRoutes);
 app.use('/api/public', publicRoutes);
 
 // Serve .well-known files for deep linking (iOS Universal Links & Android App Links)
-app.use('/.well-known', express.static(path.join(__dirname, '.well-known'), {
+const wellKnownPath = path.join(__dirname, '.well-known');
+app.use('/.well-known', express.static(wellKnownPath, {
   setHeaders: (res, filePath) => {
-    res.setHeader('Content-Type', 'application/json');
+    // Set proper Content-Type for deep link files
+    if (filePath.endsWith('assetlinks.json') || filePath.endsWith('apple-app-site-association')) {
+      res.setHeader('Content-Type', 'application/json');
+    }
     res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'no-cache'); // Don't cache these files
   },
+  fallthrough: false, // Return 404 if file not found instead of continuing to next handler
 }));
 
 // Serve HLS files
