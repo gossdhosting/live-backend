@@ -1,0 +1,19 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "TEAM_ID.com.rexstream.app",
+        "paths": [
+          "/app/oauth-callback",
+          "/app/oauth-callback/*"
+        ]
+      }
+    ]
+  },
+  "webcredentials": {
+    "apps": [
+      "TEAM_ID.com.rexstream.app"
+    ]
+  }
+}

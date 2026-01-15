@@ -83,6 +83,14 @@ app.use('/api/iap', iapRoutes);
 // Public API (for Flutter app)
 app.use('/api/public', publicRoutes);
 
+// Serve .well-known files for deep linking (iOS Universal Links & Android App Links)
+app.use('/.well-known', express.static(path.join(__dirname, '.well-known'), {
+  setHeaders: (res, filePath) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  },
+}));
+
 // Serve HLS files
 const hlsBasePath = process.env.HLS_BASE_PATH || path.join(process.cwd(), 'var', 'hls');
 app.use('/hls', express.static(hlsBasePath, {
