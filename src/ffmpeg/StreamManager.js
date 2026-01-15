@@ -581,7 +581,7 @@ class StreamManager {
       ];
 
       // Add loop for video files if enabled
-      if (isVideoFile && channel.loop_video) {
+      if (isVideoFile && (channel.loop_video === true || channel.loop_video === 1)) {
         ffmpegArgs.push('-stream_loop', '-1'); // -1 means infinite loop
         logger.info(`Auto-loop enabled for channel ${channelId}`);
         Channel.addLog(channelId, 'info', 'Video will loop automatically');
@@ -628,9 +628,9 @@ class StreamManager {
       // NO SPLIT needed - Tee muxer handles distribution after encoding
 
       // Get title overlay settings from user settings (with global defaults)
-      const titleEnabled = channel.title_enabled || 0;
+      const titleEnabled = channel.title_enabled === true || channel.title_enabled === 1;
       const streamTitle = channel.stream_title || '';
-      const userSettings = UserSettings.getAllWithDefaults(channel.user_id);
+      const userSettings = await UserSettings.getAllWithDefaults(channel.user_id);
       const titleBgColor = userSettings.title_bg_color || '#000000';
       const titleOpacity = parseFloat(userSettings.title_opacity || '80') / 100;
       const titlePosition = userSettings.title_position || 'bottom-left';
