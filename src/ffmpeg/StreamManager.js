@@ -469,7 +469,8 @@ class StreamManager {
       // Check watermark availability based on plan (async calls)
       const channelUser = await User.findById(channel.user_id);
       const userPlan = channelUser ? await Plan.getById(channelUser.plan_id) : null;
-      const hasCustomWatermark = userPlan && userPlan.custom_watermark === 1;
+      // PostgreSQL returns boolean as true/false, SQLite as 1/0
+      const hasCustomWatermark = userPlan && (userPlan.custom_watermark === true || userPlan.custom_watermark === 1);
 
       // Get default watermark settings
       const defaultWatermarkEnabled = Settings.get('default_watermark_enabled')?.value === '1';
