@@ -492,6 +492,16 @@ class StreamManager {
       let watermarkOpacity = 0.7;
       let watermarkScale = 0.15;
 
+      // Debug logging for watermark decision
+      logger.info(`Watermark check for channel ${channelId}:`, {
+        hasCustomWatermark,
+        channelWatermarkEnabled: channel.watermark_enabled,
+        userWatermarkPath,
+        userWatermarkPathExists: userWatermarkPath ? fs.existsSync(userWatermarkPath) : false,
+        defaultWatermarkEnabled,
+        defaultWatermarkPath
+      });
+
       if (hasCustomWatermark && channel.watermark_enabled && userWatermarkPath && fs.existsSync(userWatermarkPath)) {
         // User has custom watermark permission, channel has it enabled, and user has uploaded one
         watermarkPath = userWatermarkPath;
