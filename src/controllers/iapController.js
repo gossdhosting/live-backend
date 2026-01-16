@@ -154,6 +154,47 @@ export async function verifyIAPPurchase(req, res) {
   }
 }
 
+// Map product ID plan names to database plan IDs
+const PLAN_NAME_TO_ID = {
+  'basic': 2,
+  'pro': 3,
+  'enterprise': 4,
+  'enterprice': 4, // Handle typo in Google Play Console
+};
+
+// Parse product ID to extract plan info
+// Supports formats:
+//   - rexstream-{planName}-{cycle} (e.g., rexstream-basic-monthly)
+//   - com.rexstream.plan_{planId}_{cycle} (legacy format)
+function parseProductId(productId) {
+  // Try new format: rexstream-{planName}-{cycle}
+  if (productId.startsWith('rexstream-')) {
+    const parts = productId.split('-');
+    if (parts.length >= 3) {
+      const planName = parts[1].toLowerCase();
+      const cycle = parts[2];
+      const planId = PLAN_NAME_TO_ID[planName];
+
+      if (planId) {
+        return { planId, billingCycle: cycle };
+      }
+    }
+  }
+
+  // Try legacy format: com.rexstream.plan_{planId}_{cycle}
+  const underscoreParts = productId.split('_');
+  if (underscoreParts.length >= 3) {
+    const planId = parseInt(underscoreParts[1]);
+    const billingCycle = underscoreParts[2];
+
+    if (!isNaN(planId)) {
+      return { planId, billingCycle };
+    }
+  }
+
+  return null;
+}
+
 // Activate IAP subscription
 export async function activateIAPSubscription(req, res) {
   try {
@@ -165,18 +206,18 @@ export async function activateIAPSubscription(req, res) {
     }
 
     // Parse plan info from product ID
-    // Expected format: com.rexstream.plan_{planId}_{cycle}
-    const productIdParts = productId.split('_');
-    if (productIdParts.length < 3) {
+    const planInfo = parseProductId(productId);
+    if (!planInfo) {
+      logger.error('Invalid product ID format', { productId });
       return res.status(400).json({ error: 'Invalid product ID format' });
     }
 
-    const planId = parseInt(productIdParts[1]);
-    const billingCycle = productIdParts[2]; // 'monthly' or 'yearly'
+    const { planId, billingCycle } = planInfo;
 
     // Get plan details
     const plan = await Plan.getById(planId);
     if (!plan) {
+      logger.error('Plan not found for IAP', { productId, planId });
       return res.status(404).json({ error: 'Plan not found' });
     }
 
@@ -246,28 +287,76 @@ export async function activateIAPSubscription(req, res) {
   }
 }
 
+// Map plan IDs to product ID names (for generating Google Play/App Store product IDs)
+const PLAN_ID_TO_PRODUCT_NAME = {
+  2: 'basic',
+  3: 'pro',
+  4: 'enterprise',
+};
+
+// Generate IAP product ID for a plan
+function generateProductId(planId, cycle) {
+  const planName = PLAN_ID_TO_PRODUCT_NAME[planId];
+  if (!planName) return null;
+
+  // Handle enterprise typo in Google Play Console
+  if (planName === 'enterprise' && cycle === 'monthly') {
+    return 'rexstream-enterprice-monthly'; // Note: typo matches Play Console
+  }
+
+  return `rexstream-${planName}-${cycle}`;
+}
+
 // Get platform-specific pricing
 export async function getPlatformPricing(req, res) {
   try {
     const { platform } = req.query;
 
-    // Get all plans
+    // Get all active, non-hidden plans
     const plans = await Plan.getAll();
 
-    // Calculate platform-specific prices
-    const pricedPlans = plans.map((plan) => {
-      const markup = PLATFORM_MARKUP[platform] || 0;
+    // Calculate platform-specific prices and add product IDs
+    const pricedPlans = plans
+      .filter(plan => plan.is_active && !plan.is_hidden && plan.price_monthly > 0) // Exclude free plans from IAP
+      .map((plan) => {
+        const markup = PLATFORM_MARKUP[platform] || 0;
+        const productIdMonthly = generateProductId(plan.id, 'monthly');
+        const productIdYearly = generateProductId(plan.id, 'yearly');
 
-      return {
-        ...plan,
-        platform_price_monthly: plan.price_monthly * (1 + markup),
-        platform_price_yearly: plan.price_yearly * (1 + markup),
-        platform_markup_percentage: markup * 100,
-        platform,
-      };
+        return {
+          id: plan.id,
+          name: plan.name,
+          description: plan.description,
+          price_monthly: plan.price_monthly,
+          price_yearly: plan.price_yearly,
+          platform_price_monthly: Math.round(plan.price_monthly * (1 + markup) * 100) / 100,
+          platform_price_yearly: Math.round(plan.price_yearly * (1 + markup) * 100) / 100,
+          platform_markup_percentage: markup * 100,
+          platform,
+          // IAP product IDs
+          product_id_monthly: productIdMonthly,
+          product_id_yearly: productIdYearly,
+          // Plan features
+          max_concurrent_streams: plan.max_concurrent_streams,
+          max_bitrate: plan.max_bitrate,
+          max_platform_connections: plan.max_platform_connections,
+          storage_limit_mb: plan.storage_limit_mb,
+          custom_watermark: plan.custom_watermark,
+          youtube_restreaming: plan.youtube_restreaming,
+        };
+      });
+
+    // Also return list of all valid product IDs for querying stores
+    const allProductIds = pricedPlans.flatMap(plan => [
+      plan.product_id_monthly,
+      plan.product_id_yearly,
+    ]).filter(Boolean);
+
+    res.json({
+      plans: pricedPlans,
+      product_ids: allProductIds,
+      platform,
     });
-
-    res.json({ plans: pricedPlans });
   } catch (error) {
     logger.error('Failed to get platform pricing', { error: error.message });
     res.status(500).json({ error: 'Failed to get pricing' });
