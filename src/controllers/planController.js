@@ -78,7 +78,11 @@ export const createPlan = async (req, res) => {
       storage_limit_mb,
       custom_watermark,
       max_platform_connections,
-      youtube_restreaming
+      youtube_restreaming,
+      android_product_id_monthly,
+      android_product_id_yearly,
+      ios_product_id_monthly,
+      ios_product_id_yearly
     } = req.body;
 
     // Validation
@@ -110,7 +114,11 @@ export const createPlan = async (req, res) => {
       storage_limit_mb,
       custom_watermark: custom_watermark || false,
       max_platform_connections: max_platform_connections || 1,
-      youtube_restreaming: youtube_restreaming || false
+      youtube_restreaming: youtube_restreaming || false,
+      android_product_id_monthly: android_product_id_monthly || null,
+      android_product_id_yearly: android_product_id_yearly || null,
+      ios_product_id_monthly: ios_product_id_monthly || null,
+      ios_product_id_yearly: ios_product_id_yearly || null
     });
 
     logger.info('Plan created', { planId: plan.id, name: plan.name, createdBy: req.user.id });
@@ -145,7 +153,11 @@ export const updatePlan = async (req, res) => {
       max_platform_connections,
       is_active,
       is_hidden,
-      youtube_restreaming
+      youtube_restreaming,
+      android_product_id_monthly,
+      android_product_id_yearly,
+      ios_product_id_monthly,
+      ios_product_id_yearly
     } = req.body;
 
     logger.info('Update plan called', { planId: id, updateFields: Object.keys(req.body) });
@@ -186,6 +198,10 @@ export const updatePlan = async (req, res) => {
     if (is_active !== undefined) updateData.is_active = is_active;
     if (is_hidden !== undefined) updateData.is_hidden = is_hidden;
     if (youtube_restreaming !== undefined) updateData.youtube_restreaming = youtube_restreaming;
+    if (android_product_id_monthly !== undefined) updateData.android_product_id_monthly = android_product_id_monthly;
+    if (android_product_id_yearly !== undefined) updateData.android_product_id_yearly = android_product_id_yearly;
+    if (ios_product_id_monthly !== undefined) updateData.ios_product_id_monthly = ios_product_id_monthly;
+    if (ios_product_id_yearly !== undefined) updateData.ios_product_id_yearly = ios_product_id_yearly;
 
     logger.info('Calling Plan.update with data', { planId: id, updateDataKeys: Object.keys(updateData) });
     console.log('[Plan] Update data:', JSON.stringify(updateData, null, 2));

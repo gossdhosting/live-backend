@@ -52,15 +52,21 @@ class Plan {
     storage_limit_mb,
     custom_watermark,
     max_platform_connections,
-    youtube_restreaming
+    youtube_restreaming,
+    android_product_id_monthly,
+    android_product_id_yearly,
+    ios_product_id_monthly,
+    ios_product_id_yearly
   }) {
     const stmt = db.prepare(`
       INSERT INTO plans (
         name, description, price_monthly, price_yearly,
         max_concurrent_streams, max_bitrate, max_stream_duration,
-        storage_limit_mb, custom_watermark, max_platform_connections, youtube_restreaming
+        storage_limit_mb, custom_watermark, max_platform_connections, youtube_restreaming,
+        android_product_id_monthly, android_product_id_yearly,
+        ios_product_id_monthly, ios_product_id_yearly
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = await stmt.run(
@@ -74,7 +80,11 @@ class Plan {
       storage_limit_mb,
       custom_watermark ? true : false,
       max_platform_connections || 1,
-      youtube_restreaming ? true : false
+      youtube_restreaming ? true : false,
+      android_product_id_monthly || null,
+      android_product_id_yearly || null,
+      ios_product_id_monthly || null,
+      ios_product_id_yearly || null
     );
 
     return await this.getById(result.lastInsertRowid);
@@ -101,7 +111,11 @@ class Plan {
       'max_platform_connections',
       'is_active',
       'is_hidden',
-      'youtube_restreaming'
+      'youtube_restreaming',
+      'android_product_id_monthly',
+      'android_product_id_yearly',
+      'ios_product_id_monthly',
+      'ios_product_id_yearly'
     ];
 
     allowedFields.forEach(field => {

@@ -324,7 +324,7 @@ export async function getPlatformPricing(req, res) {
     // Get all plans from database
     const plans = await Plan.getAll();
 
-    // Calculate platform-specific prices and generate product IDs dynamically
+    // Calculate platform-specific prices and use stored product IDs
     const pricedPlans = plans
       .filter(plan => {
         // Check if active (handle both boolean and integer values)
@@ -337,9 +337,16 @@ export async function getPlatformPricing(req, res) {
       .map((plan) => {
         const markup = PLATFORM_MARKUP[platform] || 0;
 
-        // Generate product IDs dynamically from plan name
-        const productIdMonthly = generateProductIdFromPlan(plan.name, 'monthly');
-        const productIdYearly = generateProductIdFromPlan(plan.name, 'yearly');
+        // Use stored product IDs from database based on platform
+        let productIdMonthly, productIdYearly;
+
+        if (platform === 'android') {
+          productIdMonthly = plan.android_product_id_monthly;
+          productIdYearly = plan.android_product_id_yearly;
+        } else if (platform === 'ios') {
+          productIdMonthly = plan.ios_product_id_monthly;
+          productIdYearly = plan.ios_product_id_yearly;
+        }
 
         return {
           id: plan.id,
@@ -351,9 +358,9 @@ export async function getPlatformPricing(req, res) {
           platform_price_yearly: Math.round(parseFloat(plan.price_yearly) * (1 + markup) * 100) / 100,
           platform_markup_percentage: markup * 100,
           platform,
-          // IAP product IDs (dynamically generated from plan name)
-          product_id_monthly: productIdMonthly,
-          product_id_yearly: productIdYearly,
+          // IAP product IDs (from database, entered by admin)
+          product_id_monthly: productIdMonthly || null,
+          product_id_yearly: productIdYearly || null,
           // Plan features
           max_concurrent_streams: plan.max_concurrent_streams,
           max_bitrate: plan.max_bitrate,
