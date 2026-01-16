@@ -84,8 +84,8 @@ app.use('/api/iap', iapRoutes);
 // Public API (for Flutter app)
 app.use('/api/public', publicRoutes);
 
-// App deep link routes (non-API)
-app.use('/app', appRoutes);
+// App deep link routes
+app.use('/api/app', appRoutes);
 
 // Serve .well-known files for deep linking (iOS Universal Links & Android App Links)
 const wellKnownPath = path.join(__dirname, '.well-known');
