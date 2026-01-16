@@ -25,6 +25,7 @@ import platformRoutes from './src/routes/platforms.js';
 import billingRoutes from './src/routes/billing.js';
 import webhookRoutes from './src/routes/webhooks.js';
 import iapRoutes from './src/routes/iap.js';
+import appRoutes from './src/routes/app.js';
 
 // Middleware
 import { apiLimiter } from './src/middleware/rateLimiter.js';
@@ -82,6 +83,9 @@ app.use('/api/iap', iapRoutes);
 
 // Public API (for Flutter app)
 app.use('/api/public', publicRoutes);
+
+// App deep link routes (non-API)
+app.use('/app', appRoutes);
 
 // Serve .well-known files for deep linking (iOS Universal Links & Android App Links)
 const wellKnownPath = path.join(__dirname, '.well-known');
