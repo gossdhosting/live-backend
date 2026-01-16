@@ -154,30 +154,24 @@ export async function verifyIAPPurchase(req, res) {
   }
 }
 
-// Map product ID plan names to database plan IDs
-const PLAN_NAME_TO_ID = {
-  'basic': 2,
-  'pro': 3,
-  'enterprise': 4,
-  'enterprice': 4, // Handle typo in Google Play Console
-};
-
-// Parse product ID to extract plan info
+// Parse product ID to extract plan name and billing cycle
 // Supports formats:
 //   - rexstream-{planName}-{cycle} (e.g., rexstream-basic-monthly)
-//   - com.rexstream.plan_{planId}_{cycle} (legacy format)
+//   - com.rexstream.plan_{planId}_{cycle} (legacy format with plan ID)
 function parseProductId(productId) {
   // Try new format: rexstream-{planName}-{cycle}
   if (productId.startsWith('rexstream-')) {
     const parts = productId.split('-');
     if (parts.length >= 3) {
-      const planName = parts[1].toLowerCase();
+      let planName = parts[1].toLowerCase();
       const cycle = parts[2];
-      const planId = PLAN_NAME_TO_ID[planName];
 
-      if (planId) {
-        return { planId, billingCycle: cycle };
+      // Handle typo variations (e.g., 'enterprice' -> 'enterprise')
+      if (planName === 'enterprice') {
+        planName = 'enterprise';
       }
+
+      return { planName, billingCycle: cycle, planId: null };
     }
   }
 
@@ -188,8 +182,25 @@ function parseProductId(productId) {
     const billingCycle = underscoreParts[2];
 
     if (!isNaN(planId)) {
-      return { planId, billingCycle };
+      return { planId, billingCycle, planName: null };
     }
+  }
+
+  return null;
+}
+
+// Find plan from database based on parsed product ID info
+async function findPlanFromProductId(parsedInfo) {
+  if (!parsedInfo) return null;
+
+  // If we have a plan ID, look up directly
+  if (parsedInfo.planId) {
+    return await Plan.getById(parsedInfo.planId);
+  }
+
+  // If we have a plan name, look up by name (case-insensitive)
+  if (parsedInfo.planName) {
+    return await Plan.getByName(parsedInfo.planName);
   }
 
   return null;
@@ -206,20 +217,21 @@ export async function activateIAPSubscription(req, res) {
     }
 
     // Parse plan info from product ID
-    const planInfo = parseProductId(productId);
-    if (!planInfo) {
+    const parsedInfo = parseProductId(productId);
+    if (!parsedInfo) {
       logger.error('Invalid product ID format', { productId });
       return res.status(400).json({ error: 'Invalid product ID format' });
     }
 
-    const { planId, billingCycle } = planInfo;
-
-    // Get plan details
-    const plan = await Plan.getById(planId);
+    // Find plan from database
+    const plan = await findPlanFromProductId(parsedInfo);
     if (!plan) {
-      logger.error('Plan not found for IAP', { productId, planId });
+      logger.error('Plan not found for IAP', { productId, parsedInfo });
       return res.status(404).json({ error: 'Plan not found' });
     }
+
+    const planId = plan.id;
+    const billingCycle = parsedInfo.billingCycle;
 
     // Verify purchase again for security
     let verificationResult;
@@ -287,24 +299,15 @@ export async function activateIAPSubscription(req, res) {
   }
 }
 
-// Map plan IDs to product ID names (for generating Google Play/App Store product IDs)
-const PLAN_ID_TO_PRODUCT_NAME = {
-  2: 'basic',
-  3: 'pro',
-  4: 'enterprise',
-};
-
-// Generate IAP product ID for a plan
-function generateProductId(planId, cycle) {
-  const planName = PLAN_ID_TO_PRODUCT_NAME[planId];
+// Generate IAP product ID from plan name
+// Format: rexstream-{planName}-{cycle}
+function generateProductIdFromPlan(planName, cycle) {
   if (!planName) return null;
 
-  // Handle enterprise typo in Google Play Console
-  if (planName === 'enterprise' && cycle === 'monthly') {
-    return 'rexstream-enterprice-monthly'; // Note: typo matches Play Console
-  }
+  // Normalize plan name to lowercase for product ID
+  const normalizedName = planName.toLowerCase().replace(/\s+/g, '-');
 
-  return `rexstream-${planName}-${cycle}`;
+  return `rexstream-${normalizedName}-${cycle}`;
 }
 
 // Get platform-specific pricing
@@ -312,28 +315,37 @@ export async function getPlatformPricing(req, res) {
   try {
     const { platform } = req.query;
 
-    // Get all active, non-hidden plans
+    // Get all plans from database
     const plans = await Plan.getAll();
 
-    // Calculate platform-specific prices and add product IDs
+    // Calculate platform-specific prices and generate product IDs dynamically
     const pricedPlans = plans
-      .filter(plan => plan.is_active && !plan.is_hidden && plan.price_monthly > 0) // Exclude free plans from IAP
+      .filter(plan => {
+        // Check if active (handle both boolean and integer values)
+        const isActive = plan.is_active === true || plan.is_active === 1;
+        // Check if hidden
+        const isHidden = plan.is_hidden === true || plan.is_hidden === 1;
+        // Exclude free plans (no IAP needed) and inactive/hidden plans
+        return isActive && !isHidden && parseFloat(plan.price_monthly) > 0;
+      })
       .map((plan) => {
         const markup = PLATFORM_MARKUP[platform] || 0;
-        const productIdMonthly = generateProductId(plan.id, 'monthly');
-        const productIdYearly = generateProductId(plan.id, 'yearly');
+
+        // Generate product IDs dynamically from plan name
+        const productIdMonthly = generateProductIdFromPlan(plan.name, 'monthly');
+        const productIdYearly = generateProductIdFromPlan(plan.name, 'yearly');
 
         return {
           id: plan.id,
           name: plan.name,
           description: plan.description,
-          price_monthly: plan.price_monthly,
-          price_yearly: plan.price_yearly,
-          platform_price_monthly: Math.round(plan.price_monthly * (1 + markup) * 100) / 100,
-          platform_price_yearly: Math.round(plan.price_yearly * (1 + markup) * 100) / 100,
+          price_monthly: parseFloat(plan.price_monthly),
+          price_yearly: parseFloat(plan.price_yearly),
+          platform_price_monthly: Math.round(parseFloat(plan.price_monthly) * (1 + markup) * 100) / 100,
+          platform_price_yearly: Math.round(parseFloat(plan.price_yearly) * (1 + markup) * 100) / 100,
           platform_markup_percentage: markup * 100,
           platform,
-          // IAP product IDs
+          // IAP product IDs (dynamically generated from plan name)
           product_id_monthly: productIdMonthly,
           product_id_yearly: productIdYearly,
           // Plan features
@@ -341,8 +353,8 @@ export async function getPlatformPricing(req, res) {
           max_bitrate: plan.max_bitrate,
           max_platform_connections: plan.max_platform_connections,
           storage_limit_mb: plan.storage_limit_mb,
-          custom_watermark: plan.custom_watermark,
-          youtube_restreaming: plan.youtube_restreaming,
+          custom_watermark: plan.custom_watermark === true || plan.custom_watermark === 1,
+          youtube_restreaming: plan.youtube_restreaming === true || plan.youtube_restreaming === 1,
         };
       });
 
