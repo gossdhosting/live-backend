@@ -305,7 +305,13 @@ function generateProductIdFromPlan(planName, cycle) {
   if (!planName) return null;
 
   // Normalize plan name to lowercase for product ID
-  const normalizedName = planName.toLowerCase().replace(/\s+/g, '-');
+  let normalizedName = planName.toLowerCase().replace(/\s+/g, '-');
+
+  // Handle typo in Google Play Console (enterprice instead of enterprise)
+  // Only for monthly cycle to match existing Google Play product
+  if (normalizedName === 'enterprise' && cycle === 'monthly') {
+    normalizedName = 'enterprice';
+  }
 
   return `rexstream-${normalizedName}-${cycle}`;
 }
