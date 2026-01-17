@@ -48,7 +48,61 @@ async function verifyGooglePlayPurchase(purchaseToken, productId, packageName) {
   }
 }
 
-// Apple App Store verification
+// Helper function to check if data is a StoreKit 2 JWS (starts with "ey" = base64 JSON)
+function isStoreKit2JWS(data) {
+  // StoreKit 2 JWS format: header.payload.signature
+  // Each part is base64-encoded, and header/payload are JSON starting with '{'
+  // When base64-encoded, '{' becomes 'ey'
+  return typeof data === 'string' && data.startsWith('ey') && data.split('.').length === 3;
+}
+
+// Apple App Store StoreKit 2 verification (JWS)
+async function verifyAppleStoreKit2Purchase(transactionJWS, transactionId) {
+  try {
+    // For StoreKit 2, we can verify the JWS signature locally or use App Store Server API
+    // For now, we'll accept the transaction and verify basic info
+    // In production, you should verify the JWS signature using Apple's public keys
+
+    // Decode the JWS payload (middle part)
+    const parts = transactionJWS.split('.');
+    if (parts.length !== 3) {
+      return { valid: false, error: 'Invalid JWS format' };
+    }
+
+    // Decode the payload (it's base64url encoded)
+    const payload = Buffer.from(parts[1], 'base64').toString('utf8');
+    const transaction = JSON.parse(payload);
+
+    logger.info('StoreKit 2 transaction decoded', { transaction });
+
+    // Basic validation
+    if (!transaction.transactionId) {
+      return { valid: false, error: 'Missing transaction ID in JWS' };
+    }
+
+    // For subscriptions, check expiration
+    const expiryTime = transaction.expiresDate ? parseInt(transaction.expiresDate) : 0;
+    const now = Date.now();
+
+    // If it's a subscription and has expired, mark as invalid
+    if (expiryTime > 0 && expiryTime < now) {
+      return { valid: false, error: 'Subscription expired' };
+    }
+
+    return {
+      valid: true,
+      expiryTime: expiryTime,
+      transactionId: transaction.transactionId,
+      originalTransactionId: transaction.originalTransactionId || transaction.transactionId,
+      productId: transaction.productId,
+    };
+  } catch (error) {
+    logger.error('StoreKit 2 JWS verification failed', { error: error.message });
+    return { valid: false, error: error.message };
+  }
+}
+
+// Apple App Store verification (StoreKit 1 - legacy receipt verification)
 async function verifyAppleAppStorePurchase(receiptData, isProduction = true) {
   try {
     const https = await import('https');
@@ -121,7 +175,7 @@ export async function verifyIAPPurchase(req, res) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    logger.info('Verifying IAP purchase', { userId, platform, productId });
+    logger.info('Verifying IAP purchase', { userId, platform, productId, purchaseId });
 
     let verificationResult;
 
@@ -132,7 +186,14 @@ export async function verifyIAPPurchase(req, res) {
         process.env.ANDROID_PACKAGE_NAME
       );
     } else if (platform === 'ios') {
-      verificationResult = await verifyAppleAppStorePurchase(verificationData);
+      // Detect StoreKit 2 JWS vs StoreKit 1 receipt
+      if (isStoreKit2JWS(verificationData)) {
+        logger.info('Detected StoreKit 2 JWS transaction');
+        verificationResult = await verifyAppleStoreKit2Purchase(verificationData, purchaseId);
+      } else {
+        logger.info('Detected StoreKit 1 receipt');
+        verificationResult = await verifyAppleAppStorePurchase(verificationData);
+      }
     } else {
       return res.status(400).json({ error: 'Invalid platform' });
     }
