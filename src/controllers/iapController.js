@@ -80,14 +80,11 @@ async function verifyAppleStoreKit2Purchase(transactionJWS, transactionId) {
       return { valid: false, error: 'Missing transaction ID in JWS' };
     }
 
-    // For subscriptions, check expiration
+    // For subscriptions, extract expiration time
+    // Note: We don't reject expired subscriptions here because:
+    // 1. Restored purchases include historical transactions
+    // 2. We'll check expiry during activation instead
     const expiryTime = transaction.expiresDate ? parseInt(transaction.expiresDate) : 0;
-    const now = Date.now();
-
-    // If it's a subscription and has expired, mark as invalid
-    if (expiryTime > 0 && expiryTime < now) {
-      return { valid: false, error: 'Subscription expired' };
-    }
 
     return {
       valid: true,
@@ -95,6 +92,7 @@ async function verifyAppleStoreKit2Purchase(transactionJWS, transactionId) {
       transactionId: transaction.transactionId,
       originalTransactionId: transaction.originalTransactionId || transaction.transactionId,
       productId: transaction.productId,
+      isExpired: expiryTime > 0 && expiryTime < Date.now(),
     };
   } catch (error) {
     logger.error('StoreKit 2 JWS verification failed', { error: error.message });
@@ -325,11 +323,25 @@ export async function activateIAPSubscription(req, res) {
     if (platform === 'android') {
       verificationResult = await verifyGooglePlayPurchase(verificationData, productId);
     } else if (platform === 'ios') {
-      verificationResult = await verifyAppleAppStorePurchase(verificationData);
+      // Detect StoreKit 2 JWS vs StoreKit 1 receipt
+      if (isStoreKit2JWS(verificationData)) {
+        verificationResult = await verifyAppleStoreKit2Purchase(verificationData, purchaseId);
+      } else {
+        verificationResult = await verifyAppleAppStorePurchase(verificationData);
+      }
     }
 
     if (!verificationResult.valid) {
       return res.status(400).json({ error: 'Purchase verification failed' });
+    }
+
+    // Check if subscription has expired
+    if (verificationResult.isExpired) {
+      logger.warn('Attempted to activate expired subscription', { userId, productId, purchaseId });
+      return res.status(400).json({
+        error: 'Subscription has expired',
+        expiryTime: verificationResult.expiryTime
+      });
     }
 
     // Calculate expiry date
