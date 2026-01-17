@@ -351,20 +351,32 @@ export async function activateIAPSubscription(req, res) {
     // Get user for email
     const user = await User.getById(userId);
 
-    // Create dummy Stripe customer for IAP if doesn't exist
-    const iapCustomerId = `iap_${platform}_${userId}`;
-    const existingCustomer = await db.query(
-      'SELECT * FROM stripe_customers WHERE stripe_customer_id = $1',
-      [iapCustomerId]
+    // Check if user already has a stripe_customers record (from Stripe web or IAP)
+    const existingUserCustomer = await db.query(
+      'SELECT * FROM stripe_customers WHERE user_id = $1',
+      [userId]
     );
 
-    if (existingCustomer.rows.length === 0) {
+    let customerIdToUse;
+
+    if (existingUserCustomer.rows.length > 0) {
+      // User already has a customer record (from Stripe web payments)
+      // Use the existing customer ID
+      customerIdToUse = existingUserCustomer.rows[0].stripe_customer_id;
+      logger.info('Using existing customer record for IAP subscription', {
+        userId,
+        existingCustomerId: customerIdToUse
+      });
+    } else {
+      // No existing customer record - create a new IAP customer
+      const iapCustomerId = `iap_${platform}_${userId}`;
       await db.query(
         `INSERT INTO stripe_customers (user_id, stripe_customer_id, email)
          VALUES ($1, $2, $3)`,
         [userId, iapCustomerId, user.email]
       );
-      logger.info('Created IAP customer record', { userId, iapCustomerId });
+      customerIdToUse = iapCustomerId;
+      logger.info('Created new IAP customer record', { userId, iapCustomerId });
     }
 
     // Create or update subscription record
@@ -372,7 +384,7 @@ export async function activateIAPSubscription(req, res) {
 
     const subscriptionData = {
       userId,
-      stripeCustomerId: iapCustomerId,
+      stripeCustomerId: customerIdToUse,
       stripeSubscriptionId: `iap_${platform}_${purchaseId}`,
       stripePriceId: productId,
       planId,
