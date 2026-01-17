@@ -452,3 +452,92 @@ export const getChannelRtmpDestinations = async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 };
+
+// Toggle RTMP template for a channel
+export const toggleRtmpTemplate = async (req, res) => {
+  try {
+    const { id: channelId, templateId } = req.params;
+    const { enabled } = req.body;
+
+    const channel = await Channel.findById(channelId);
+    if (!channel) {
+      return res.status(404).json({ error: 'Channel not found' });
+    }
+
+    // Check ownership
+    if (req.user.role !== 'admin' && channel.user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Get template
+    const template = await RtmpTemplate.getById(templateId);
+    if (!template) {
+      return res.status(404).json({ error: 'RTMP template not found' });
+    }
+
+    // Check if destination already exists
+    const existing = await RtmpDestination.getByChannelAndTemplate(channelId, templateId);
+
+    if (enabled) {
+      if (existing) {
+        // Update existing to enabled
+        await RtmpDestination.update(existing.id, { enabled: true });
+      } else {
+        // Create new destination
+        await RtmpDestination.create({
+          channel_id: channelId,
+          template_id: templateId,
+          platform: template.platform,
+          rtmp_url: template.rtmp_url,
+          stream_key: template.stream_key,
+          enabled: true,
+        });
+      }
+    } else {
+      if (existing) {
+        // Disable existing
+        await RtmpDestination.update(existing.id, { enabled: false });
+      }
+    }
+
+    logger.info('RTMP template toggled', { channelId, templateId, enabled });
+    res.json({ message: 'RTMP template toggled successfully' });
+  } catch (error) {
+    logger.error('Toggle RTMP template error', { error: error.message });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// Delete RTMP destination
+export const deleteRtmpDestination = async (req, res) => {
+  try {
+    const { id: channelId, destinationId } = req.params;
+
+    const channel = await Channel.findById(channelId);
+    if (!channel) {
+      return res.status(404).json({ error: 'Channel not found' });
+    }
+
+    // Check ownership
+    if (req.user.role !== 'admin' && channel.user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const destination = await RtmpDestination.getById(destinationId);
+    if (!destination) {
+      return res.status(404).json({ error: 'RTMP destination not found' });
+    }
+
+    if (destination.channel_id !== parseInt(channelId)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    await RtmpDestination.delete(destinationId);
+
+    logger.info('RTMP destination deleted', { channelId, destinationId });
+    res.json({ message: 'RTMP destination deleted successfully' });
+  } catch (error) {
+    logger.error('Delete RTMP destination error', { error: error.message });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};

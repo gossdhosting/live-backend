@@ -9,6 +9,8 @@ import {
   stopStream,
   getChannelLogs,
   getChannelRtmpDestinations,
+  toggleRtmpTemplate,
+  deleteRtmpDestination,
 } from '../controllers/channelController.js';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import { checkPlanLimit } from '../middleware/permissions.js';
@@ -35,5 +37,7 @@ router.get('/:id/logs', getChannelLogs);
 
 // RTMP destinations
 router.get('/:id/rtmp', getChannelRtmpDestinations);
+router.post('/:id/rtmp/template/:templateId/toggle', toggleRtmpTemplate);
+router.delete('/:id/rtmp/:destinationId', deleteRtmpDestination);
 
 export default router;
