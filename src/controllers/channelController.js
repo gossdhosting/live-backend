@@ -2,6 +2,7 @@ import Channel from '../models/Channel.js';
 import MediaFile from '../models/MediaFile.js';
 import User from '../models/User.js';
 import RtmpDestination from '../models/RtmpDestination.js';
+import RtmpTemplate from '../models/RtmpTemplate.js';
 import streamManager from '../ffmpeg/StreamManager.js';
 import { isValidYouTubeUrl, isValidChannelName } from '../utils/validation.js';
 import logger from '../utils/logger.js';
