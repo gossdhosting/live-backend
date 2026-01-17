@@ -384,9 +384,10 @@ export async function getPlatformPricing(req, res) {
           description: plan.description,
           price_monthly: parseFloat(plan.price_monthly),
           price_yearly: parseFloat(plan.price_yearly),
-          platform_price_monthly: Math.round(parseFloat(plan.price_monthly) * (1 + markup) * 100) / 100,
-          platform_price_yearly: Math.round(parseFloat(plan.price_yearly) * (1 + markup) * 100) / 100,
-          platform_markup_percentage: markup * 100,
+          // Use base price (no markup) since actual store prices are set in Google Play/App Store
+          platform_price_monthly: parseFloat(plan.price_monthly),
+          platform_price_yearly: parseFloat(plan.price_yearly),
+          platform_markup_percentage: 0, // No markup applied - using actual store prices
           platform,
           // IAP product IDs (from database, entered by admin)
           product_id_monthly: productIdMonthly || null,
