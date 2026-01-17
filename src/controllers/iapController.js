@@ -217,22 +217,47 @@ export async function activateIAPSubscription(req, res) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    // Parse plan info from product ID
-    const parsedInfo = parseProductId(productId);
-    if (!parsedInfo) {
-      logger.error('Invalid product ID format', { productId });
-      return res.status(400).json({ error: 'Invalid product ID format' });
+    // Find plan by matching productId against database product ID fields
+    const plans = await Plan.getAll();
+    let matchedPlan = null;
+    let billingCycle = null;
+
+    for (const plan of plans) {
+      // Check Android product IDs
+      if (platform === 'android') {
+        if (plan.android_product_id_monthly === productId) {
+          matchedPlan = plan;
+          billingCycle = 'monthly';
+          break;
+        }
+        if (plan.android_product_id_yearly === productId) {
+          matchedPlan = plan;
+          billingCycle = 'yearly';
+          break;
+        }
+      }
+      // Check iOS product IDs
+      else if (platform === 'ios') {
+        if (plan.ios_product_id_monthly === productId) {
+          matchedPlan = plan;
+          billingCycle = 'monthly';
+          break;
+        }
+        if (plan.ios_product_id_yearly === productId) {
+          matchedPlan = plan;
+          billingCycle = 'yearly';
+          break;
+        }
+      }
     }
 
-    // Find plan from database
-    const plan = await findPlanFromProductId(parsedInfo);
-    if (!plan) {
-      logger.error('Plan not found for IAP', { productId, parsedInfo });
-      return res.status(404).json({ error: 'Plan not found' });
+    if (!matchedPlan || !billingCycle) {
+      logger.error('Plan not found for product ID', { productId, platform });
+      return res.status(404).json({ error: 'Plan not found for this product' });
     }
 
-    const planId = plan.id;
-    const billingCycle = parsedInfo.billingCycle;
+    const planId = matchedPlan.id;
+    const plan = matchedPlan;
 
     // Verify purchase again for security
     let verificationResult;
