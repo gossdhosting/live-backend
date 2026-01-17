@@ -79,6 +79,7 @@ export const createPlan = async (req, res) => {
       custom_watermark,
       max_platform_connections,
       youtube_restreaming,
+      schedule_enabled,
       android_product_id_monthly,
       android_product_id_yearly,
       ios_product_id_monthly,
@@ -115,6 +116,7 @@ export const createPlan = async (req, res) => {
       custom_watermark: custom_watermark || false,
       max_platform_connections: max_platform_connections || 1,
       youtube_restreaming: youtube_restreaming || false,
+      schedule_enabled: schedule_enabled || false,
       android_product_id_monthly: android_product_id_monthly || null,
       android_product_id_yearly: android_product_id_yearly || null,
       ios_product_id_monthly: ios_product_id_monthly || null,
@@ -154,6 +156,7 @@ export const updatePlan = async (req, res) => {
       is_active,
       is_hidden,
       youtube_restreaming,
+      schedule_enabled,
       android_product_id_monthly,
       android_product_id_yearly,
       ios_product_id_monthly,
@@ -198,6 +201,7 @@ export const updatePlan = async (req, res) => {
     if (is_active !== undefined) updateData.is_active = is_active;
     if (is_hidden !== undefined) updateData.is_hidden = is_hidden;
     if (youtube_restreaming !== undefined) updateData.youtube_restreaming = youtube_restreaming;
+    if (schedule_enabled !== undefined) updateData.schedule_enabled = schedule_enabled;
     if (android_product_id_monthly !== undefined) updateData.android_product_id_monthly = android_product_id_monthly;
     if (android_product_id_yearly !== undefined) updateData.android_product_id_yearly = android_product_id_yearly;
     if (ios_product_id_monthly !== undefined) updateData.ios_product_id_monthly = ios_product_id_monthly;
