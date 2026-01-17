@@ -50,8 +50,8 @@ class StreamManager {
       maxReconnectAttempts: this.maxReconnectAttempts,
     });
 
-    // Clean up orphaned stream states on startup
-    this.cleanupOrphanedStreams();
+    // Initialize on startup: cleanup orphans and restore auto-restart streams
+    this.initializeOnStartup();
 
     // Start health check interval
     this.startHealthMonitoring();
@@ -74,27 +74,77 @@ class StreamManager {
     }
   }
 
-  // Clean up channels marked as running but not actually tracked
-  async cleanupOrphanedStreams() {
+  // Initialize on startup: cleanup orphaned streams and restore auto-restart streams
+  async initializeOnStartup() {
     try {
-      const channels = await Channel.findAll();
-      let cleanedCount = 0;
+      // Delay startup to allow database connections to stabilize
+      await new Promise(resolve => setTimeout(resolve, 2000));
 
-      for (const channel of (Array.isArray(channels) ? channels : [])) {
+      const channels = await Channel.findAll();
+      const channelsList = Array.isArray(channels) ? channels : [];
+
+      let cleanedCount = 0;
+      const streamsToRestart = [];
+
+      for (const channel of channelsList) {
         // If channel is marked as running but we don't have it in our process map
         if (channel.status === 'running' && !this.processes.has(channel.id)) {
           logger.warn(`Found orphaned stream state for channel ${channel.id}, marking as stopped`);
-          Channel.updateStatus(channel.id, 'stopped');
+          await Channel.updateStatus(channel.id, 'stopped');
           cleanedCount++;
+
+          // If auto_restart is enabled, queue for restart
+          if (channel.auto_restart) {
+            streamsToRestart.push(channel);
+          }
         }
       }
 
       if (cleanedCount > 0) {
         logger.info(`Cleaned up ${cleanedCount} orphaned stream state(s)`);
       }
+
+      // Restart streams that had auto_restart enabled
+      if (streamsToRestart.length > 0) {
+        logger.info(`Found ${streamsToRestart.length} stream(s) with auto_restart enabled, scheduling restart...`);
+
+        // Delay the restart to allow the server to fully initialize
+        setTimeout(async () => {
+          await this.restoreAutoRestartStreams(streamsToRestart);
+        }, 5000); // 5 second delay before starting streams
+      }
     } catch (error) {
-      logger.error('Failed to cleanup orphaned streams', { error: error.message });
+      logger.error('Failed to initialize on startup', { error: error.message });
     }
+  }
+
+  // Restore streams that had auto_restart enabled
+  async restoreAutoRestartStreams(channels) {
+    logger.info(`Attempting to restore ${channels.length} auto-restart stream(s)...`);
+
+    for (const channel of channels) {
+      try {
+        logger.info(`Restoring auto-restart stream: ${channel.name} (ID: ${channel.id})`);
+
+        // Start the stream
+        await this.startStream(channel.id);
+
+        logger.info(`Successfully restored stream: ${channel.name} (ID: ${channel.id})`);
+
+        // Small delay between starting streams to avoid overwhelming the system
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      } catch (error) {
+        logger.error(`Failed to restore stream ${channel.id}: ${error.message}`);
+        // Continue with next stream even if one fails
+      }
+    }
+
+    logger.info('Auto-restart stream restoration completed');
+  }
+
+  // Legacy method for backwards compatibility
+  async cleanupOrphanedStreams() {
+    return this.initializeOnStartup();
   }
 
   // Check FFmpeg version on startup

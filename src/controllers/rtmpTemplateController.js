@@ -6,7 +6,11 @@ export const getRtmpTemplates = async (req, res) => {
     // Check if we should only return enabled templates
     const enabledOnly = req.query.enabled === 'true';
     const templates = enabledOnly ? await RtmpTemplate.getEnabled() : await RtmpTemplate.getAll();
-    res.json({ templates });
+
+    // Filter to only return custom platform templates (exclude facebook, youtube, twitch)
+    const customTemplates = templates.filter(t => t.platform === 'custom');
+
+    res.json({ templates: customTemplates });
   } catch (error) {
     logger.error('Failed to fetch RTMP templates', { error: error.message, stack: error.stack });
     console.error('RTMP templates error:', error);
