@@ -2,6 +2,7 @@ import User from '../models/User.js';
 import Plan from '../models/Plan.js';
 import StripeSubscription from '../models/StripeSubscription.js';
 import Settings from '../models/Settings.js';
+import db from '../models/database.js';
 import logger from '../utils/logger.js';
 import { sendSubscriptionEmail } from '../services/EmailService.js';
 
@@ -347,12 +348,31 @@ export async function activateIAPSubscription(req, res) {
     // Calculate expiry date
     const expiryDate = new Date(verificationResult.expiryTime);
 
+    // Get user for email
+    const user = await User.getById(userId);
+
+    // Create dummy Stripe customer for IAP if doesn't exist
+    const iapCustomerId = `iap_${platform}_${userId}`;
+    const existingCustomer = await db.query(
+      'SELECT * FROM stripe_customers WHERE stripe_customer_id = $1',
+      [iapCustomerId]
+    );
+
+    if (existingCustomer.rows.length === 0) {
+      await db.query(
+        `INSERT INTO stripe_customers (user_id, stripe_customer_id, email)
+         VALUES ($1, $2, $3)`,
+        [userId, iapCustomerId, user.email]
+      );
+      logger.info('Created IAP customer record', { userId, iapCustomerId });
+    }
+
     // Create or update subscription record
     const existingSubscription = await StripeSubscription.getActiveByUserId(userId);
 
     const subscriptionData = {
       userId,
-      stripeCustomerId: `iap_${platform}_${userId}`, // Special ID for IAP
+      stripeCustomerId: iapCustomerId,
       stripeSubscriptionId: `iap_${platform}_${purchaseId}`,
       stripePriceId: productId,
       planId,
@@ -381,7 +401,6 @@ export async function activateIAPSubscription(req, res) {
     logger.info('IAP subscription activated', { userId, platform, planId, billingCycle });
 
     // Send activation email
-    const user = await User.getById(userId);
     await sendSubscriptionEmail(user.email, 'activated', {
       planName: plan.name,
       billingCycle,
