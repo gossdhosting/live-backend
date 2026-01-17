@@ -7,6 +7,7 @@ import Channel from '../models/Channel.js';
 import Settings from '../models/Settings.js';
 import UserSettings from '../models/UserSettings.js';
 import PlatformStream from '../models/PlatformStream.js';
+import RtmpDestination from '../models/RtmpDestination.js';
 import User from '../models/User.js';
 import Plan from '../models/Plan.js';
 import logger from '../utils/logger.js';
@@ -489,19 +490,34 @@ class StreamManager {
       // SECURITY: Sanitize stream_key to prevent path traversal attacks
       // No HLS output needed - stream directly to platforms only
 
-      // Get platform streams for this channel
+      // Get platform streams (OAuth platforms) and RTMP destinations (custom RTMP) for this channel
       const platformStreams = await PlatformStream.getByChannelId(channelId);
+      const customRtmpDestinations = await RtmpDestination.getEnabledForChannel(channelId);
 
       // Convert platform streams to rtmpDestinations format, respecting enabled state
-      const rtmpDestinations = (Array.isArray(platformStreams) ? platformStreams : [])
+      const platformRtmpDests = (Array.isArray(platformStreams) ? platformStreams : [])
         .filter(stream => stream.enabled === 1 || stream.enabled === true)  // Only include enabled streams
         .map(stream => ({
-          id: stream.id,
+          id: `platform_${stream.id}`,  // Prefix to distinguish from custom RTMP
           platform: stream.platform,
           rtmp_url: stream.rtmp_url,
           stream_key: stream.stream_key,
           enabled: stream.enabled || 1
         }));
+
+      // Convert custom RTMP destinations to same format
+      const customRtmpDests = (Array.isArray(customRtmpDestinations) ? customRtmpDestinations : [])
+        .filter(dest => dest.enabled === 1 || dest.enabled === true)
+        .map(dest => ({
+          id: `custom_${dest.id}`,  // Prefix to distinguish from platform streams
+          platform: dest.platform || 'custom',
+          rtmp_url: dest.rtmp_url,
+          stream_key: dest.stream_key,
+          enabled: dest.enabled || 1
+        }));
+
+      // Merge both types of destinations
+      const rtmpDestinations = [...platformRtmpDests, ...customRtmpDests];
 
       // Initialize RTMP connection status for this channel
       const rtmpStatusMap = new Map();
