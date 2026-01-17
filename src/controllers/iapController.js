@@ -1,6 +1,7 @@
 import User from '../models/User.js';
 import Plan from '../models/Plan.js';
 import StripeSubscription from '../models/StripeSubscription.js';
+import Settings from '../models/Settings.js';
 import logger from '../utils/logger.js';
 import { sendSubscriptionEmail } from '../services/EmailService.js';
 
@@ -324,6 +325,10 @@ export async function getPlatformPricing(req, res) {
     // Get all plans from database
     const plans = await Plan.getAll();
 
+    // Get IAP settings from database
+    const androidProductIdSetting = await Settings.get('android_product_id');
+    const iosSubscriptionGroupIdSetting = await Settings.get('ios_subscription_group_id');
+
     // Calculate platform-specific prices and use stored product IDs
     const pricedPlans = plans
       .filter(plan => {
@@ -381,6 +386,9 @@ export async function getPlatformPricing(req, res) {
       plans: pricedPlans,
       product_ids: allProductIds,
       platform,
+      // Global IAP settings
+      android_product_id: androidProductIdSetting?.value || null,
+      ios_subscription_group_id: iosSubscriptionGroupIdSetting?.value || null,
     });
   } catch (error) {
     logger.error('Failed to get platform pricing', { error: error.message });
