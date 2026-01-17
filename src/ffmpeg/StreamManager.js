@@ -1221,16 +1221,21 @@ class StreamManager {
         this.streamStartTimes.delete(channelId);
       }
 
-      // End platform broadcasts before killing FFmpeg
+      // End platform broadcasts and prepare custom RTMP for shutdown before killing FFmpeg
       await this.endPlatformBroadcasts(channelId);
+
+      // Give custom RTMP destinations a brief moment to flush buffers after being marked as disconnecting
+      // This ensures they receive the status update before FFmpeg terminates
+      await new Promise(resolve => setTimeout(resolve, 100));
 
       // Kill the FFmpeg process gracefully
       processInfo.process.kill('SIGTERM');
 
-      // Force kill after 5 seconds if not stopped
+      // Reduce grace period to 3 seconds for faster shutdown
+      // This minimizes the window where custom RTMP connections are buffering after platform streams end
       setTimeout(() => {
         if (this.processes.has(channelId)) {
-          logger.warn(`Force killing stream for channel ${channelId}`);
+          logger.warn(`Force killing stream for channel ${channelId} after grace period`);
           const processInfo = this.processes.get(channelId);
           if (processInfo) {
             processInfo.process.kill('SIGKILL');
@@ -1247,7 +1252,7 @@ class StreamManager {
             }
           }, 2000); // Wait 2 seconds after SIGKILL
         }
-      }, 5000);
+      }, 3000); // Reduced from 5 seconds to 3 seconds
 
       // HLS cleanup timer removed - no HLS files are generated anymore
 
@@ -1265,9 +1270,10 @@ class StreamManager {
     }
   }
 
-  // End platform broadcasts (YouTube, Facebook, Twitch) when stopping stream
+  // End platform broadcasts (YouTube, Facebook, Twitch) and custom RTMP when stopping stream
   async endPlatformBroadcasts(channelId) {
     try {
+      // Handle platform streams (YouTube, Facebook, Twitch)
       const platformStreams = await PlatformStream.getByChannelId(channelId);
 
       for (const stream of (Array.isArray(platformStreams) ? platformStreams : [])) {
@@ -1303,9 +1309,6 @@ class StreamManager {
           } else if (stream.platform === 'twitch') {
             // Twitch doesn't require explicit stream end - stream automatically goes offline when FFmpeg stops
             logger.info(`Twitch stream for channel ${channelId} will auto-end when FFmpeg stops`);
-          } else if (stream.platform === 'custom') {
-            // Custom RTMP destinations don't need explicit end calls
-            logger.info(`Custom RTMP stream for channel ${channelId} will disconnect when FFmpeg stops`);
           }
         } catch (error) {
           logger.error(`Failed to end ${stream.platform} broadcast for channel ${channelId}`, {
@@ -1314,6 +1317,38 @@ class StreamManager {
           });
           // Don't throw - continue stopping other platforms
         }
+      }
+
+      // Handle custom RTMP destinations - mark them as disconnecting before FFmpeg stops
+      try {
+        const customRtmpDestinations = await RtmpDestination.getEnabledForChannel(channelId);
+
+        if (customRtmpDestinations && customRtmpDestinations.length > 0) {
+          const rtmpStatusMap = this.rtmpConnectionStatus.get(channelId);
+
+          for (const dest of customRtmpDestinations) {
+            const destId = `custom_${dest.id}`;
+
+            // Update status to 'disconnecting' to signal shutdown in progress
+            if (rtmpStatusMap && rtmpStatusMap.has(destId)) {
+              rtmpStatusMap.set(destId, {
+                status: 'disconnecting',
+                platform: dest.platform || 'custom',
+                lastUpdate: new Date()
+              });
+              logger.info(`Marked custom RTMP destination ${destId} (${dest.platform || 'custom'}) as disconnecting for channel ${channelId}`);
+            }
+          }
+
+          // Log summary of custom RTMP cleanup
+          logger.info(`Prepared ${customRtmpDestinations.length} custom RTMP destination(s) for shutdown on channel ${channelId}`);
+          Channel.addLog(channelId, 'info', `Stopping ${customRtmpDestinations.length} custom RTMP destination(s)`);
+        }
+      } catch (error) {
+        logger.error(`Error preparing custom RTMP destinations for shutdown on channel ${channelId}`, {
+          error: error.message
+        });
+        // Don't throw - stream should still stop even if custom RTMP cleanup fails
       }
     } catch (error) {
       logger.error(`Error ending platform broadcasts for channel ${channelId}`, {

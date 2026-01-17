@@ -209,7 +209,8 @@ class User {
       max_stream_duration: user.max_stream_duration,
       storage_limit_mb: user.storage_limit_mb,
       custom_watermark: user.custom_watermark === true,
-      max_platform_connections: maxPlatformConnections
+      max_platform_connections: maxPlatformConnections,
+      schedule_enabled: user.schedule_enabled === true
     };
 
     const usage = {

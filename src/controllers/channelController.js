@@ -20,10 +20,17 @@ export const getAllChannels = async (req, res) => {
     // All users (including admins) only see their own channels
     const channels = await Channel.findByUserId(req.user.id);
 
-    // Enhance with real-time status
-    const enhancedChannels = channels.map((channel) => ({
-      ...channel,
-      runtime_status: streamManager.getStreamStatus(channel.id),
+    // Get scheduled stream info for all channels
+    const ScheduledStream = (await import('../models/ScheduledStream.js')).default;
+
+    // Enhance with real-time status and scheduled stream info
+    const enhancedChannels = await Promise.all(channels.map(async (channel) => {
+      const activeSchedule = await ScheduledStream.getActiveByChannelId(channel.id);
+      return {
+        ...channel,
+        runtime_status: streamManager.getStreamStatus(channel.id),
+        scheduled_stream: activeSchedule || null,
+      };
     }));
 
     res.json({ channels: enhancedChannels });
@@ -50,10 +57,15 @@ export const getChannel = async (req, res) => {
 
     const runtimeStatus = streamManager.getStreamStatus(channel.id);
 
+    // Get scheduled stream info
+    const ScheduledStream = (await import('../models/ScheduledStream.js')).default;
+    const activeSchedule = await ScheduledStream.getActiveByChannelId(id);
+
     res.json({
       channel: {
         ...channel,
         runtime_status: runtimeStatus,
+        scheduled_stream: activeSchedule || null,
       },
     });
   } catch (error) {
@@ -295,6 +307,15 @@ export const startStream = async (req, res) => {
     // Check ownership (admins can start all, users only their own)
     if (req.user.role !== 'admin' && channel.user_id !== req.user.id) {
       return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Check if channel has a pending scheduled stream
+    const ScheduledStream = (await import('../models/ScheduledStream.js')).default;
+    const hasSchedule = await ScheduledStream.hasPendingSchedule(id);
+    if (hasSchedule) {
+      return res.status(400).json({
+        error: 'This channel has a scheduled stream. Cancel the schedule to start manually.'
+      });
     }
 
     // Check if stream is actually running (verify process exists)

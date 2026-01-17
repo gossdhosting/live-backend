@@ -26,6 +26,7 @@ import billingRoutes from './src/routes/billing.js';
 import webhookRoutes from './src/routes/webhooks.js';
 import iapRoutes from './src/routes/iap.js';
 import appRoutes from './src/routes/app.js';
+import scheduledStreamRoutes from './src/routes/scheduledStreams.js';
 
 // Middleware
 import { apiLimiter } from './src/middleware/rateLimiter.js';
@@ -35,6 +36,9 @@ import logger from './src/utils/logger.js';
 
 // Stripe configuration
 import stripeConfig from './src/config/stripe.js';
+
+// Scheduler service
+import schedulerService from './src/services/schedulerService.js';
 
 // Initialize database (imported for side effects)
 import './src/models/database.js';
@@ -80,6 +84,7 @@ app.use('/api/media', mediaRoutes);
 app.use('/api/rtmp', rtmpRoutes);
 app.use('/api/billing', billingRoutes);
 app.use('/api/iap', iapRoutes);
+app.use('/api/scheduled-streams', scheduledStreamRoutes);
 
 // Public API (for Flutter app)
 app.use('/api/public', publicRoutes);
@@ -179,6 +184,9 @@ const startServer = async () => {
         hlsBasePath,
         stripeConfigured: stripeInitialized,
       });
+
+      // Start scheduler service
+      schedulerService.start();
 
       console.log('');
       console.log('🚀 Multi-Channel Streaming Platform');
