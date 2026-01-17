@@ -25,7 +25,16 @@ export const getAllChannels = async (req, res) => {
 
     // Enhance with real-time status and scheduled stream info
     const enhancedChannels = await Promise.all(channels.map(async (channel) => {
-      const activeSchedule = await ScheduledStream.getActiveByChannelId(channel.id);
+      let activeSchedule = null;
+      try {
+        activeSchedule = await ScheduledStream.getActiveByChannelId(channel.id);
+      } catch (scheduleError) {
+        logger.error('Error fetching schedule for channel', {
+          channelId: channel.id,
+          error: scheduleError.message
+        });
+        // Continue without schedule data if there's an error
+      }
       return {
         ...channel,
         runtime_status: streamManager.getStreamStatus(channel.id),
@@ -58,8 +67,17 @@ export const getChannel = async (req, res) => {
     const runtimeStatus = streamManager.getStreamStatus(channel.id);
 
     // Get scheduled stream info
-    const ScheduledStream = (await import('../models/ScheduledStream.js')).default;
-    const activeSchedule = await ScheduledStream.getActiveByChannelId(id);
+    let activeSchedule = null;
+    try {
+      const ScheduledStream = (await import('../models/ScheduledStream.js')).default;
+      activeSchedule = await ScheduledStream.getActiveByChannelId(id);
+    } catch (scheduleError) {
+      logger.error('Error fetching schedule for channel', {
+        channelId: id,
+        error: scheduleError.message
+      });
+      // Continue without schedule data if there's an error
+    }
 
     res.json({
       channel: {
