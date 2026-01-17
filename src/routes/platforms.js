@@ -6,6 +6,7 @@ import TwitchService from '../services/TwitchService.js';
 import PlatformConnection from '../models/PlatformConnection.js';
 import PlatformStream from '../models/PlatformStream.js';
 import Channel from '../models/Channel.js';
+import RtmpTemplate from '../models/RtmpTemplate.js';
 import logger from '../utils/logger.js';
 
 const router = express.Router();
@@ -403,6 +404,84 @@ router.post('/twitch/setup-stream', authenticateToken, async (req, res) => {
   } catch (error) {
     logger.error('Failed to setup Twitch stream', { error: error.message });
     res.status(500).json({ error: error.message || 'Failed to setup Twitch stream' });
+  }
+});
+
+// Create RTMP template stream
+router.post('/streams', authenticateToken, async (req, res) => {
+  try {
+    const { channelId, rtmpTemplateId } = req.body;
+
+    if (!channelId || !rtmpTemplateId) {
+      return res.status(400).json({ error: 'Channel ID and RTMP template ID are required' });
+    }
+
+    // Validate channel exists and check ownership
+    const channel = await Channel.findById(channelId);
+    if (!channel) {
+      return res.status(404).json({ error: 'Channel not found' });
+    }
+
+    // Check channel ownership (admins can access all, users only their own)
+    if (req.user.role !== 'admin' && Number(channel.user_id) !== Number(req.user.id)) {
+      return res.status(403).json({ error: 'Unauthorized access to this channel' });
+    }
+
+    // Get RTMP template
+    const template = await RtmpTemplate.getById(rtmpTemplateId);
+    if (!template) {
+      return res.status(404).json({ error: 'RTMP template not found' });
+    }
+
+    if (!template.enabled) {
+      return res.status(400).json({ error: 'RTMP template is disabled' });
+    }
+
+    // Check for duplicate stream with this template
+    const existingStreams = await PlatformStream.getByChannelId(channelId);
+    const existingTemplateStream = (Array.isArray(existingStreams) ? existingStreams : []).find(
+      s => s.rtmp_template_id === parseInt(rtmpTemplateId) && (s.enabled === 1 || s.enabled === true)
+    );
+    if (existingTemplateStream) {
+      return res.status(400).json({
+        error: `A stream for "${template.name}" already exists for this channel. Please delete the existing one first.`
+      });
+    }
+
+    // Create platform stream for RTMP template
+    const platformStream = await PlatformStream.create({
+      channel_id: channelId,
+      platform_connection_id: null, // No OAuth connection for custom RTMP
+      platform: 'custom',
+      rtmp_template_id: rtmpTemplateId,
+      rtmp_url: template.rtmp_url,
+      stream_key: template.stream_key,
+      stream_title: template.name,
+      status: 'created',
+      enabled: 1,
+    });
+
+    logger.info('RTMP template stream created', {
+      channelId,
+      rtmpTemplateId,
+      platformStreamId: platformStream.id,
+      userId: req.user.id,
+    });
+
+    // Check if channel is running
+    const needsRestart = channel.status === 'running';
+
+    res.json({
+      success: true,
+      platformStream,
+      needsRestart,
+      message: needsRestart
+        ? `${template.name} stream created successfully. Please restart your channel stream to start broadcasting.`
+        : `${template.name} stream created successfully. Start your channel to begin broadcasting.`
+    });
+  } catch (error) {
+    logger.error('Failed to create RTMP template stream', { error: error.message });
+    res.status(500).json({ error: error.message || 'Failed to create RTMP template stream' });
   }
 });
 
