@@ -23,7 +23,7 @@ export const updateUserSettings = async (req, res) => {
       return res.status(400).json({ error: 'Invalid settings format' });
     }
 
-    // Validate title and watermark settings
+    // Validate title, watermark, and user preference settings
     const allowedKeys = [
       'title_bg_color',
       'title_opacity',
@@ -33,7 +33,8 @@ export const updateUserSettings = async (req, res) => {
       'title_box_padding',
       'watermark_position',
       'watermark_opacity',
-      'watermark_scale'
+      'watermark_scale',
+      'timezone'
     ];
 
     // Filter to only allowed keys
