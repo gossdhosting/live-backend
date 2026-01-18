@@ -526,14 +526,14 @@ router.post('/kick/setup-stream', authenticateToken, async (req, res) => {
     logger.info('Kick setup: No duplicate streams found');
 
     logger.info('Kick setup: Refreshing token if needed', { connectionId: connection.id });
-    const accessToken = await KickService.refreshTokenIfNeeded(connection);
-    logger.info('Kick setup: Token refresh complete', { hasNewToken: !!accessToken });
+    const refreshedConnection = await KickService.refreshTokenIfNeeded(connection);
+    logger.info('Kick setup: Token refresh complete', { hasAccessToken: !!refreshedConnection.access_token });
 
     // Setup stream
-    logger.info('Kick setup: Setting up stream with Kick API', { username: connection.platform_user_name });
+    logger.info('Kick setup: Setting up stream with Kick API', { username: refreshedConnection.platform_user_name });
     const stream = await KickService.setupStream(
-      accessToken.access_token || accessToken,
-      connection.platform_user_name
+      refreshedConnection.access_token,
+      refreshedConnection.platform_user_name
     );
     logger.info('Kick setup: Stream setup complete', {
       hasRtmpUrl: !!stream.rtmp_url,
