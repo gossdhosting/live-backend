@@ -588,24 +588,29 @@ class StreamManager {
           enabled: dest.enabled || 1
         }));
 
-      // Merge both types of destinations (platform streams are always 16:9)
-      const rtmpDestinations = [...platformRtmpDests, ...customRtmpDests];
+      // Separate destinations by orientation for split-encode-tee architecture
+      // Platform streams (Twitch, YouTube, Facebook) are always 16:9 landscape
+      const landscape16x9Destinations = [
+        ...platformRtmpDests,
+        ...customRtmpDests.filter(d => d.video_orientation === '16:9' || !d.video_orientation)
+      ];
 
-      // Determine video orientation based on custom RTMP templates
-      // Check if ALL custom RTMP destinations use 9:16, if so apply portrait orientation
-      const customOrientations = customRtmpDests.map(d => d.video_orientation);
-      const has9x16 = customOrientations.includes('9:16');
-      const has16x9 = customOrientations.includes('16:9') || platformRtmpDests.length > 0; // Platform streams are always 16:9
+      const portrait9x16Destinations = customRtmpDests.filter(d => d.video_orientation === '9:16');
+
+      // Determine if we need split-encode-tee architecture (mixed orientations)
+      const hasMixedOrientations = landscape16x9Destinations.length > 0 && portrait9x16Destinations.length > 0;
+      const hasOnlyLandscape = landscape16x9Destinations.length > 0 && portrait9x16Destinations.length === 0;
+      const hasOnlyPortrait = landscape16x9Destinations.length === 0 && portrait9x16Destinations.length > 0;
 
       let videoOrientation = '16:9'; // Default
-      if (has9x16 && !has16x9) {
-        // All outputs are 9:16 portrait
+      if (hasMixedOrientations) {
+        logger.info(`Channel ${channelId} has mixed orientations - using split-encode-tee architecture`);
+        logger.info(`  - Landscape (16:9): ${landscape16x9Destinations.length} destination(s)`);
+        logger.info(`  - Portrait (9:16): ${portrait9x16Destinations.length} destination(s)`);
+        Channel.addLog(channelId, 'info', `Mixed orientations: ${landscape16x9Destinations.length} landscape + ${portrait9x16Destinations.length} portrait`);
+      } else if (hasOnlyPortrait) {
         videoOrientation = '9:16';
         logger.info(`Using portrait orientation (9:16) for channel ${channelId} - all outputs are portrait`);
-      } else if (has9x16 && has16x9) {
-        // Mixed orientations - use 16:9 and log warning
-        logger.warn(`Channel ${channelId} has mixed video orientations (both 9:16 and 16:9). Using landscape (16:9) as default. For best results, use consistent orientations across all destinations.`);
-        Channel.addLog(channelId, 'warning', 'Mixed video orientations detected - using landscape (16:9) as default');
       }
 
       // RTMP validation completely disabled
@@ -796,7 +801,7 @@ class StreamManager {
       }
 
       // Build filter complex for video processing
-      // NO SPLIT needed - Tee muxer handles distribution after encoding
+      // Split-Encode-Tee architecture: For mixed orientations, split raw video and encode twice
 
       // Get title overlay settings from user settings (with global defaults)
       const titleEnabled = channel.title_enabled === true || channel.title_enabled === 1;
@@ -809,17 +814,64 @@ class StreamManager {
       const titleFontSize = userSettings.title_font_size || '16';
       const titleBoxPadding = userSettings.title_box_padding || '5';
 
-      if (hasWatermark) {
+      // Define resolutions for both orientations (for mixed orientation case)
+      const landscapeResolution = { width: 1280, height: 720, bitrate: '2500k' }; // 16:9
+      const portraitResolution = { width: 1080, height: 1920, bitrate: '2500k' }; // 9:16
+
+      if (hasMixedOrientations) {
+        // MIXED ORIENTATIONS: Split-Encode-Tee architecture
+        // Split raw video into two streams, encode each separately
+
+        let filterComplex = '[0:v]split=2[v_land][v_port];';
+
+        // Landscape chain (16:9)
+        filterComplex += `[v_land]scale=${landscapeResolution.width}:${landscapeResolution.height}:force_original_aspect_ratio=decrease,pad=${landscapeResolution.width}:${landscapeResolution.height}:(ow-iw)/2:(oh-ih)/2,setsar=1`;
+
+        if (hasWatermark) {
+          const position = this.getWatermarkPosition(watermarkPosition);
+          filterComplex += `[scaled_land];[1:v]scale=iw*${watermarkScale}:ih*${watermarkScale},format=rgba,colorchannelmixer=aa=${watermarkOpacity}[logo_land];`;
+          filterComplex += `[scaled_land][logo_land]overlay=${position}`;
+        }
+
+        if (titleEnabled && streamTitle) {
+          const titleDrawtext = this.buildDrawtextFilter(streamTitle, titleBgColor, titleOpacity, titlePosition, titleTextColor, titleFontSize, titleBoxPadding, landscapeResolution);
+          filterComplex += titleDrawtext;
+        }
+
+        filterComplex += '[out_land];';
+
+        // Portrait chain (9:16)
+        filterComplex += `[v_port]scale=${portraitResolution.width}:${portraitResolution.height}:force_original_aspect_ratio=increase,crop=${portraitResolution.width}:${portraitResolution.height},setsar=1`;
+
+        if (hasWatermark) {
+          const position = this.getWatermarkPosition(watermarkPosition);
+          filterComplex += `[scaled_port];[1:v]scale=iw*${watermarkScale}:ih*${watermarkScale},format=rgba,colorchannelmixer=aa=${watermarkOpacity}[logo_port];`;
+          filterComplex += `[scaled_port][logo_port]overlay=${position}`;
+        }
+
+        if (titleEnabled && streamTitle) {
+          const titleDrawtext = this.buildDrawtextFilter(streamTitle, titleBgColor, titleOpacity, titlePosition, titleTextColor, titleFontSize, titleBoxPadding, portraitResolution);
+          filterComplex += titleDrawtext;
+        }
+
+        filterComplex += '[out_port]';
+
+        ffmpegArgs.push('-filter_complex', filterComplex);
+
+        logger.info(`Split-encode-tee architecture enabled for channel ${channelId}`, {
+          landscapeOutputs: landscape16x9Destinations.length,
+          portraitOutputs: portrait9x16Destinations.length
+        });
+        Channel.addLog(channelId, 'info', `Mixed orientations: ${landscape16x9Destinations.length} landscape + ${portrait9x16Destinations.length} portrait`);
+
+      } else if (hasWatermark) {
+        // SINGLE ORIENTATION with watermark
         const position = this.getWatermarkPosition(watermarkPosition);
 
-        // Build watermark filter - scale, apply watermark
-        // For portrait (9:16), we need to crop the center of landscape video to fill the frame
         let scaleFilter;
         if (videoOrientation === '9:16') {
-          // Portrait: scale to fill height, then crop center horizontally
           scaleFilter = `[0:v]scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=increase,crop=${resolution.width}:${resolution.height}[scaled];`;
         } else {
-          // Landscape: scale to fit with padding (original behavior)
           scaleFilter = `[0:v]scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=decrease,pad=${resolution.width}:${resolution.height}:(ow-iw)/2:(oh-ih)/2[scaled];`;
         }
 
@@ -827,7 +879,6 @@ class StreamManager {
         watermarkFilter += `[1:v]scale=iw*${watermarkScale}:ih*${watermarkScale},format=rgba,colorchannelmixer=aa=${watermarkOpacity}[logo];`;
         watermarkFilter += `[scaled][logo]overlay=${position}`;
 
-        // Add title overlay if enabled
         if (titleEnabled && streamTitle) {
           const titleDrawtext = this.buildDrawtextFilter(streamTitle, titleBgColor, titleOpacity, titlePosition, titleTextColor, titleFontSize, titleBoxPadding, resolution);
           watermarkFilter += titleDrawtext;
@@ -844,14 +895,13 @@ class StreamManager {
           isDefault: watermarkPath === defaultWatermarkPath
         });
         Channel.addLog(channelId, 'info', `Watermark applied at ${watermarkPosition}${watermarkPath === defaultWatermarkPath ? ' (default)' : ''}`);
+
       } else if (titleEnabled && streamTitle) {
-        // No watermark but have title - scale and add title
+        // SINGLE ORIENTATION with title only
         let scaleFilter;
         if (videoOrientation === '9:16') {
-          // Portrait: scale to fill and crop center
           scaleFilter = `[0:v]scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=increase,crop=${resolution.width}:${resolution.height}`;
         } else {
-          // Landscape: scale to fit with padding
           scaleFilter = `[0:v]scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=decrease,pad=${resolution.width}:${resolution.height}:(ow-iw)/2:(oh-ih)/2`;
         }
 
@@ -863,14 +913,13 @@ class StreamManager {
 
         logger.info(`Title-only filter with scaling to ${qualityPreset} (${resolution.width}x${resolution.height}) applied for channel ${channelId}`);
         Channel.addLog(channelId, 'info', `Output quality: ${qualityPreset} (${resolution.width}x${resolution.height}) with title overlay`);
+
       } else if (isRtmpInput || isVideoFile) {
-        // RTMP input or video file without watermark/title - still need to scale for proper resolution
+        // SINGLE ORIENTATION without watermark/title - scale only
         let scaleFilter;
         if (videoOrientation === '9:16') {
-          // Portrait: scale to fill and crop center
           scaleFilter = `[0:v]scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=increase,crop=${resolution.width}:${resolution.height}[vout]`;
         } else {
-          // Landscape: scale to fit with padding
           scaleFilter = `[0:v]scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=decrease,pad=${resolution.width}:${resolution.height}:(ow-iw)/2:(oh-ih)/2[vout]`;
         }
 
@@ -898,86 +947,161 @@ class StreamManager {
       // Stream copy (-c:v copy) is only used for pre-encoded streams that already match target specs
       const needsEncoding = hasWatermark || (titleEnabled && streamTitle) || isRtmpInput || isVideoFile;
 
-      if (needsEncoding) {
-        // Single encoder for all outputs
+      if (hasMixedOrientations) {
+        // MIXED ORIENTATIONS: Dual encoding chains with separate tee muxers
+
+        // Landscape encoding chain
         ffmpegArgs.push(
-          '-c:v', 'libx264',
-          '-preset', 'ultrafast', // Use ultrafast for maximum speed in live streaming
-          '-tune', 'zerolatency', // Optimize for low-latency streaming
-          '-pix_fmt', 'yuv420p',  // Force YUV 4:2:0 for Twitch/player compatibility
-          '-flags', '+global_header', // Ensure SPS/PPS headers work in Tee muxer
-          '-g', '60',
-          '-keyint_min', '60',
-          '-sc_threshold', '0',
-          '-b:v', resolution.bitrate,
-          '-maxrate', resolution.bitrate,
-          '-bufsize', `${parseInt(resolution.bitrate) * 2}k`,
-          '-profile:v', 'main',
-          '-level', '4.1'
-        );
-      } else {
-        ffmpegArgs.push('-c:v', 'copy');
-      }
-
-      // Audio encoding once (AAC for RTMP compatibility)
-      // Use 48kHz for better compatibility with Twitch and web players
-      ffmpegArgs.push('-c:a', 'aac', '-b:a', '128k', '-ar', '48000');
-
-      // Map once - tee muxer will distribute the encoded stream
-      if (needsEncoding) {
-        ffmpegArgs.push('-map', '[vout]');
-      } else {
-        ffmpegArgs.push('-map', '0:v');
-      }
-      // Make audio mapping optional (?) to support videos without audio
-      ffmpegArgs.push('-map', '0:a?');
-
-      // Direct RTMP outputs only (no HLS)
-      if (rtmpDestinations.length === 0) {
-        throw new Error('No RTMP destinations configured. Please add at least one platform or custom RTMP destination.');
-      }
-
-      if (rtmpDestinations.length === 1) {
-        // Single output - direct RTMP without tee muxer
-        const dest = rtmpDestinations[0];
-        let rtmpUrl = dest.rtmp_url;
-        if (dest.stream_key) {
-          const separator = (!rtmpUrl.endsWith('/') && !dest.stream_key.startsWith('/')) ? '/' : '';
-          rtmpUrl = `${rtmpUrl}${separator}${dest.stream_key}`;
-        }
-
-        ffmpegArgs.push(
-          '-f', 'flv',
-          '-flvflags', 'no_duration_filesize',
-          rtmpUrl
+          '-map', '[out_land]',
+          '-c:v:0', 'libx264',
+          '-preset:v:0', 'ultrafast',
+          '-tune:v:0', 'zerolatency',
+          '-pix_fmt:v:0', 'yuv420p',
+          '-flags:v:0', '+global_header',
+          '-g:v:0', '60',
+          '-keyint_min:v:0', '60',
+          '-sc_threshold:v:0', '0',
+          '-b:v:0', landscapeResolution.bitrate,
+          '-maxrate:v:0', landscapeResolution.bitrate,
+          '-bufsize:v:0', `${parseInt(landscapeResolution.bitrate) * 2}k`,
+          '-profile:v:0', 'main',
+          '-level:v:0', '4.1'
         );
 
-        logger.info(`Direct RTMP output to ${dest.platform} for channel ${channelId}`);
-        Channel.addLog(channelId, 'info', `Streaming to ${dest.platform}`);
-      } else {
-        // Multiple outputs - use tee muxer
-        const teeOutputs = [];
+        // Portrait encoding chain
+        ffmpegArgs.push(
+          '-map', '[out_port]',
+          '-c:v:1', 'libx264',
+          '-preset:v:1', 'ultrafast',
+          '-tune:v:1', 'zerolatency',
+          '-pix_fmt:v:1', 'yuv420p',
+          '-flags:v:1', '+global_header',
+          '-g:v:1', '60',
+          '-keyint_min:v:1', '60',
+          '-sc_threshold:v:1', '0',
+          '-b:v:1', portraitResolution.bitrate,
+          '-maxrate:v:1', portraitResolution.bitrate,
+          '-bufsize:v:1', `${parseInt(portraitResolution.bitrate) * 2}k`,
+          '-profile:v:1', 'main',
+          '-level:v:1', '4.1'
+        );
 
-        rtmpDestinations.forEach((dest) => {
+        // Audio encoding (shared by both)
+        ffmpegArgs.push('-map', '0:a?', '-c:a', 'aac', '-b:a', '128k', '-ar', '48000');
+
+        // Build separate tee outputs for landscape and portrait
+        const landscapeTeeOutputs = [];
+        const portraitTeeOutputs = [];
+
+        landscape16x9Destinations.forEach((dest) => {
           let rtmpUrl = dest.rtmp_url;
           if (dest.stream_key) {
             const separator = (!rtmpUrl.endsWith('/') && !dest.stream_key.startsWith('/')) ? '/' : '';
             rtmpUrl = `${rtmpUrl}${separator}${dest.stream_key}`;
           }
-          // onfail=ignore ensures one RTMP failure doesn't kill the whole stream
-          teeOutputs.push(`[f=flv:flvflags=no_duration_filesize:onfail=ignore]${rtmpUrl}`);
-
-          logger.info(`Added ${dest.platform} to tee muxer for channel ${channelId}`);
-          Channel.addLog(channelId, 'info', `Streaming to ${dest.platform}`);
+          landscapeTeeOutputs.push(`[f=flv:flvflags=no_duration_filesize:onfail=ignore:select=\\'v:0,a\\']${rtmpUrl}`);
+          logger.info(`Added ${dest.platform} to landscape tee muxer for channel ${channelId}`);
+          Channel.addLog(channelId, 'info', `Streaming to ${dest.platform} (landscape 16:9)`);
         });
 
-        ffmpegArgs.push(
-          '-f', 'tee',
-          teeOutputs.join('|')
-        );
+        portrait9x16Destinations.forEach((dest) => {
+          let rtmpUrl = dest.rtmp_url;
+          if (dest.stream_key) {
+            const separator = (!rtmpUrl.endsWith('/') && !dest.stream_key.startsWith('/')) ? '/' : '';
+            rtmpUrl = `${rtmpUrl}${separator}${dest.stream_key}`;
+          }
+          portraitTeeOutputs.push(`[f=flv:flvflags=no_duration_filesize:onfail=ignore:select=\\'v:1,a\\']${rtmpUrl}`);
+          logger.info(`Added ${dest.platform} to portrait tee muxer for channel ${channelId}`);
+          Channel.addLog(channelId, 'info', `Streaming to ${dest.platform} (portrait 9:16)`);
+        });
 
-        logger.info(`Using tee muxer for ${rtmpDestinations.length} RTMP outputs`);
-        Channel.addLog(channelId, 'info', `Multi-output: ${rtmpDestinations.length} RTMP destination(s)`);
+        // Combine both tee outputs into single tee muxer
+        const allTeeOutputs = [...landscapeTeeOutputs, ...portraitTeeOutputs];
+        ffmpegArgs.push('-f', 'tee', allTeeOutputs.join('|'));
+
+        logger.info(`Using split-encode-tee with ${landscape16x9Destinations.length} landscape + ${portrait9x16Destinations.length} portrait outputs`);
+
+      } else {
+        // SINGLE ORIENTATION: Original single-encode behavior
+
+        if (needsEncoding) {
+          // Single encoder for all outputs
+          ffmpegArgs.push(
+            '-c:v', 'libx264',
+            '-preset', 'ultrafast',
+            '-tune', 'zerolatency',
+            '-pix_fmt', 'yuv420p',
+            '-flags', '+global_header',
+            '-g', '60',
+            '-keyint_min', '60',
+            '-sc_threshold', '0',
+            '-b:v', resolution.bitrate,
+            '-maxrate', resolution.bitrate,
+            '-bufsize', `${parseInt(resolution.bitrate) * 2}k`,
+            '-profile:v', 'main',
+            '-level', '4.1'
+          );
+        } else {
+          ffmpegArgs.push('-c:v', 'copy');
+        }
+
+        // Audio encoding once (AAC for RTMP compatibility)
+        ffmpegArgs.push('-c:a', 'aac', '-b:a', '128k', '-ar', '48000');
+
+        // Map once - tee muxer will distribute the encoded stream
+        if (needsEncoding) {
+          ffmpegArgs.push('-map', '[vout]');
+        } else {
+          ffmpegArgs.push('-map', '0:v');
+        }
+        ffmpegArgs.push('-map', '0:a?');
+
+        // Direct RTMP outputs only (no HLS)
+        if (rtmpDestinations.length === 0) {
+          throw new Error('No RTMP destinations configured. Please add at least one platform or custom RTMP destination.');
+        }
+
+        if (rtmpDestinations.length === 1) {
+          // Single output - direct RTMP without tee muxer
+          const dest = rtmpDestinations[0];
+          let rtmpUrl = dest.rtmp_url;
+          if (dest.stream_key) {
+            const separator = (!rtmpUrl.endsWith('/') && !dest.stream_key.startsWith('/')) ? '/' : '';
+            rtmpUrl = `${rtmpUrl}${separator}${dest.stream_key}`;
+          }
+
+          ffmpegArgs.push(
+            '-f', 'flv',
+            '-flvflags', 'no_duration_filesize',
+            rtmpUrl
+          );
+
+          logger.info(`Direct RTMP output to ${dest.platform} for channel ${channelId}`);
+          Channel.addLog(channelId, 'info', `Streaming to ${dest.platform}`);
+        } else {
+          // Multiple outputs - use tee muxer
+          const teeOutputs = [];
+
+          rtmpDestinations.forEach((dest) => {
+            let rtmpUrl = dest.rtmp_url;
+            if (dest.stream_key) {
+              const separator = (!rtmpUrl.endsWith('/') && !dest.stream_key.startsWith('/')) ? '/' : '';
+              rtmpUrl = `${rtmpUrl}${separator}${dest.stream_key}`;
+            }
+            teeOutputs.push(`[f=flv:flvflags=no_duration_filesize:onfail=ignore]${rtmpUrl}`);
+
+            logger.info(`Added ${dest.platform} to tee muxer for channel ${channelId}`);
+            Channel.addLog(channelId, 'info', `Streaming to ${dest.platform}`);
+          });
+
+          ffmpegArgs.push(
+            '-f', 'tee',
+            teeOutputs.join('|')
+          );
+
+          logger.info(`Using tee muxer for ${rtmpDestinations.length} RTMP outputs`);
+          Channel.addLog(channelId, 'info', `Multi-output: ${rtmpDestinations.length} RTMP destination(s)`);
+        }
       }
 
       // Create rotating log file for this channel
