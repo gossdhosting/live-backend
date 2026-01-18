@@ -1056,17 +1056,52 @@ class StreamManager {
             metrics.lastError = message.substring(0, 200);
             metrics.status = 'error';
           }
-          Channel.addLog(channelId, 'error', `Critical: ${message.substring(0, 500)}`);
-          logger.error(`Critical FFmpeg error for channel ${channelId}`, { error: message.substring(0, 200) });
-        } else if (message.toLowerCase().includes('error')) {
-          // Non-critical errors
+
+          // Extract clean error message without long URLs
+          let cleanError = message;
+
+          // If error contains a URL, extract just the platform/error type
+          if (message.includes('rtmp://') || message.includes('rtmps://')) {
+            // Extract error type (e.g., "Input/output error", "Connection refused")
+            const errorTypes = [
+              'Input/output error',
+              'Connection refused',
+              'Connection timed out',
+              'Server returned 4',
+              'Server returned 5',
+              'Failed to update'
+            ];
+
+            const foundError = errorTypes.find(e => message.includes(e));
+
+            // Extract platform from URL if possible
+            let platform = 'RTMP';
+            if (message.includes('twitch.tv')) platform = 'Twitch';
+            else if (message.includes('facebook.com') || message.includes('fbcdn.net')) platform = 'Facebook/Instagram';
+            else if (message.includes('youtube.com') || message.includes('googlevideo.com')) platform = 'YouTube';
+
+            if (foundError) {
+              cleanError = `${platform} connection error: ${foundError}`;
+            }
+          }
+
+          // Truncate to reasonable length
+          cleanError = cleanError.substring(0, 150);
+
+          Channel.addLog(channelId, 'error', cleanError);
+          logger.error(`Critical FFmpeg error for channel ${channelId}`, { error: cleanError });
+        } else if (message.toLowerCase().includes('error') && !message.includes('Last message repeated')) {
+          // Non-critical errors (skip repeated message notices)
           if (processInfo) {
             processInfo.errorCount++;
           }
           if (metrics) {
             metrics.errors++;
           }
-          Channel.addLog(channelId, 'warning', message.substring(0, 500));
+
+          // Clean up error message
+          const cleanWarning = message.substring(0, 150);
+          Channel.addLog(channelId, 'warning', cleanWarning);
         }
 
         // Detect successful stream start
@@ -1115,15 +1150,27 @@ class StreamManager {
                message.includes('Input/output error') ||
                message.includes('error opening') ||
                message.includes('Slave muxer #') && message.includes('failed'))) {
+
+            // Extract error type for cleaner logging
+            const errorTypes = [
+              'Input/output error',
+              'Connection refused',
+              'Connection timed out',
+              'Server returned 4',
+              'Server returned 5',
+              'Failed to update'
+            ];
+            const errorType = errorTypes.find(e => message.includes(e)) || 'Connection error';
+
             rtmpDestinations.forEach(dest => {
               const baseUrl = dest.rtmp_url.replace(/\/$/, '');
               if (message.includes(baseUrl) || message.includes(dest.platform)) {
                 const status = rtmpStatusMap.get(dest.id);
-                if (status) {
+                if (status && status.status !== 'disconnected') { // Only log once
                   status.status = 'disconnected';
                   status.lastUpdate = new Date();
-                  logger.warn(`RTMP connection failed for ${dest.platform} (channel ${channelId})`);
-                  Channel.addLog(channelId, 'warning', `${dest.platform}: Connection failed`);
+                  logger.warn(`RTMP connection failed for ${dest.platform} (channel ${channelId}): ${errorType}`);
+                  Channel.addLog(channelId, 'error', `${dest.platform}: ${errorType}`);
                 }
               }
             });
