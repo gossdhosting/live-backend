@@ -3,6 +3,7 @@ import { authenticateToken } from '../middleware/auth.js';
 import FacebookService from '../services/FacebookService.js';
 import YouTubeService from '../services/YouTubeService.js';
 import TwitchService from '../services/TwitchService.js';
+import KickService from '../services/KickService.js';
 import PlatformConnection from '../models/PlatformConnection.js';
 import PlatformStream from '../models/PlatformStream.js';
 import Channel from '../models/Channel.js';
@@ -460,6 +461,86 @@ router.delete('/streams/:id', authenticateToken, async (req, res) => {
   } catch (error) {
     logger.error('Failed to delete platform stream', { error: error.message });
     res.status(500).json({ error: 'Failed to delete stream' });
+  }
+});
+
+// Setup Kick stream
+router.post('/kick/setup-stream', authenticateToken, async (req, res) => {
+  try {
+    const { channelId, title } = req.body;
+
+    if (!channelId || !title) {
+      return res.status(400).json({ error: 'Channel ID and title are required' });
+    }
+
+    // Validate channel exists and check ownership
+    const channel = await Channel.findById(channelId);
+    if (!channel) {
+      return res.status(404).json({ error: 'Channel not found' });
+    }
+
+    // Check channel ownership (admins can access all, users only their own)
+    if (req.user.role !== 'admin' && Number(channel.user_id) !== Number(req.user.id)) {
+      return res.status(403).json({ error: 'Unauthorized access to this channel' });
+    }
+
+    const connection = await PlatformConnection.getByPlatformAndUser('kick', req.user.id);
+
+    if (!connection) {
+      return res.status(404).json({ error: 'Kick account not connected' });
+    }
+
+    // Check for duplicate Kick stream
+    const existingStreams = await PlatformStream.getByChannelId(channelId);
+    const existingKickStream = (Array.isArray(existingStreams) ? existingStreams : []).find(s => s.platform === 'kick' && (s.enabled === 1 || s.enabled === true));
+    if (existingKickStream) {
+      return res.status(400).json({
+        error: 'A Kick stream already exists for this channel. Please delete the existing one first.'
+      });
+    }
+
+    const accessToken = await KickService.refreshTokenIfNeeded(connection);
+
+    // Setup stream
+    const stream = await KickService.setupStream(
+      accessToken,
+      connection.platform_user_name
+    );
+
+    // Save platform stream (single source of truth)
+    const platformStream = await PlatformStream.create({
+      channel_id: channelId,
+      platform_connection_id: connection.id,
+      platform: 'kick',
+      rtmp_url: stream.rtmp_url,
+      stream_key: stream.stream_key,
+      stream_title: title,
+      status: 'created',
+      enabled: 1,
+    });
+
+    logger.info('Kick stream setup', {
+      channelId,
+      platformStreamId: platformStream.id,
+      userId: req.user.id,
+    });
+
+    // Check if channel is running
+    const channelStatus = await Channel.findById(channelId);
+    const needsRestart = channelStatus && channelStatus.status === 'running';
+
+    res.json({
+      success: true,
+      platformStream,
+      stream,
+      needsRestart,
+      message: needsRestart
+        ? 'Kick stream created. Please restart your channel stream to apply changes.'
+        : 'Kick stream created successfully'
+    });
+  } catch (error) {
+    logger.error('Failed to setup Kick stream', { error: error.message });
+    res.status(500).json({ error: error.message || 'Failed to setup Kick stream' });
   }
 });
 
