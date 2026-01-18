@@ -431,6 +431,25 @@ export const stopStream = async (req, res) => {
 
     const result = await streamManager.stopStream(id);
 
+    // Cancel any pending scheduled streams for this channel
+    try {
+      const ScheduledStream = (await import('../models/ScheduledStream.js')).default;
+      const pendingSchedule = await ScheduledStream.getActiveByChannelId(id);
+      if (pendingSchedule) {
+        await ScheduledStream.cancel(pendingSchedule.id);
+        logger.info('Cancelled pending scheduled stream after manual stop', {
+          channelId: id,
+          scheduleId: pendingSchedule.id
+        });
+      }
+    } catch (scheduleError) {
+      logger.error('Failed to cancel scheduled stream', {
+        error: scheduleError.message,
+        channelId: id
+      });
+      // Don't fail the stop operation if schedule cancellation fails
+    }
+
     logger.info('Stream stopped', { channelId: id, userId: req.user.id });
 
     res.json({
