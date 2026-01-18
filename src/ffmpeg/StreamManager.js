@@ -1183,9 +1183,34 @@ class StreamManager {
           Channel.updateStatus(channelId, 'error', null, errorMsg);
           Channel.addLog(channelId, 'error', errorMsg);
 
+          // Detect persistent connection errors (RTMP/network issues)
+          const isPersistentConnectionError =
+            lastError.includes('Input/output error') ||
+            lastError.includes('Connection refused') ||
+            lastError.includes('Connection timed out') ||
+            lastError.includes('Server returned 4') ||
+            lastError.includes('Server returned 5') ||
+            lastError.includes('Failed to update') ||
+            lastError.includes('rtmp://') ||
+            lastError.includes('RTMP connection failed');
+
           // Auto-restart logic with exponential backoff (per-channel setting)
           if (currentChannel.auto_restart) {
             const attempts = this.reconnectAttempts.get(channelId) || 0;
+
+            // If it's a persistent connection error and we've tried 3+ times, disable auto-restart
+            if (isPersistentConnectionError && attempts >= 2) {
+              logger.error(`Persistent connection error detected for channel ${channelId}, disabling auto-restart`);
+              Channel.addLog(channelId, 'error', 'Persistent connection error detected. Auto-restart disabled. Please check RTMP URLs/stream keys and restart manually.');
+
+              // Disable auto-restart in database
+              Channel.update(channelId, { auto_restart: 0 }).catch(err => {
+                logger.error(`Failed to disable auto_restart for channel ${channelId}`, { error: err.message });
+              });
+
+              this.reconnectAttempts.delete(channelId);
+              return;
+            }
 
             if (attempts < this.maxReconnectAttempts) {
               this.reconnectAttempts.set(channelId, attempts + 1);
