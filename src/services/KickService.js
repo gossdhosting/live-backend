@@ -1,4 +1,5 @@
 import axios from 'axios';
+import crypto from 'crypto';
 import platformConfig from '../config/platforms.js';
 import PlatformConnection from '../models/PlatformConnection.js';
 import logger from '../utils/logger.js';
@@ -7,35 +8,77 @@ class KickService {
   // Token refresh locks to prevent concurrent refreshes
   static tokenRefreshLocks = new Map();
 
-  // Generate OAuth2 authorization URL
+  // PKCE code verifiers (temporary storage)
+  static codeVerifiers = new Map();
+
+  // Generate PKCE code verifier and challenge
+  static generatePKCE() {
+    // Generate random code verifier (43-128 characters)
+    const codeVerifier = crypto.randomBytes(32).toString('base64url');
+
+    // Generate code challenge using S256 method
+    const codeChallenge = crypto
+      .createHash('sha256')
+      .update(codeVerifier)
+      .digest('base64url');
+
+    return { codeVerifier, codeChallenge };
+  }
+
+  // Generate OAuth2 authorization URL with PKCE
   static getAuthUrl(state = '') {
     const config = platformConfig.kick;
+    const { codeVerifier, codeChallenge } = this.generatePKCE();
+
+    // Store code verifier for later use in token exchange
+    const stateObj = JSON.parse(state);
+    this.codeVerifiers.set(stateObj.userId, codeVerifier);
+
+    // Clean up old verifiers (older than 10 minutes)
+    setTimeout(() => this.codeVerifiers.delete(stateObj.userId), 10 * 60 * 1000);
+
     const params = new URLSearchParams({
       client_id: config.clientId,
       redirect_uri: config.redirectUri,
       response_type: 'code',
       state: state,
+      scope: config.scopes.join(' '),
+      code_challenge: codeChallenge,
+      code_challenge_method: 'S256',
     });
 
     return `https://id.kick.com/oauth/authorize?${params.toString()}`;
   }
 
   // Exchange authorization code for access token
-  static async getAccessToken(code) {
+  static async getAccessToken(code, userId) {
     const config = platformConfig.kick;
 
+    // Retrieve the code verifier for this user
+    const codeVerifier = this.codeVerifiers.get(userId);
+    if (!codeVerifier) {
+      logger.error('Kick: Code verifier not found for user', { userId });
+      throw new Error('PKCE code verifier not found');
+    }
+
     try {
-      const response = await axios.post('https://id.kick.com/oauth/token', {
+      const params = new URLSearchParams({
+        grant_type: 'authorization_code',
+        code: code,
         client_id: config.clientId,
         client_secret: config.clientSecret,
-        code: code,
-        grant_type: 'authorization_code',
         redirect_uri: config.redirectUri,
-      }, {
+        code_verifier: codeVerifier,
+      });
+
+      const response = await axios.post('https://id.kick.com/oauth/token', params.toString(), {
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/x-www-form-urlencoded',
         },
       });
+
+      // Clean up code verifier after use
+      this.codeVerifiers.delete(userId);
 
       return response.data;
     } catch (error) {
@@ -147,14 +190,16 @@ class KickService {
     const config = platformConfig.kick;
 
     try {
-      const response = await axios.post('https://id.kick.com/oauth/token', {
+      const params = new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
         client_id: config.clientId,
         client_secret: config.clientSecret,
-        refresh_token: refreshToken,
-        grant_type: 'refresh_token',
-      }, {
+      });
+
+      const response = await axios.post('https://id.kick.com/oauth/token', params.toString(), {
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/x-www-form-urlencoded',
         },
       });
 

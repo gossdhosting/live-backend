@@ -256,8 +256,8 @@ router.get('/kick/callback', async (req, res) => {
   try {
     const { userId } = JSON.parse(state);
 
-    // Exchange code for access token
-    const tokenData = await KickService.getAccessToken(code);
+    // Exchange code for access token (with PKCE code verifier)
+    const tokenData = await KickService.getAccessToken(code, userId);
 
     // Get user info
     const userInfo = await KickService.getUserInfo(tokenData.access_token);
