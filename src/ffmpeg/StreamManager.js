@@ -1514,7 +1514,6 @@ class StreamManager {
 
     if (!processInfo) {
       // Check if stream is running according to database (may have lost track after restart)
-      const Channel = require('../models/Channel');
       const channel = await Channel.findById(channelId);
 
       if (channel && channel.status === 'running' && channel.process_id) {
