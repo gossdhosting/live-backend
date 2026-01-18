@@ -468,45 +468,78 @@ router.delete('/streams/:id', authenticateToken, async (req, res) => {
 router.post('/kick/setup-stream', authenticateToken, async (req, res) => {
   const { channelId, title } = req.body;
 
+  logger.info('=== KICK SETUP STARTED ===', {
+    channelId,
+    title,
+    userId: req.user?.id,
+    userRole: req.user?.role,
+    timestamp: new Date().toISOString()
+  });
+
   try {
 
     if (!channelId || !title) {
+      logger.warn('Kick setup: Missing required fields', { channelId, title });
       return res.status(400).json({ error: 'Channel ID and title are required' });
     }
 
     // Validate channel exists and check ownership
+    logger.info('Kick setup: Fetching channel', { channelId });
     const channel = await Channel.findById(channelId);
     if (!channel) {
+      logger.warn('Kick setup: Channel not found', { channelId });
       return res.status(404).json({ error: 'Channel not found' });
     }
+    logger.info('Kick setup: Channel found', { channelId, channelUserId: channel.user_id });
 
     // Check channel ownership (admins can access all, users only their own)
     if (req.user.role !== 'admin' && Number(channel.user_id) !== Number(req.user.id)) {
+      logger.warn('Kick setup: Unauthorized access', { channelUserId: channel.user_id, requestUserId: req.user.id });
       return res.status(403).json({ error: 'Unauthorized access to this channel' });
     }
 
+    logger.info('Kick setup: Fetching Kick connection', { userId: req.user.id });
     const connection = await PlatformConnection.getByPlatformAndUser('kick', req.user.id);
 
     if (!connection) {
+      logger.warn('Kick setup: No Kick connection found', { userId: req.user.id });
       return res.status(404).json({ error: 'Kick account not connected' });
     }
+    logger.info('Kick setup: Connection found', {
+      connectionId: connection.id,
+      hasAccessToken: !!connection.access_token,
+      hasRefreshToken: !!connection.refresh_token,
+      tokenExpires: connection.token_expires_at,
+      platformUsername: connection.platform_user_name
+    });
 
     // Check for duplicate Kick stream
+    logger.info('Kick setup: Checking for existing Kick streams', { channelId });
     const existingStreams = await PlatformStream.getByChannelId(channelId);
     const existingKickStream = (Array.isArray(existingStreams) ? existingStreams : []).find(s => s.platform === 'kick' && (s.enabled === 1 || s.enabled === true));
     if (existingKickStream) {
+      logger.warn('Kick setup: Duplicate stream found', { existingStreamId: existingKickStream.id });
       return res.status(400).json({
         error: 'A Kick stream already exists for this channel. Please delete the existing one first.'
       });
     }
+    logger.info('Kick setup: No duplicate streams found');
 
+    logger.info('Kick setup: Refreshing token if needed', { connectionId: connection.id });
     const accessToken = await KickService.refreshTokenIfNeeded(connection);
+    logger.info('Kick setup: Token refresh complete', { hasNewToken: !!accessToken });
 
     // Setup stream
+    logger.info('Kick setup: Setting up stream with Kick API', { username: connection.platform_user_name });
     const stream = await KickService.setupStream(
-      accessToken,
+      accessToken.access_token || accessToken,
       connection.platform_user_name
     );
+    logger.info('Kick setup: Stream setup complete', {
+      hasRtmpUrl: !!stream.rtmp_url,
+      hasStreamKey: !!stream.stream_key,
+      channelId: stream.channel_id
+    });
 
     // Save platform stream (single source of truth)
     const platformStream = await PlatformStream.create({
