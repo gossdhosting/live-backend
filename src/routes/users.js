@@ -5,6 +5,7 @@ import {
   getUserById,
   updateUser,
   deleteUser,
+  deleteOwnAccount,
   getUserStats,
   getUserDetails
 } from '../controllers/userController.js';
@@ -21,6 +22,9 @@ router.post('/register', loginLimiter, register);
 router.get('/me/stats', authenticateToken, getUserStats);
 router.get('/stats', authenticateToken, getUserStats);
 router.get('/stats/:id', authenticateToken, requireAdmin, getUserStats);
+
+// Self-deletion endpoint (user can delete their own account)
+router.delete('/me', authenticateToken, deleteOwnAccount);
 
 // Admin only routes
 router.get('/', authenticateToken, requireAdmin, getAllUsers);

@@ -1,8 +1,13 @@
+import fs from 'fs';
+import path from 'path';
 import User from '../models/User.js';
 import Plan from '../models/Plan.js';
 import Channel from '../models/Channel.js';
 import PlatformConnection from '../models/PlatformConnection.js';
 import RtmpDestination from '../models/RtmpDestination.js';
+import MediaFile from '../models/MediaFile.js';
+import UserSettings from '../models/UserSettings.js';
+import streamManager from '../ffmpeg/StreamManager.js';
 import logger from '../utils/logger.js';
 import { isValidEmail } from '../utils/validation.js';
 import EmailService from '../services/EmailService.js';
@@ -234,14 +239,15 @@ export const deleteUser = async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Prevent self-deletion
+    // Prevent self-deletion through this endpoint (use deleteOwnAccount instead)
     if (req.user.id === userId) {
-      return res.status(400).json({ error: 'Cannot delete your own account' });
+      return res.status(400).json({ error: 'Cannot delete your own account through this endpoint. Use the delete own account feature.' });
     }
 
-    await User.delete(userId);
+    // Use the comprehensive cleanup function
+    await performAccountDeletion(userId);
 
-    logger.info('User deleted', { userId, deletedBy: req.user.id });
+    logger.info('User deleted by admin', { userId, deletedBy: req.user.id });
 
     res.json({ message: 'User deleted successfully' });
   } catch (error) {
@@ -249,6 +255,91 @@ export const deleteUser = async (req, res) => {
     res.status(500).json({ error: 'Failed to delete user' });
   }
 };
+
+// Delete own account (user self-deletion for privacy)
+export const deleteOwnAccount = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Get user to confirm existence
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Prevent admin self-deletion
+    if (user.role === 'admin') {
+      return res.status(400).json({ error: 'Admin accounts cannot be self-deleted. Contact another admin.' });
+    }
+
+    // Use the comprehensive cleanup function
+    await performAccountDeletion(userId);
+
+    logger.info('User deleted their own account', { userId, email: user.email });
+
+    res.json({ message: 'Account deleted successfully' });
+  } catch (error) {
+    logger.error('Failed to delete own account', { error: error.message, userId: req.user.id });
+    res.status(500).json({ error: 'Failed to delete account' });
+  }
+};
+
+// Comprehensive account deletion helper
+async function performAccountDeletion(userId) {
+  logger.info('Starting account deletion process', { userId });
+
+  // 1. Stop any running streams for this user
+  const channels = await Channel.findByUserId(userId);
+  for (const channel of channels) {
+    if (channel.status === 'running') {
+      try {
+        await streamManager.stopStream(channel.id);
+        logger.info('Stopped running stream during account deletion', { channelId: channel.id, userId });
+      } catch (err) {
+        logger.warn('Failed to stop stream during account deletion', { channelId: channel.id, error: err.message });
+      }
+    }
+
+    // Delete channel watermark files
+    if (channel.watermark_path && fs.existsSync(channel.watermark_path)) {
+      try {
+        fs.unlinkSync(channel.watermark_path);
+        logger.info('Deleted channel watermark', { channelId: channel.id, path: channel.watermark_path });
+      } catch (err) {
+        logger.warn('Failed to delete channel watermark', { channelId: channel.id, error: err.message });
+      }
+    }
+  }
+
+  // 2. Delete user's media files from disk
+  const mediaFiles = await MediaFile.findByUserId(userId);
+  for (const media of mediaFiles) {
+    if (media.file_path && fs.existsSync(media.file_path)) {
+      try {
+        fs.unlinkSync(media.file_path);
+        logger.info('Deleted media file', { mediaId: media.id, path: media.file_path });
+      } catch (err) {
+        logger.warn('Failed to delete media file', { mediaId: media.id, error: err.message });
+      }
+    }
+  }
+
+  // 3. Delete user's watermark from user settings
+  const userSettings = await UserSettings.getAll(userId);
+  if (userSettings.watermark_path && fs.existsSync(userSettings.watermark_path)) {
+    try {
+      fs.unlinkSync(userSettings.watermark_path);
+      logger.info('Deleted user watermark', { userId, path: userSettings.watermark_path });
+    } catch (err) {
+      logger.warn('Failed to delete user watermark', { userId, error: err.message });
+    }
+  }
+
+  // 4. Delete user (cascade will handle DB records: channels, media_files, user_settings, etc.)
+  await User.delete(userId);
+
+  logger.info('Account deletion completed', { userId });
+}
 
 // Get user statistics and limits
 export const getUserStats = async (req, res) => {
