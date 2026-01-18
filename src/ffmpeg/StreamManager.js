@@ -570,25 +570,28 @@ class StreamManager {
       // Merge both types of destinations
       const rtmpDestinations = [...platformRtmpDests, ...customRtmpDests];
 
-      // Validate custom RTMP connections before starting stream
-      const failedConnections = [];
-      for (const dest of customRtmpDests) {
-        try {
-          logger.info(`Validating RTMP connection for ${dest.platform} (channel ${channelId})`);
-          await this.validateRtmpConnection(dest.rtmp_url, dest.stream_key);
-          logger.info(`RTMP connection validated successfully for ${dest.platform}`);
-          Channel.addLog(channelId, 'info', `${dest.platform}: Connection validated`);
-        } catch (error) {
-          logger.error(`RTMP validation failed for ${dest.platform}:`, { error: error.message });
-          failedConnections.push({ platform: dest.platform, error: error.message });
-        }
-      }
-
-      // If any custom RTMP connections failed, throw error with details
-      if (failedConnections.length > 0) {
-        const errorMsg = failedConnections.map(f => `${f.platform}: ${f.error}`).join('; ');
-        throw new Error(`RTMP connection validation failed. Check connection details: ${errorMsg}`);
-      }
+      // RTMP validation disabled - it causes platforms to go live prematurely
+      // The stream will fail naturally if RTMP URLs are invalid
+      //
+      // // Validate custom RTMP connections before starting stream
+      // const failedConnections = [];
+      // for (const dest of customRtmpDests) {
+      //   try {
+      //     logger.info(`Validating RTMP connection for ${dest.platform} (channel ${channelId})`);
+      //     await this.validateRtmpConnection(dest.rtmp_url, dest.stream_key);
+      //     logger.info(`RTMP connection validated successfully for ${dest.platform}`);
+      //     Channel.addLog(channelId, 'info', `${dest.platform}: Connection validated`);
+      //   } catch (error) {
+      //     logger.error(`RTMP validation failed for ${dest.platform}:`, { error: error.message });
+      //     failedConnections.push({ platform: dest.platform, error: error.message });
+      //   }
+      // }
+      //
+      // // If any custom RTMP connections failed, throw error with details
+      // if (failedConnections.length > 0) {
+      //   const errorMsg = failedConnections.map(f => `${f.platform}: ${f.error}`).join('; ');
+      //   throw new Error(`RTMP connection validation failed. Check connection details: ${errorMsg}`);
+      // }
 
       // Initialize RTMP connection status for this channel
       const rtmpStatusMap = new Map();
