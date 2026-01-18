@@ -590,26 +590,9 @@ class StreamManager {
       // Merge both types of destinations
       const rtmpDestinations = [...platformRtmpDests, ...customRtmpDests];
 
-      // Validate custom RTMP connections before starting stream
-      // Uses minimal handshake test that won't make platforms go "live"
-      const failedConnections = [];
-      for (const dest of customRtmpDests) {
-        try {
-          logger.info(`Validating RTMP connection for ${dest.platform} (channel ${channelId})`);
-          await this.validateRtmpConnection(dest.rtmp_url, dest.stream_key);
-          logger.info(`RTMP connection validated successfully for ${dest.platform}`);
-          Channel.addLog(channelId, 'info', `${dest.platform}: Connection validated`);
-        } catch (error) {
-          logger.error(`RTMP validation failed for ${dest.platform}:`, { error: error.message });
-          failedConnections.push({ platform: dest.platform, error: error.message });
-        }
-      }
-
-      // If any custom RTMP connections failed, throw error with details
-      if (failedConnections.length > 0) {
-        const errorMsg = failedConnections.map(f => `${f.platform}: ${f.error}`).join('; ');
-        throw new Error(`RTMP connection validation failed. Check connection details: ${errorMsg}`);
-      }
+      // RTMP validation completely disabled
+      // Even minimal handshake tests can cause platforms to go "live"
+      // Let streams fail naturally if credentials are invalid
 
       // Initialize RTMP connection status for this channel
       const rtmpStatusMap = new Map();
@@ -1436,74 +1419,9 @@ class StreamManager {
         }
       }
 
-      // Handle custom RTMP destinations - send proper disconnect signal
-      try {
-        const customRtmpDestinations = await RtmpDestination.getEnabledForChannel(channelId);
-
-        if (customRtmpDestinations && customRtmpDestinations.length > 0) {
-          const rtmpStatusMap = this.rtmpConnectionStatus.get(channelId);
-
-          // Send RTMP disconnect command for each custom destination
-          for (const dest of customRtmpDestinations) {
-            const destId = `custom_${dest.id}`;
-
-            try {
-              // Build full RTMP URL
-              let rtmpUrl = dest.rtmp_url;
-              if (dest.stream_key) {
-                const separator = (!rtmpUrl.endsWith('/') && !dest.stream_key.startsWith('/')) ? '/' : '';
-                rtmpUrl = `${rtmpUrl}${separator}${dest.stream_key}`;
-              }
-
-              // Send FCUnpublish and deleteStream commands to properly close RTMP connection
-              // This uses FFmpeg to send a minimal disconnect signal
-              const disconnectArgs = [
-                '-v', 'error',
-                '-f', 'lavfi',
-                '-i', 'anullsrc=duration=0.1',
-                '-f', 'flv',
-                '-t', '0.1',
-                rtmpUrl
-              ];
-
-              const disconnectProcess = spawn(this.ffmpegPath, disconnectArgs);
-
-              // Give it 2 seconds max to disconnect
-              const disconnectTimeout = setTimeout(() => {
-                disconnectProcess.kill('SIGKILL');
-              }, 2000);
-
-              disconnectProcess.on('exit', () => {
-                clearTimeout(disconnectTimeout);
-              });
-
-              // Update status to 'disconnecting'
-              if (rtmpStatusMap && rtmpStatusMap.has(destId)) {
-                rtmpStatusMap.set(destId, {
-                  status: 'disconnecting',
-                  platform: dest.platform || 'custom',
-                  lastUpdate: new Date()
-                });
-              }
-
-              logger.info(`Sent disconnect signal to custom RTMP destination ${destId} (${dest.platform || 'custom'}) for channel ${channelId}`);
-              Channel.addLog(channelId, 'info', `${dest.platform || 'custom'}: Disconnecting gracefully`);
-            } catch (destError) {
-              logger.error(`Failed to disconnect custom RTMP destination ${destId}`, {
-                error: destError.message
-              });
-              // Continue with other destinations
-            }
-          }
-
-          logger.info(`Sent disconnect signals to ${customRtmpDestinations.length} custom RTMP destination(s) for channel ${channelId}`);
-        }
-      } catch (error) {
-        logger.error(`Error disconnecting custom RTMP destinations for channel ${channelId}`, {
-          error: error.message
-        });
-        // Don't throw - stream should still stop even if custom RTMP cleanup fails
-      }
+      // Custom RTMP destinations will disconnect automatically when FFmpeg process terminates
+      // No need to send explicit disconnect signals - they can cause issues
+      logger.info(`Custom RTMP destinations will disconnect automatically when FFmpeg terminates for channel ${channelId}`);
     } catch (error) {
       logger.error(`Error ending platform broadcasts for channel ${channelId}`, {
         error: error.message
