@@ -90,19 +90,20 @@ class KickService {
   // Get user info
   static async getUserInfo(accessToken) {
     try {
-      const response = await axios.get('https://kick.com/api/v2/user', {
+      const response = await axios.get('https://api.kick.com/public/v1/users', {
         headers: {
           'Authorization': `Bearer ${accessToken}`,
           'Accept': 'application/json',
         },
       });
 
-      const user = response.data;
+      // API returns data array, get first user (authenticated user when no ID provided)
+      const user = response.data.data[0];
       return {
-        id: user.id,
-        username: user.username,
+        id: user.user_id,
+        username: user.name,
         email: user.email,
-        profile_pic: user.profile_pic,
+        profile_pic: user.profile_picture,
       };
     } catch (error) {
       logger.error('Kick: Failed to get user info', { error: error.response?.data || error.message });
@@ -267,7 +268,7 @@ class KickService {
   // Validate access token
   static async validateToken(accessToken) {
     try {
-      const response = await axios.get('https://kick.com/api/v2/user', {
+      const response = await axios.get('https://api.kick.com/public/v1/users', {
         headers: {
           'Authorization': `Bearer ${accessToken}`,
           'Accept': 'application/json',
@@ -276,7 +277,7 @@ class KickService {
 
       return {
         valid: true,
-        user: response.data,
+        user: response.data.data[0],
       };
     } catch (error) {
       logger.error('Kick: Token validation failed', { error: error.response?.data || error.message });
