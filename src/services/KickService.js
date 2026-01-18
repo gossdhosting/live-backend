@@ -112,52 +112,43 @@ class KickService {
   }
 
   // Get channel information
-  static async getChannelInfo(accessToken, username) {
+  static async getChannelInfo(accessToken, slug) {
     try {
-      const response = await axios.get(`https://kick.com/api/v2/channels/${username}`, {
+      // Use the new Kick API v1 endpoint
+      const params = new URLSearchParams({ slug });
+      const response = await axios.get(`https://api.kick.com/public/v1/channels?${params.toString()}`, {
         headers: {
           'Authorization': `Bearer ${accessToken}`,
           'Accept': 'application/json',
         },
       });
 
-      return response.data;
+      // API returns data array
+      if (!response.data.data || response.data.data.length === 0) {
+        throw new Error('Channel not found');
+      }
+
+      return response.data.data[0];
     } catch (error) {
       logger.error('Kick: Failed to get channel info', { error: error.response?.data || error.message });
       throw new Error('Failed to get Kick channel info');
     }
   }
 
-  // Get stream key
-  static async getStreamKey(accessToken, channelId) {
-    try {
-      const response = await axios.get(`https://kick.com/api/v2/channels/${channelId}/keys`, {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Accept': 'application/json',
-        },
-      });
-
-      return response.data.stream_key;
-    } catch (error) {
-      logger.error('Kick: Failed to get stream key', { error: error.response?.data || error.message });
-      throw new Error('Failed to get Kick stream key');
-    }
-  }
-
   // Setup stream (get RTMP URL and stream key)
-  static async setupStream(accessToken, username) {
+  static async setupStream(accessToken, slug) {
     try {
-      const channelInfo = await this.getChannelInfo(accessToken, username);
-      const streamKey = await this.getStreamKey(accessToken, channelInfo.id);
+      const channelInfo = await this.getChannelInfo(accessToken, slug);
 
-      // Kick RTMP server (may vary by region)
-      const rtmpUrl = 'rtmps://fa723fc1b171.global-contribute.live-video.net/app/';
+      // Channel info includes stream.url and stream.key in the response
+      if (!channelInfo.stream || !channelInfo.stream.url || !channelInfo.stream.key) {
+        throw new Error('Stream information not available in channel response');
+      }
 
       return {
-        rtmp_url: rtmpUrl,
-        stream_key: streamKey,
-        channel_id: channelInfo.id,
+        rtmp_url: channelInfo.stream.url,
+        stream_key: channelInfo.stream.key,
+        channel_id: channelInfo.broadcaster_user_id,
         channel_name: channelInfo.slug,
       };
     } catch (error) {
@@ -167,18 +158,13 @@ class KickService {
   }
 
   // Get stream status
-  static async getStreamStatus(accessToken, username) {
+  static async getStreamStatus(accessToken, slug) {
     try {
-      const response = await axios.get(`https://kick.com/api/v2/channels/${username}`, {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Accept': 'application/json',
-        },
-      });
+      const channelInfo = await this.getChannelInfo(accessToken, slug);
 
       return {
-        is_live: response.data.livestream !== null,
-        livestream: response.data.livestream,
+        is_live: channelInfo.stream?.is_live || false,
+        stream: channelInfo.stream,
       };
     } catch (error) {
       logger.error('Kick: Failed to get stream status', { error: error.response?.data || error.message });

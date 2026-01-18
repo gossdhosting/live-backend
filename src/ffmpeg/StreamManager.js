@@ -584,7 +584,8 @@ class StreamManager {
           platform: dest.platform || 'custom',
           rtmp_url: dest.rtmp_url,
           stream_key: dest.stream_key,
-          video_orientation: dest.template_video_orientation || '16:9',  // Default to landscape
+          // FIX: Check dest.video_orientation first, then template, then default
+          video_orientation: dest.video_orientation || dest.template_video_orientation || '16:9',
           enabled: dest.enabled || 1
         }));
 
@@ -998,7 +999,8 @@ class StreamManager {
 
         landscape16x9Destinations.forEach((dest) => {
           let rtmpUrl = dest.rtmp_url;
-          if (dest.stream_key) {
+          // FIX: Only append stream key if it exists and isn't already in the URL
+          if (dest.stream_key && !rtmpUrl.includes(dest.stream_key)) {
             const separator = (!rtmpUrl.endsWith('/') && !dest.stream_key.startsWith('/')) ? '/' : '';
             rtmpUrl = `${rtmpUrl}${separator}${dest.stream_key}`;
           }
@@ -1009,7 +1011,8 @@ class StreamManager {
 
         portrait9x16Destinations.forEach((dest) => {
           let rtmpUrl = dest.rtmp_url;
-          if (dest.stream_key) {
+          // FIX: Only append stream key if it exists and isn't already in the URL
+          if (dest.stream_key && !rtmpUrl.includes(dest.stream_key)) {
             const separator = (!rtmpUrl.endsWith('/') && !dest.stream_key.startsWith('/')) ? '/' : '';
             rtmpUrl = `${rtmpUrl}${separator}${dest.stream_key}`;
           }
@@ -1068,7 +1071,8 @@ class StreamManager {
           // Single output - direct RTMP without tee muxer
           const dest = rtmpDestinations[0];
           let rtmpUrl = dest.rtmp_url;
-          if (dest.stream_key) {
+          // FIX: Only append stream key if it exists and isn't already in the URL
+          if (dest.stream_key && !rtmpUrl.includes(dest.stream_key)) {
             const separator = (!rtmpUrl.endsWith('/') && !dest.stream_key.startsWith('/')) ? '/' : '';
             rtmpUrl = `${rtmpUrl}${separator}${dest.stream_key}`;
           }
@@ -1087,7 +1091,8 @@ class StreamManager {
 
           rtmpDestinations.forEach((dest) => {
             let rtmpUrl = dest.rtmp_url;
-            if (dest.stream_key) {
+            // FIX: Only append stream key if it exists and isn't already in the URL
+            if (dest.stream_key && !rtmpUrl.includes(dest.stream_key)) {
               const separator = (!rtmpUrl.endsWith('/') && !dest.stream_key.startsWith('/')) ? '/' : '';
               rtmpUrl = `${rtmpUrl}${separator}${dest.stream_key}`;
             }
@@ -1304,7 +1309,8 @@ class StreamManager {
           // - "Opening 'rtmp://..." - FFmpeg opening connection
           // - "rtmp://... for writing" - Starting to write
           // - "Writing trailer for" - Successfully writing data
-          const isConnecting = message.includes('rtmp://') && (
+          // FIX: Support RTMPS (secure) and RTMPE (encrypted) protocols
+          const isConnecting = (message.includes('rtmp://') || message.includes('rtmps://') || message.includes('rtmpe://')) && (
             message.includes('Opening') ||
             message.includes('for writing') ||
             message.includes('Writing trailer for')
@@ -1313,8 +1319,10 @@ class StreamManager {
           if (isConnecting) {
             // Extract the RTMP URL to identify which destination
             rtmpDestinations.forEach(dest => {
-              const baseUrl = dest.rtmp_url.replace(/\/$/, ''); // Remove trailing slash
-              if (message.includes(baseUrl)) {
+              // FIX: Normalize URL for comparison by removing trailing slash and protocol
+              const cleanDestUrl = dest.rtmp_url.replace(/\/$/, '').replace(/^rtmps?e?:\/\//, '');
+
+              if (message.includes(cleanDestUrl)) {
                 const status = rtmpStatusMap.get(dest.id);
                 if (status && status.status === 'connecting') {
                   status.status = 'connected';
