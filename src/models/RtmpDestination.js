@@ -77,6 +77,11 @@ class RtmpDestination {
     return await stmt.run(id);
   }
 
+  static async deleteByTemplateId(templateId) {
+    const stmt = db.prepare('DELETE FROM rtmp_destinations WHERE template_id = ?');
+    return await stmt.run(templateId);
+  }
+
   static async getEnabledForChannel(channelId) {
     const stmt = db.prepare(`
       SELECT

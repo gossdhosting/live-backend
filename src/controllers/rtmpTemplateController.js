@@ -1,4 +1,5 @@
 import RtmpTemplate from '../models/RtmpTemplate.js';
+import RtmpDestination from '../models/RtmpDestination.js';
 import logger from '../utils/logger.js';
 
 export const getRtmpTemplates = async (req, res) => {
@@ -109,6 +110,12 @@ export const deleteRtmpTemplate = async (req, res) => {
       return res.status(404).json({ error: 'RTMP template not found' });
     }
 
+    // Delete all rtmp_destinations that reference this template
+    // This prevents orphaned records when template is deleted
+    await RtmpDestination.deleteByTemplateId(id);
+    logger.info(`Deleted rtmp_destinations for template`, { templateId: id });
+
+    // Delete the template itself
     await RtmpTemplate.delete(id);
     logger.info(`RTMP template deleted`, { id });
     res.json({ message: 'RTMP template deleted successfully' });
