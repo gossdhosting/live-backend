@@ -79,6 +79,15 @@ export const createScheduledStream = async (req, res) => {
   try {
     const { channel_id, scheduled_start_time, timezone } = req.body;
 
+    // DEBUG: Log what we received from frontend
+    logger.info('=== SCHEDULE CREATE DEBUG ===', {
+      received_scheduled_start_time: scheduled_start_time,
+      received_timezone: timezone,
+      received_channel_id: channel_id,
+      parsed_as_date: new Date(scheduled_start_time).toISOString(),
+      server_current_time: new Date().toISOString()
+    });
+
     // Validate required fields
     if (!channel_id || !scheduled_start_time || !timezone) {
       return res.status(400).json({
