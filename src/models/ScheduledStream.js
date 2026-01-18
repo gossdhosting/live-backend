@@ -87,14 +87,33 @@ class ScheduledStream {
         ss.*,
         c.name as channel_name,
         c.status as channel_status,
-        c.user_id as channel_user_id
+        c.user_id as channel_user_id,
+        CURRENT_TIMESTAMP as db_current_time
       FROM scheduled_streams ss
       JOIN channels c ON ss.channel_id = c.id
       WHERE ss.status = 'pending'
       AND ss.scheduled_start_time <= CURRENT_TIMESTAMP
       ORDER BY ss.scheduled_start_time ASC
     `);
-    return await stmt.all();
+    const results = await stmt.all();
+
+    // Debug logging to help diagnose timezone issues
+    if (results.length > 0) {
+      const now = new Date().toISOString();
+      results.forEach(schedule => {
+        console.log('⏰ Scheduled stream due check:', {
+          scheduleId: schedule.id,
+          channelName: schedule.channel_name,
+          scheduledTime: schedule.scheduled_start_time,
+          timezone: schedule.timezone,
+          dbCurrentTime: schedule.db_current_time,
+          nodeCurrentTime: now,
+          isDue: new Date(schedule.scheduled_start_time) <= new Date()
+        });
+      });
+    }
+
+    return results;
   }
 
   // Create new scheduled stream
