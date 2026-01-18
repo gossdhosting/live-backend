@@ -957,13 +957,17 @@ class StreamManager {
         lastError: null,
       });
 
-      // Initialize health metrics
+      // Initialize health metrics with stream stats
       this.healthMetrics.set(channelId, {
         uptime: 0,
         status: 'starting',
         errors: 0,
         lastError: null,
         lastCheck: new Date().toISOString(),
+        // Stream statistics
+        bitrate: resolution.bitrate,
+        fps: '30',
+        resolution: `${resolution.width}x${resolution.height}`,
       });
 
       // Update channel status
