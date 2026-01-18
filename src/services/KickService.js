@@ -17,7 +17,7 @@ class KickService {
       state: state,
     });
 
-    return `https://kick.com/oauth2/authorize?${params.toString()}`;
+    return `https://id.kick.com/oauth/authorize?${params.toString()}`;
   }
 
   // Exchange authorization code for access token
@@ -25,7 +25,7 @@ class KickService {
     const config = platformConfig.kick;
 
     try {
-      const response = await axios.post('https://kick.com/oauth2/token', {
+      const response = await axios.post('https://id.kick.com/oauth/token', {
         client_id: config.clientId,
         client_secret: config.clientSecret,
         code: code,
@@ -147,7 +147,7 @@ class KickService {
     const config = platformConfig.kick;
 
     try {
-      const response = await axios.post('https://kick.com/oauth2/token', {
+      const response = await axios.post('https://id.kick.com/oauth/token', {
         client_id: config.clientId,
         client_secret: config.clientSecret,
         refresh_token: refreshToken,
