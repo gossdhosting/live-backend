@@ -466,8 +466,9 @@ router.delete('/streams/:id', authenticateToken, async (req, res) => {
 
 // Setup Kick stream
 router.post('/kick/setup-stream', authenticateToken, async (req, res) => {
+  const { channelId, title } = req.body;
+
   try {
-    const { channelId, title } = req.body;
 
     if (!channelId || !title) {
       return res.status(400).json({ error: 'Channel ID and title are required' });
