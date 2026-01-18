@@ -33,7 +33,7 @@ export const platformConfig = {
     clientId: process.env.KICK_CLIENT_ID,
     clientSecret: process.env.KICK_CLIENT_SECRET,
     redirectUri: process.env.KICK_REDIRECT_URI || 'http://localhost:3001/api/platforms/auth/kick/callback',
-    scopes: [],
+    scopes: ['user:read', 'channel:read', 'streamkey:read'],
   },
 
   // Base URLs
