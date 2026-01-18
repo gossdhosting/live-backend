@@ -37,7 +37,7 @@ export const getAllChannels = async (req, res) => {
       }
       return {
         ...channel,
-        runtime_status: streamManager.getStreamStatus(channel.id),
+        runtime_status: await streamManager.getStreamStatus(channel.id),
         scheduled_stream: activeSchedule || null,
       };
     }));
@@ -64,7 +64,7 @@ export const getChannel = async (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    const runtimeStatus = streamManager.getStreamStatus(channel.id);
+    const runtimeStatus = await streamManager.getStreamStatus(channel.id);
 
     // Get scheduled stream info
     let activeSchedule = null;

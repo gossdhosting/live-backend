@@ -1482,7 +1482,7 @@ class StreamManager {
   }
 
   // Get stream health metrics
-  getStreamHealth(channelId) {
+  async getStreamHealth(channelId) {
     const processInfo = this.processes.get(channelId);
     const metrics = this.healthMetrics.get(channelId);
     const reconnectAttempts = this.reconnectAttempts.get(channelId) || 0;
@@ -1513,6 +1513,38 @@ class StreamManager {
     logger.info(`[RTMP-GET] Returning ${rtmpConnections.length} RTMP connections for channel ${channelId}`);
 
     if (!processInfo) {
+      // Check if stream is running according to database (may have lost track after restart)
+      const Channel = require('../models/Channel');
+      const channel = await Channel.findById(channelId);
+
+      if (channel && channel.status === 'running' && channel.process_id) {
+        // Stream is running but we lost track of it - provide basic healthMetrics
+        const qualityPreset = channel.quality_preset || '720p';
+        const resolution = this.getResolutionFromPreset(qualityPreset);
+
+        return {
+          running: true,
+          pid: channel.process_id,
+          uptime: null, // Unknown since we don't have startTime
+          rtmpConnections,
+          errorCount: 0,
+          lastError: null,
+          reconnectAttempts: 0,
+          maxReconnectAttempts: this.maxReconnectAttempts,
+          status: 'running',
+          healthMetrics: {
+            uptime: null,
+            status: 'running',
+            errors: 0,
+            lastError: null,
+            lastCheck: new Date().toISOString(),
+            bitrate: resolution.bitrate,
+            fps: '30',
+            resolution: `${resolution.width}x${resolution.height}`,
+          },
+        };
+      }
+
       return {
         running: false,
         status: 'stopped',
@@ -1648,8 +1680,8 @@ class StreamManager {
   }
 
   // Get stream status (backward compatible, uses health metrics)
-  getStreamStatus(channelId) {
-    return this.getStreamHealth(channelId);
+  async getStreamStatus(channelId) {
+    return await this.getStreamHealth(channelId);
   }
 
   // Stop all streams
