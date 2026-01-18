@@ -1,6 +1,26 @@
 import db from './database.js';
 
 class ScheduledStream {
+  // Helper to normalize scheduled_start_time to ISO format with 'Z' suffix
+  static normalizeSchedule(schedule) {
+    if (!schedule) return schedule;
+    if (schedule.scheduled_start_time) {
+      // Ensure the time is in ISO format with Z suffix for UTC
+      const time = schedule.scheduled_start_time;
+      if (typeof time === 'string' && !time.endsWith('Z') && !time.includes('+')) {
+        // Convert "2026-01-18 16:09:00" to "2026-01-18T16:09:00.000Z"
+        schedule.scheduled_start_time = time.replace(' ', 'T') + '.000Z';
+      }
+    }
+    return schedule;
+  }
+
+  // Helper to normalize an array of schedules
+  static normalizeSchedules(schedules) {
+    if (!Array.isArray(schedules)) return schedules;
+    return schedules.map(s => this.normalizeSchedule(s));
+  }
+
   // Get all scheduled streams (admin only)
   static async getAll() {
     const stmt = db.prepare(`
@@ -14,7 +34,8 @@ class ScheduledStream {
       JOIN users u ON ss.user_id = u.id
       ORDER BY ss.scheduled_start_time ASC
     `);
-    return await stmt.all();
+    const results = await stmt.all();
+    return this.normalizeSchedules(results);
   }
 
   // Get scheduled streams by user ID
@@ -29,13 +50,15 @@ class ScheduledStream {
       WHERE ss.user_id = ?
       ORDER BY ss.scheduled_start_time ASC
     `);
-    return await stmt.all(userId);
+    const results = await stmt.all(userId);
+    return this.normalizeSchedules(results);
   }
 
   // Get scheduled streams by channel ID
   static async getByChannelId(channelId) {
     const stmt = db.prepare('SELECT * FROM scheduled_streams WHERE channel_id = ? ORDER BY scheduled_start_time ASC');
-    return await stmt.all(channelId);
+    const results = await stmt.all(channelId);
+    return this.normalizeSchedules(results);
   }
 
   // Get active (pending) scheduled stream for a channel
@@ -46,13 +69,15 @@ class ScheduledStream {
       ORDER BY scheduled_start_time ASC
       LIMIT 1
     `);
-    return await stmt.get(channelId);
+    const result = await stmt.get(channelId);
+    return this.normalizeSchedule(result);
   }
 
   // Get scheduled stream by ID
   static async getById(id) {
     const stmt = db.prepare('SELECT * FROM scheduled_streams WHERE id = ?');
-    return await stmt.get(id);
+    const result = await stmt.get(id);
+    return this.normalizeSchedule(result);
   }
 
   // Get all pending scheduled streams that should start now
