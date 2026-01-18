@@ -965,7 +965,7 @@ class StreamManager {
         lastError: null,
         lastCheck: new Date().toISOString(),
         // Stream statistics
-        bitrate: resolution.bitrate,
+        quality: qualityPreset, // Use quality preset instead of numeric bitrate
         fps: '30',
         resolution: `${resolution.width}x${resolution.height}`,
       });
@@ -1537,7 +1537,7 @@ class StreamManager {
             errors: 0,
             lastError: null,
             lastCheck: new Date().toISOString(),
-            bitrate: resolution.bitrate,
+            quality: qualityPreset, // Use quality preset instead of numeric bitrate
             fps: '30',
             resolution: `${resolution.width}x${resolution.height}`,
           },
