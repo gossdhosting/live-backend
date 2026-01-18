@@ -85,7 +85,8 @@ class RtmpDestination {
         t.audio_bitrate as template_audio_bitrate,
         t.profile as template_profile,
         t.preset as template_preset,
-        t.fps as template_fps
+        t.fps as template_fps,
+        t.video_orientation as template_video_orientation
       FROM rtmp_destinations d
       LEFT JOIN rtmp_templates t ON d.template_id = t.id
       WHERE d.channel_id = ? AND d.enabled = TRUE

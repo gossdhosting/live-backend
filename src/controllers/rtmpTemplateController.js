@@ -20,7 +20,7 @@ export const getRtmpTemplates = async (req, res) => {
 
 export const createRtmpTemplate = async (req, res) => {
   try {
-    const { name, platform, rtmp_url, stream_key } = req.body;
+    const { name, platform, rtmp_url, stream_key, video_orientation = '16:9' } = req.body;
 
     // Validate required fields
     if (!name || !platform || !rtmp_url || !stream_key) {
@@ -33,14 +33,21 @@ export const createRtmpTemplate = async (req, res) => {
       return res.status(400).json({ error: 'Invalid platform. Must be facebook, youtube, twitch, or custom' });
     }
 
+    // Validate video_orientation
+    const validOrientations = ['16:9', '9:16'];
+    if (!validOrientations.includes(video_orientation)) {
+      return res.status(400).json({ error: 'Invalid video orientation. Must be 16:9 or 9:16' });
+    }
+
     const template = await RtmpTemplate.create({
       name,
       platform: platform.toLowerCase(),
       rtmp_url,
       stream_key,
+      video_orientation,
     });
 
-    logger.info(`RTMP template created`, { name, platform, id: template.id });
+    logger.info(`RTMP template created`, { name, platform, video_orientation, id: template.id });
     res.status(201).json({ template });
   } catch (error) {
     logger.error('Failed to create RTMP template', { error: error.message });
@@ -51,7 +58,7 @@ export const createRtmpTemplate = async (req, res) => {
 export const updateRtmpTemplate = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, platform, rtmp_url, stream_key, enabled } = req.body;
+    const { name, platform, rtmp_url, stream_key, video_orientation, enabled } = req.body;
 
     // Check if template exists
     const existing = await RtmpTemplate.getById(id);
@@ -67,15 +74,24 @@ export const updateRtmpTemplate = async (req, res) => {
       }
     }
 
+    // Validate video_orientation if provided
+    if (video_orientation !== undefined) {
+      const validOrientations = ['16:9', '9:16'];
+      if (!validOrientations.includes(video_orientation)) {
+        return res.status(400).json({ error: 'Invalid video orientation. Must be 16:9 or 9:16' });
+      }
+    }
+
     const template = await RtmpTemplate.update(id, {
       name,
       platform: platform?.toLowerCase(),
       rtmp_url,
       stream_key,
+      video_orientation,
       enabled,
     });
 
-    logger.info(`RTMP template updated`, { id, name, platform, enabled });
+    logger.info(`RTMP template updated`, { id, name, platform, video_orientation, enabled });
     res.json({ template });
   } catch (error) {
     logger.error('Failed to update RTMP template', { error: error.message });

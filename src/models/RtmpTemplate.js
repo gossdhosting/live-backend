@@ -2,10 +2,10 @@ import db from './database.js';
 
 class RtmpTemplate {
   // Create a new RTMP template
-  static async create({ name, platform, rtmp_url, stream_key, enabled = true }) {
+  static async create({ name, platform, rtmp_url, stream_key, video_orientation = '16:9', enabled = true }) {
     const stmt = db.prepare(`
-      INSERT INTO rtmp_templates (name, platform, rtmp_url, stream_key, enabled)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO rtmp_templates (name, platform, rtmp_url, stream_key, video_orientation, enabled)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
 
     const result = await stmt.run(
@@ -13,6 +13,7 @@ class RtmpTemplate {
       platform,
       rtmp_url,
       stream_key,
+      video_orientation,
       enabled ? true : false
     );
     // For PostgreSQL, use lastID; for SQLite, use lastInsertRowid
@@ -39,8 +40,8 @@ class RtmpTemplate {
   }
 
   // Update template
-  static async update(id, { name, platform, rtmp_url, stream_key, enabled }) {
-    console.log('[RtmpTemplate.update] Called with:', { id, name, platform, rtmp_url, stream_key, enabled });
+  static async update(id, { name, platform, rtmp_url, stream_key, video_orientation, enabled }) {
+    console.log('[RtmpTemplate.update] Called with:', { id, name, platform, rtmp_url, stream_key, video_orientation, enabled });
 
     const fields = [];
     const values = [];
@@ -60,6 +61,10 @@ class RtmpTemplate {
     if (stream_key !== undefined) {
       fields.push('stream_key = ?');
       values.push(stream_key);
+    }
+    if (video_orientation !== undefined) {
+      fields.push('video_orientation = ?');
+      values.push(video_orientation);
     }
     if (enabled !== undefined) {
       fields.push('enabled = ?');

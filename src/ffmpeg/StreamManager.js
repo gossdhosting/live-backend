@@ -584,11 +584,29 @@ class StreamManager {
           platform: dest.platform || 'custom',
           rtmp_url: dest.rtmp_url,
           stream_key: dest.stream_key,
+          video_orientation: dest.template_video_orientation || '16:9',  // Default to landscape
           enabled: dest.enabled || 1
         }));
 
-      // Merge both types of destinations
+      // Merge both types of destinations (platform streams are always 16:9)
       const rtmpDestinations = [...platformRtmpDests, ...customRtmpDests];
+
+      // Determine video orientation based on custom RTMP templates
+      // Check if ALL custom RTMP destinations use 9:16, if so apply portrait orientation
+      const customOrientations = customRtmpDests.map(d => d.video_orientation);
+      const has9x16 = customOrientations.includes('9:16');
+      const has16x9 = customOrientations.includes('16:9') || platformRtmpDests.length > 0; // Platform streams are always 16:9
+
+      let videoOrientation = '16:9'; // Default
+      if (has9x16 && !has16x9) {
+        // All outputs are 9:16 portrait
+        videoOrientation = '9:16';
+        logger.info(`Using portrait orientation (9:16) for channel ${channelId} - all outputs are portrait`);
+      } else if (has9x16 && has16x9) {
+        // Mixed orientations - use 16:9 and log warning
+        logger.warn(`Channel ${channelId} has mixed video orientations (both 9:16 and 16:9). Using landscape (16:9) as default. For best results, use consistent orientations across all destinations.`);
+        Channel.addLog(channelId, 'warning', 'Mixed video orientations detected - using landscape (16:9) as default');
+      }
 
       // RTMP validation completely disabled
       // Even minimal handshake tests can cause platforms to go "live"
@@ -667,7 +685,19 @@ class StreamManager {
 
       // Get quality preset resolution
       const qualityPreset = channel.quality_preset || '720p';
-      const resolution = this.getResolutionFromPreset(qualityPreset);
+      let resolution = this.getResolutionFromPreset(qualityPreset);
+
+      // Apply video orientation - convert to portrait (9:16) if needed
+      if (videoOrientation === '9:16') {
+        // Swap width and height for portrait orientation
+        // Also ensure we use portrait-optimized dimensions (1080x1920 for 9:16)
+        resolution = {
+          width: 1080,
+          height: 1920
+        };
+        logger.info(`Applied portrait orientation (9:16) for channel ${channelId}: ${resolution.width}x${resolution.height}`);
+        Channel.addLog(channelId, 'info', `Portrait mode (9:16): ${resolution.width}x${resolution.height}`);
+      }
 
       // Get threading setting from database
       const threadingSetting = Settings.get('ffmpeg_threading');
