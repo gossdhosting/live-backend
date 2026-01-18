@@ -813,7 +813,17 @@ class StreamManager {
         const position = this.getWatermarkPosition(watermarkPosition);
 
         // Build watermark filter - scale, apply watermark
-        let watermarkFilter = `[0:v]scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=decrease,pad=${resolution.width}:${resolution.height}:(ow-iw)/2:(oh-ih)/2[scaled];`;
+        // For portrait (9:16), we need to crop the center of landscape video to fill the frame
+        let scaleFilter;
+        if (videoOrientation === '9:16') {
+          // Portrait: scale to fill height, then crop center horizontally
+          scaleFilter = `[0:v]scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=increase,crop=${resolution.width}:${resolution.height}[scaled];`;
+        } else {
+          // Landscape: scale to fit with padding (original behavior)
+          scaleFilter = `[0:v]scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=decrease,pad=${resolution.width}:${resolution.height}:(ow-iw)/2:(oh-ih)/2[scaled];`;
+        }
+
+        let watermarkFilter = scaleFilter;
         watermarkFilter += `[1:v]scale=iw*${watermarkScale}:ih*${watermarkScale},format=rgba,colorchannelmixer=aa=${watermarkOpacity}[logo];`;
         watermarkFilter += `[scaled][logo]overlay=${position}`;
 
@@ -836,7 +846,14 @@ class StreamManager {
         Channel.addLog(channelId, 'info', `Watermark applied at ${watermarkPosition}${watermarkPath === defaultWatermarkPath ? ' (default)' : ''}`);
       } else if (titleEnabled && streamTitle) {
         // No watermark but have title - scale and add title
-        let scaleFilter = `[0:v]scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=decrease,pad=${resolution.width}:${resolution.height}:(ow-iw)/2:(oh-ih)/2`;
+        let scaleFilter;
+        if (videoOrientation === '9:16') {
+          // Portrait: scale to fill and crop center
+          scaleFilter = `[0:v]scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=increase,crop=${resolution.width}:${resolution.height}`;
+        } else {
+          // Landscape: scale to fit with padding
+          scaleFilter = `[0:v]scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=decrease,pad=${resolution.width}:${resolution.height}:(ow-iw)/2:(oh-ih)/2`;
+        }
 
         const titleDrawtext = this.buildDrawtextFilter(streamTitle, titleBgColor, titleOpacity, titlePosition, titleTextColor, titleFontSize, titleBoxPadding, resolution);
         scaleFilter += titleDrawtext;
@@ -848,7 +865,14 @@ class StreamManager {
         Channel.addLog(channelId, 'info', `Output quality: ${qualityPreset} (${resolution.width}x${resolution.height}) with title overlay`);
       } else if (isRtmpInput || isVideoFile) {
         // RTMP input or video file without watermark/title - still need to scale for proper resolution
-        const scaleFilter = `[0:v]scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=decrease,pad=${resolution.width}:${resolution.height}:(ow-iw)/2:(oh-ih)/2[vout]`;
+        let scaleFilter;
+        if (videoOrientation === '9:16') {
+          // Portrait: scale to fill and crop center
+          scaleFilter = `[0:v]scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=increase,crop=${resolution.width}:${resolution.height}[vout]`;
+        } else {
+          // Landscape: scale to fit with padding
+          scaleFilter = `[0:v]scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=decrease,pad=${resolution.width}:${resolution.height}:(ow-iw)/2:(oh-ih)/2[vout]`;
+        }
 
         ffmpegArgs.push('-filter_complex', scaleFilter);
 
