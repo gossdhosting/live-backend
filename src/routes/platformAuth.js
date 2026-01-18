@@ -249,18 +249,24 @@ router.get('/kick', authenticateToken, (req, res) => {
 router.get('/kick/callback', async (req, res) => {
   const { code, state } = req.query;
 
+  logger.info('Kick OAuth callback received', { code: code ? 'present' : 'missing', state });
+
   if (!code) {
+    logger.error('Kick OAuth callback: No code provided');
     return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?error=kick_auth_failed`);
   }
 
   try {
     const { userId } = JSON.parse(state);
+    logger.info('Kick OAuth: Starting token exchange', { userId });
 
     // Exchange code for access token (with PKCE code verifier)
     const tokenData = await KickService.getAccessToken(code, userId);
+    logger.info('Kick OAuth: Token received', { hasAccessToken: !!tokenData.access_token, hasRefreshToken: !!tokenData.refresh_token });
 
     // Get user info
     const userInfo = await KickService.getUserInfo(tokenData.access_token);
+    logger.info('Kick OAuth: User info received', { userId: userInfo.id, username: userInfo.username });
 
     // Calculate token expiry
     const expiresAt = tokenData.expires_in
@@ -285,11 +291,16 @@ router.get('/kick/callback', async (req, res) => {
       scopes: tokenData.scope || [],
     });
 
-    logger.info('Kick account connected', { userId, kickUserId: userInfo.id });
+    logger.info('Kick account connected successfully', { userId, kickUserId: userInfo.id });
 
     res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?tab=platforms&success=kick_connected`);
   } catch (error) {
-    logger.error('Kick OAuth callback failed', { error: error.message, stack: error.stack, userId: state ? JSON.parse(state).userId : 'unknown' });
+    logger.error('Kick OAuth callback failed', {
+      error: error.message,
+      stack: error.stack,
+      response: error.response?.data,
+      userId: state ? JSON.parse(state).userId : 'unknown'
+    });
     console.error('Kick OAuth callback error:', error);
     res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?tab=platforms&error=kick_auth_failed`);
   }
