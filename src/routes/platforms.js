@@ -539,7 +539,12 @@ router.post('/kick/setup-stream', authenticateToken, async (req, res) => {
         : 'Kick stream created successfully'
     });
   } catch (error) {
-    logger.error('Failed to setup Kick stream', { error: error.message });
+    logger.error('Failed to setup Kick stream', {
+      error: error.message,
+      stack: error.stack,
+      channelId,
+      userId: req.user.id
+    });
     res.status(500).json({ error: error.message || 'Failed to setup Kick stream' });
   }
 });

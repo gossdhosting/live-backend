@@ -138,10 +138,21 @@ class KickService {
   // Setup stream (get RTMP URL and stream key)
   static async setupStream(accessToken, slug) {
     try {
+      logger.info('Kick: Setting up stream', { slug });
       const channelInfo = await this.getChannelInfo(accessToken, slug);
+      logger.info('Kick: Channel info received', {
+        hasStream: !!channelInfo.stream,
+        hasUrl: !!channelInfo.stream?.url,
+        hasKey: !!channelInfo.stream?.key,
+        broadcaster_user_id: channelInfo.broadcaster_user_id
+      });
 
       // Channel info includes stream.url and stream.key in the response
       if (!channelInfo.stream || !channelInfo.stream.url || !channelInfo.stream.key) {
+        logger.error('Kick: Stream information missing', {
+          stream: channelInfo.stream,
+          channelInfo: JSON.stringify(channelInfo)
+        });
         throw new Error('Stream information not available in channel response');
       }
 
@@ -152,7 +163,11 @@ class KickService {
         channel_name: channelInfo.slug,
       };
     } catch (error) {
-      logger.error('Kick: Failed to setup stream', { error: error.message });
+      logger.error('Kick: Failed to setup stream', {
+        error: error.message,
+        stack: error.stack,
+        slug
+      });
       throw new Error('Failed to setup Kick stream');
     }
   }
