@@ -602,6 +602,9 @@ class StreamManager {
       const hasOnlyLandscape = landscape16x9Destinations.length > 0 && portrait9x16Destinations.length === 0;
       const hasOnlyPortrait = landscape16x9Destinations.length === 0 && portrait9x16Destinations.length > 0;
 
+      // Combine all destinations for RTMP status tracking
+      const rtmpDestinations = [...landscape16x9Destinations, ...portrait9x16Destinations];
+
       let videoOrientation = '16:9'; // Default
       if (hasMixedOrientations) {
         logger.info(`Channel ${channelId} has mixed orientations - using split-encode-tee architecture`);
