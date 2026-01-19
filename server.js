@@ -27,6 +27,7 @@ import webhookRoutes from './src/routes/webhooks.js';
 import iapRoutes from './src/routes/iap.js';
 import appRoutes from './src/routes/app.js';
 import scheduledStreamRoutes from './src/routes/scheduledStreams.js';
+import faqRoutes from './src/routes/faq.js';
 
 // Middleware
 import { apiLimiter } from './src/middleware/rateLimiter.js';
@@ -85,6 +86,7 @@ app.use('/api/rtmp', rtmpRoutes);
 app.use('/api/billing', billingRoutes);
 app.use('/api/iap', iapRoutes);
 app.use('/api/scheduled-streams', scheduledStreamRoutes);
+app.use('/api/faqs', faqRoutes);
 
 // Public API (for Flutter app)
 app.use('/api/public', publicRoutes);
