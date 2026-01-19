@@ -219,7 +219,15 @@ export const addIceCandidate = async (req, res) => {
     }
 
     // Add ICE candidate
+    logger.info(`Adding ICE candidate for channel ${channelId}`, {
+      candidate: candidate.candidate?.substring(0, 50) + '...',
+      sdpMid: candidate.sdpMid,
+      sdpMLineIndex: candidate.sdpMLineIndex
+    });
+
     await webrtcBridgeService.addIceCandidate(channelId, candidate);
+
+    logger.info(`ICE candidate added successfully for channel ${channelId}`);
 
     res.json({
       success: true,
@@ -227,8 +235,12 @@ export const addIceCandidate = async (req, res) => {
     });
 
   } catch (error) {
-    logger.error('Failed to add ICE candidate', { error: error.message });
-    res.status(500).json({ error: 'Failed to add ICE candidate' });
+    logger.error(`Failed to add ICE candidate for channel ${channelId}`, {
+      error: error.message,
+      stack: error.stack,
+      candidate: req.body.candidate
+    });
+    res.status(500).json({ error: 'Failed to add ICE candidate', details: error.message });
   }
 };
 
