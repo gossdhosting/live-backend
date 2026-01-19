@@ -466,19 +466,18 @@ router.delete('/streams/:id', authenticateToken, async (req, res) => {
 
 // Setup Kick stream
 router.post('/kick/setup-stream', authenticateToken, async (req, res) => {
-  console.log('🔥 KICK SETUP REQUEST RECEIVED', new Date().toISOString());
-  const { channelId, title } = req.body;
-  console.log('🔥 KICK SETUP BODY:', { channelId, title, user: req.user?.id });
-
-  logger.info('=== KICK SETUP STARTED ===', {
-    channelId,
-    title,
-    userId: req.user?.id,
-    userRole: req.user?.role,
-    timestamp: new Date().toISOString()
-  });
-
   try {
+    console.log('🔥 KICK SETUP REQUEST RECEIVED', new Date().toISOString());
+    const { channelId, title } = req.body;
+    console.log('🔥 KICK SETUP BODY:', { channelId, title, user: req.user?.id });
+
+    logger.info('=== KICK SETUP STARTED ===', {
+      channelId,
+      title,
+      userId: req.user?.id,
+      userRole: req.user?.role,
+      timestamp: new Date().toISOString()
+    });
 
     if (!channelId || !title) {
       logger.warn('Kick setup: Missing required fields', { channelId, title });
