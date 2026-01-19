@@ -212,13 +212,17 @@ class WebRTCBridgeService {
       audioSink.ondata = ({ samples }) => {
         // Write audio samples to FFmpeg
         const ffmpegProcess = this.ffmpegProcesses.get(channelId);
-        if (ffmpegProcess && ffmpegProcess.audioStdin && !ffmpegProcess.audioStdin.destroyed) {
+        const stdinClosed = this.ffmpegStdinClosed.get(channelId);
+
+        if (ffmpegProcess && ffmpegProcess.audioStdin && !ffmpegProcess.audioStdin.destroyed && !stdinClosed) {
           try {
             // Convert samples to buffer
             const buffer = Buffer.from(samples.buffer);
             ffmpegProcess.audioStdin.write(buffer);
           } catch (err) {
             logger.error(`Failed to write audio samples for channel ${channelId}`, { error: err.message });
+            // Mark stdin as closed to prevent further write attempts
+            this.ffmpegStdinClosed.set(channelId, true);
           }
         }
       };
