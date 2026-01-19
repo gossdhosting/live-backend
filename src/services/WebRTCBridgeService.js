@@ -1,9 +1,9 @@
 import { spawn } from 'child_process';
 import wrtc from 'wrtc';
-const { RTCPeerConnection, RTCSessionDescription, RTCIceCandidate, nonstandard } = wrtc;
 import logger from '../utils/logger.js';
 import Channel from '../models/Channel.js';
 
+const { RTCPeerConnection, RTCSessionDescription, RTCIceCandidate, nonstandard } = wrtc;
 const { RTCAudioSink, RTCVideoSink } = nonstandard;
 
 /**
