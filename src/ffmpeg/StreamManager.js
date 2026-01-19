@@ -11,6 +11,7 @@ import RtmpDestination from '../models/RtmpDestination.js';
 import User from '../models/User.js';
 import Plan from '../models/Plan.js';
 import logger from '../utils/logger.js';
+import webrtcBridgeService from '../services/WebRTCBridgeService.js';
 
 class StreamManager {
   constructor() {
@@ -434,19 +435,27 @@ class StreamManager {
         });
       }
 
-      // --- HANDLE INPUT TYPE (YOUTUBE VS VIDEO FILE VS RTMP) ---
+      // --- HANDLE INPUT TYPE (YOUTUBE VS VIDEO FILE VS RTMP VS WEBCAM) ---
       let resolvedInputUrl = channel.input_url;
       const isVideoFile = channel.input_type === 'video';
       const isRtmpInput = channel.input_type === 'rtmp';
+      const isWebcamInput = channel.input_type === 'webcam';
 
-      // If input type is RTMP, use nginx-rtmp as input source
-      if (isRtmpInput) {
-        // RTMP input comes from nginx-rtmp server on 127.0.0.1
+      // If input type is RTMP or Webcam, use nginx-rtmp as input source
+      if (isRtmpInput || isWebcamInput) {
+        // RTMP/Webcam input comes from nginx-rtmp server on 127.0.0.1
         // Use explicit IPv4 to avoid IPv6 resolution issues
         // Format: rtmp://127.0.0.1:1935/live/{stream_key}
         const rtmpInputUrl = `rtmp://127.0.0.1:1935/live/${channel.stream_key}`;
         resolvedInputUrl = rtmpInputUrl;
-        logger.info(`Using RTMP input for channel ${channelId}: ${rtmpInputUrl}`);
+
+        if (isWebcamInput) {
+          logger.info(`Using Webcam input for channel ${channelId}: ${rtmpInputUrl} (via WebRTC bridge)`);
+          // Update channel status to waiting for WebRTC connection
+          await Channel.updateStatus(channelId, 'waiting_for_input', null, 'Waiting for camera connection...');
+        } else {
+          logger.info(`Using RTMP input for channel ${channelId}: ${rtmpInputUrl}`);
+        }
       }
       // If input type is video, get the file path from MediaFile
       else if (isVideoFile) {
@@ -1549,6 +1558,17 @@ class StreamManager {
       // Clear reconnect attempts
       this.reconnectAttempts.delete(channelId);
 
+      // Stop WebRTC bridge if this is a webcam input
+      const channel = await Channel.findById(channelId);
+      if (channel && channel.input_type === 'webcam') {
+        try {
+          await webrtcBridgeService.stopBridge(channelId);
+          logger.info(`WebRTC bridge stopped for channel ${channelId}`);
+        } catch (error) {
+          logger.error(`Failed to stop WebRTC bridge for channel ${channelId}`, { error: error.message });
+        }
+      }
+
       // Clear duration timer if exists
       if (this.durationTimers && this.durationTimers.has(channelId)) {
         clearTimeout(this.durationTimers.get(channelId));
@@ -1902,14 +1922,16 @@ const streamManager = new StreamManager();
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
-  logger.info('SIGTERM received, stopping all streams');
+  logger.info('SIGTERM received, stopping all streams and WebRTC bridges');
   await streamManager.stopAllStreams();
+  await webrtcBridgeService.cleanup();
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
-  logger.info('SIGINT received, stopping all streams');
+  logger.info('SIGINT received, stopping all streams and WebRTC bridges');
   await streamManager.stopAllStreams();
+  await webrtcBridgeService.cleanup();
   process.exit(0);
 });
 

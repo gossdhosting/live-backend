@@ -142,8 +142,12 @@ export const createChannel = async (req, res) => {
       // RTMP input type doesn't require input_url or media_file_id
       // Stream will come from nginx-rtmp server via stream key
       logger.info('Creating RTMP input channel', { name, userId: req.user.id });
+    } else if (finalInputType === 'webcam') {
+      // Webcam input type doesn't require input_url or media_file_id
+      // Stream will come from WebRTC bridge to nginx-rtmp server via stream key
+      logger.info('Creating webcam input channel', { name, userId: req.user.id });
     } else {
-      return res.status(400).json({ error: 'Invalid input type. Must be "youtube", "video", or "rtmp"' });
+      return res.status(400).json({ error: 'Invalid input type. Must be "youtube", "video", "rtmp", or "webcam"' });
     }
 
     // Validate quality preset against plan limits (unless admin)
