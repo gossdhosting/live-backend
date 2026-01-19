@@ -16,8 +16,26 @@ export const startWebRTC = async (req, res) => {
       return res.status(404).json({ error: 'Channel not found' });
     }
 
-    if (channel.user_id !== userId && !req.user.isAdmin) {
-      return res.status(403).json({ error: 'Unauthorized' });
+    // Compare user IDs (handle both number and string types)
+    const channelUserId = parseInt(channel.user_id);
+    const requestUserId = parseInt(userId);
+    const isAdmin = req.user.isAdmin || req.user.role === 'admin';
+
+    logger.info(`WebRTC authorization check for channel ${channelId}`, {
+      channelUserId,
+      requestUserId,
+      isAdmin,
+      match: channelUserId === requestUserId
+    });
+
+    if (channelUserId !== requestUserId && !isAdmin) {
+      logger.warn(`Unauthorized WebRTC access attempt`, {
+        channelId,
+        channelUserId,
+        requestUserId,
+        isAdmin
+      });
+      return res.status(403).json({ error: 'Unauthorized: You do not own this channel' });
     }
 
     if (channel.input_type !== 'webcam') {
@@ -67,8 +85,13 @@ export const handleOffer = async (req, res) => {
       return res.status(404).json({ error: 'Channel not found' });
     }
 
-    if (channel.user_id !== req.user.userId && !req.user.isAdmin) {
-      return res.status(403).json({ error: 'Unauthorized' });
+    // Compare user IDs (handle both number and string types)
+    const channelUserId = parseInt(channel.user_id);
+    const requestUserId = parseInt(req.user.userId);
+    const isAdmin = req.user.isAdmin || req.user.role === 'admin';
+
+    if (channelUserId !== requestUserId && !isAdmin) {
+      return res.status(403).json({ error: 'Unauthorized: You do not own this channel' });
     }
 
     // Handle offer and get answer
@@ -100,8 +123,13 @@ export const createOffer = async (req, res) => {
       return res.status(404).json({ error: 'Channel not found' });
     }
 
-    if (channel.user_id !== req.user.userId && !req.user.isAdmin) {
-      return res.status(403).json({ error: 'Unauthorized' });
+    // Compare user IDs (handle both number and string types)
+    const channelUserId = parseInt(channel.user_id);
+    const requestUserId = parseInt(req.user.userId);
+    const isAdmin = req.user.isAdmin || req.user.role === 'admin';
+
+    if (channelUserId !== requestUserId && !isAdmin) {
+      return res.status(403).json({ error: 'Unauthorized: You do not own this channel' });
     }
 
     // Create offer
@@ -138,8 +166,13 @@ export const setAnswer = async (req, res) => {
       return res.status(404).json({ error: 'Channel not found' });
     }
 
-    if (channel.user_id !== req.user.userId && !req.user.isAdmin) {
-      return res.status(403).json({ error: 'Unauthorized' });
+    // Compare user IDs (handle both number and string types)
+    const channelUserId = parseInt(channel.user_id);
+    const requestUserId = parseInt(req.user.userId);
+    const isAdmin = req.user.isAdmin || req.user.role === 'admin';
+
+    if (channelUserId !== requestUserId && !isAdmin) {
+      return res.status(403).json({ error: 'Unauthorized: You do not own this channel' });
     }
 
     // Set answer
@@ -176,8 +209,13 @@ export const addIceCandidate = async (req, res) => {
       return res.status(404).json({ error: 'Channel not found' });
     }
 
-    if (channel.user_id !== req.user.userId && !req.user.isAdmin) {
-      return res.status(403).json({ error: 'Unauthorized' });
+    // Compare user IDs (handle both number and string types)
+    const channelUserId = parseInt(channel.user_id);
+    const requestUserId = parseInt(req.user.userId);
+    const isAdmin = req.user.isAdmin || req.user.role === 'admin';
+
+    if (channelUserId !== requestUserId && !isAdmin) {
+      return res.status(403).json({ error: 'Unauthorized: You do not own this channel' });
     }
 
     // Add ICE candidate
@@ -207,8 +245,13 @@ export const stopWebRTC = async (req, res) => {
       return res.status(404).json({ error: 'Channel not found' });
     }
 
-    if (channel.user_id !== req.user.userId && !req.user.isAdmin) {
-      return res.status(403).json({ error: 'Unauthorized' });
+    // Compare user IDs (handle both number and string types)
+    const channelUserId = parseInt(channel.user_id);
+    const requestUserId = parseInt(req.user.userId);
+    const isAdmin = req.user.isAdmin || req.user.role === 'admin';
+
+    if (channelUserId !== requestUserId && !isAdmin) {
+      return res.status(403).json({ error: 'Unauthorized: You do not own this channel' });
     }
 
     // Stop WebRTC bridge
@@ -243,8 +286,13 @@ export const getStatus = async (req, res) => {
       return res.status(404).json({ error: 'Channel not found' });
     }
 
-    if (channel.user_id !== req.user.userId && !req.user.isAdmin) {
-      return res.status(403).json({ error: 'Unauthorized' });
+    // Compare user IDs (handle both number and string types)
+    const channelUserId = parseInt(channel.user_id);
+    const requestUserId = parseInt(req.user.userId);
+    const isAdmin = req.user.isAdmin || req.user.role === 'admin';
+
+    if (channelUserId !== requestUserId && !isAdmin) {
+      return res.status(403).json({ error: 'Unauthorized: You do not own this channel' });
     }
 
     // Get status
