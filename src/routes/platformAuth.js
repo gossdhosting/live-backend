@@ -4,7 +4,6 @@ import { checkPlanLimit } from '../middleware/permissions.js';
 import FacebookService from '../services/FacebookService.js';
 import YouTubeService from '../services/YouTubeService.js';
 import TwitchService from '../services/TwitchService.js';
-import KickService from '../services/KickService.js';
 import PlatformConnection from '../models/PlatformConnection.js';
 import User from '../models/User.js';
 import logger from '../utils/logger.js';
@@ -228,81 +227,6 @@ router.get('/twitch/callback', async (req, res) => {
     logger.error('Twitch OAuth callback failed', { error: error.message, stack: error.stack, userId: state ? JSON.parse(state).userId : 'unknown' });
     console.error('Twitch OAuth callback error:', error);
     res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?tab=platforms&error=twitch_auth_failed`);
-  }
-});
-
-// ==================== KICK ====================
-
-// Initiate Kick OAuth
-router.get('/kick', authenticateToken, (req, res) => {
-  try {
-    const state = JSON.stringify({ userId: req.user.id });
-    const authUrl = KickService.getAuthUrl(state);
-    res.json({ authUrl });
-  } catch (error) {
-    logger.error('Failed to generate Kick auth URL', { error: error.message });
-    res.status(500).json({ error: 'Failed to initiate Kick authentication' });
-  }
-});
-
-// Kick OAuth callback
-router.get('/kick/callback', async (req, res) => {
-  const { code, state } = req.query;
-
-  logger.info('Kick OAuth callback received', { code: code ? 'present' : 'missing', state });
-
-  if (!code) {
-    logger.error('Kick OAuth callback: No code provided');
-    return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?error=kick_auth_failed`);
-  }
-
-  try {
-    const { userId } = JSON.parse(state);
-    logger.info('Kick OAuth: Starting token exchange', { userId });
-
-    // Exchange code for access token (with PKCE code verifier)
-    const tokenData = await KickService.getAccessToken(code, userId);
-    logger.info('Kick OAuth: Token received', { hasAccessToken: !!tokenData.access_token, hasRefreshToken: !!tokenData.refresh_token });
-
-    // Get user info
-    const userInfo = await KickService.getUserInfo(tokenData.access_token);
-    logger.info('Kick OAuth: User info received', { userId: userInfo.id, username: userInfo.username });
-
-    // Calculate token expiry
-    const expiresAt = tokenData.expires_in
-      ? new Date(Date.now() + tokenData.expires_in * 1000)
-      : null;
-
-    // Delete existing Kick connection for this user
-    await PlatformConnection.deleteByPlatformAndUser('kick', userId);
-
-    // Save connection
-    await PlatformConnection.create({
-      platform: 'kick',
-      user_id: userId,
-      access_token: tokenData.access_token,
-      refresh_token: tokenData.refresh_token,
-      token_expires_at: expiresAt?.toISOString(),
-      platform_user_id: userInfo.id.toString(),
-      platform_user_name: userInfo.username,
-      platform_user_email: userInfo.email,
-      platform_channel_id: userInfo.id.toString(),
-      platform_channel_name: userInfo.username,
-      scopes: tokenData.scope || [],
-    });
-
-    logger.info('Kick account connected successfully', { userId, kickUserId: userInfo.id });
-
-    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?tab=platforms&success=kick_connected`);
-  } catch (error) {
-    logger.error('Kick OAuth callback failed', {
-      error: error.message,
-      stack: error.stack,
-      response: error.response?.data,
-      userId: state ? JSON.parse(state).userId : 'unknown'
-    });
-    console.error('Kick OAuth callback error:', error);
-    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?tab=platforms&error=kick_auth_failed`);
   }
 });
 

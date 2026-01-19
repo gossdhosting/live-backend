@@ -29,13 +29,6 @@ export const platformConfig = {
     scopes: ['user:read:email', 'channel:manage:broadcast', 'channel:read:stream_key'],
   },
 
-  kick: {
-    clientId: process.env.KICK_CLIENT_ID,
-    clientSecret: process.env.KICK_CLIENT_SECRET,
-    redirectUri: process.env.KICK_REDIRECT_URI || 'http://localhost:3001/api/platforms/auth/kick/callback',
-    scopes: ['user:read', 'channel:read', 'streamkey:read'],
-  },
-
   // Base URLs
   baseUrl: process.env.BASE_URL || 'http://localhost:3001',
 };
