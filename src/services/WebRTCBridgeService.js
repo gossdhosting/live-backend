@@ -125,12 +125,21 @@ class WebRTCBridgeService {
       this.videoSinks.set(channelId, videoSink);
 
       let frameCount = 0;
-      videoSink.onframe = ({ frame }) => {
+      videoSink.onframe = async ({ frame }) => {
         frameCount++;
 
         // Start FFmpeg bridge on first frame
         if (frameCount === 1) {
+          logger.info(`First video frame received for channel ${channelId}`);
           this.startFFmpegBridge(channelId, streamKey, frame);
+
+          // Update channel status to running
+          try {
+            await Channel.update(channelId, { status: 'running' });
+            logger.info(`Channel ${channelId} status updated to running`);
+          } catch (err) {
+            logger.error(`Failed to update channel status for ${channelId}`, { error: err.message });
+          }
         }
 
         // Write frame to FFmpeg stdin
@@ -352,6 +361,14 @@ class WebRTCBridgeService {
 
       // Clear pending ICE candidates
       this.pendingIceCandidates.delete(channelId);
+
+      // Update channel status to stopped
+      try {
+        await Channel.update(channelId, { status: 'stopped' });
+        logger.info(`Channel ${channelId} status updated to stopped`);
+      } catch (err) {
+        logger.error(`Failed to update channel status for ${channelId}`, { error: err.message });
+      }
 
       logger.info(`WebRTC bridge stopped for channel ${channelId}`);
 
