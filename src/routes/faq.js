@@ -1,6 +1,6 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
-import { checkAdmin } from '../middleware/permissions.js';
+import { requireAdmin } from '../middleware/permissions.js';
 import FAQ from '../models/FAQ.js';
 import logger from '../utils/logger.js';
 
@@ -18,7 +18,7 @@ router.get('/', async (req, res) => {
 });
 
 // Get all FAQs including inactive (admin only)
-router.get('/all', authenticateToken, checkAdmin, async (req, res) => {
+router.get('/all', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const faqs = await FAQ.getAll();
     res.json({ faqs });
@@ -43,7 +43,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // Create FAQ (admin only)
-router.post('/', authenticateToken, checkAdmin, async (req, res) => {
+router.post('/', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { question, answer, category, display_order, is_active } = req.body;
 
@@ -68,7 +68,7 @@ router.post('/', authenticateToken, checkAdmin, async (req, res) => {
 });
 
 // Update FAQ (admin only)
-router.put('/:id', authenticateToken, checkAdmin, async (req, res) => {
+router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { question, answer, category, display_order, is_active } = req.body;
 
@@ -97,7 +97,7 @@ router.put('/:id', authenticateToken, checkAdmin, async (req, res) => {
 });
 
 // Delete FAQ (admin only)
-router.delete('/:id', authenticateToken, checkAdmin, async (req, res) => {
+router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
     await FAQ.delete(req.params.id);
     logger.info('FAQ deleted', { faqId: req.params.id, userId: req.user.id });
@@ -109,7 +109,7 @@ router.delete('/:id', authenticateToken, checkAdmin, async (req, res) => {
 });
 
 // Reorder FAQs (admin only)
-router.post('/reorder', authenticateToken, checkAdmin, async (req, res) => {
+router.post('/reorder', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { faqOrders } = req.body;
 
