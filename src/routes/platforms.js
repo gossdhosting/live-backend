@@ -470,6 +470,7 @@ router.post('/kick/setup-stream', authenticateToken, async (req, res) => {
     console.log('🔥 KICK SETUP REQUEST RECEIVED', new Date().toISOString());
     const { channelId, title } = req.body;
     console.log('🔥 KICK SETUP BODY:', { channelId, title, user: req.user?.id });
+    console.log('🔥 ABOUT TO CALL LOGGER.INFO');
 
     logger.info('=== KICK SETUP STARTED ===', {
       channelId,
@@ -479,30 +480,41 @@ router.post('/kick/setup-stream', authenticateToken, async (req, res) => {
       timestamp: new Date().toISOString()
     });
 
+    console.log('🔥 LOGGER.INFO COMPLETED');
+
     if (!channelId || !title) {
+      console.log('🔥 MISSING REQUIRED FIELDS');
       logger.warn('Kick setup: Missing required fields', { channelId, title });
       return res.status(400).json({ error: 'Channel ID and title are required' });
     }
 
+    console.log('🔥 VALIDATION PASSED, FETCHING CHANNEL');
     // Validate channel exists and check ownership
     logger.info('Kick setup: Fetching channel', { channelId });
     const channel = await Channel.findById(channelId);
+    console.log('🔥 CHANNEL FETCHED:', { found: !!channel, channelId });
     if (!channel) {
+      console.log('🔥 CHANNEL NOT FOUND');
       logger.warn('Kick setup: Channel not found', { channelId });
       return res.status(404).json({ error: 'Channel not found' });
     }
     logger.info('Kick setup: Channel found', { channelId, channelUserId: channel.user_id });
+    console.log('🔥 CHANNEL FOUND, CHECKING OWNERSHIP');
 
     // Check channel ownership (admins can access all, users only their own)
     if (req.user.role !== 'admin' && Number(channel.user_id) !== Number(req.user.id)) {
+      console.log('🔥 UNAUTHORIZED ACCESS');
       logger.warn('Kick setup: Unauthorized access', { channelUserId: channel.user_id, requestUserId: req.user.id });
       return res.status(403).json({ error: 'Unauthorized access to this channel' });
     }
 
+    console.log('🔥 OWNERSHIP CHECK PASSED, FETCHING CONNECTION');
     logger.info('Kick setup: Fetching Kick connection', { userId: req.user.id });
     const connection = await PlatformConnection.getByPlatformAndUser('kick', req.user.id);
+    console.log('🔥 CONNECTION FETCHED:', { found: !!connection });
 
     if (!connection) {
+      console.log('🔥 CONNECTION NOT FOUND');
       logger.warn('Kick setup: No Kick connection found', { userId: req.user.id });
       return res.status(404).json({ error: 'Kick account not connected' });
     }
@@ -513,35 +525,44 @@ router.post('/kick/setup-stream', authenticateToken, async (req, res) => {
       tokenExpires: connection.token_expires_at,
       platformUsername: connection.platform_user_name
     });
+    console.log('🔥 CONNECTION FOUND, CHECKING FOR DUPLICATES');
 
     // Check for duplicate Kick stream
     logger.info('Kick setup: Checking for existing Kick streams', { channelId });
     const existingStreams = await PlatformStream.getByChannelId(channelId);
+    console.log('🔥 EXISTING STREAMS FETCHED:', { count: existingStreams?.length, isArray: Array.isArray(existingStreams) });
     const existingKickStream = (Array.isArray(existingStreams) ? existingStreams : []).find(s => s.platform === 'kick' && (s.enabled === 1 || s.enabled === true));
+    console.log('🔥 DUPLICATE CHECK:', { hasDuplicate: !!existingKickStream });
     if (existingKickStream) {
+      console.log('🔥 DUPLICATE FOUND');
       logger.warn('Kick setup: Duplicate stream found', { existingStreamId: existingKickStream.id });
       return res.status(400).json({
         error: 'A Kick stream already exists for this channel. Please delete the existing one first.'
       });
     }
     logger.info('Kick setup: No duplicate streams found');
+    console.log('🔥 NO DUPLICATES, REFRESHING TOKEN');
 
     logger.info('Kick setup: Refreshing token if needed', { connectionId: connection.id });
     const refreshedConnection = await KickService.refreshTokenIfNeeded(connection);
+    console.log('🔥 TOKEN REFRESHED, SETTING UP STREAM');
     logger.info('Kick setup: Token refresh complete', { hasAccessToken: !!refreshedConnection.access_token });
 
     // Setup stream
     logger.info('Kick setup: Setting up stream with Kick API', { username: refreshedConnection.platform_user_name });
+    console.log('🔥 CALLING KickService.setupStream');
     const stream = await KickService.setupStream(
       refreshedConnection.access_token,
       refreshedConnection.platform_user_name
     );
+    console.log('🔥 STREAM SETUP COMPLETE:', { hasRtmpUrl: !!stream.rtmp_url, hasStreamKey: !!stream.stream_key });
     logger.info('Kick setup: Stream setup complete', {
       hasRtmpUrl: !!stream.rtmp_url,
       hasStreamKey: !!stream.stream_key,
       channelId: stream.channel_id
     });
 
+    console.log('🔥 SAVING TO DATABASE');
     // Save platform stream (single source of truth)
     const platformStream = await PlatformStream.create({
       channel_id: channelId,
@@ -554,16 +575,20 @@ router.post('/kick/setup-stream', authenticateToken, async (req, res) => {
       enabled: 1,
     });
 
+    console.log('🔥 SAVED TO DATABASE:', { platformStreamId: platformStream.id });
     logger.info('Kick stream setup', {
       channelId,
       platformStreamId: platformStream.id,
       userId: req.user.id,
     });
 
+    console.log('🔥 CHECKING IF CHANNEL IS RUNNING');
     // Check if channel is running
     const channelStatus = await Channel.findById(channelId);
     const needsRestart = channelStatus && channelStatus.status === 'running';
+    console.log('🔥 CHANNEL STATUS:', { status: channelStatus?.status, needsRestart });
 
+    console.log('🔥 SENDING SUCCESS RESPONSE');
     res.json({
       success: true,
       platformStream,
@@ -574,6 +599,8 @@ router.post('/kick/setup-stream', authenticateToken, async (req, res) => {
         : 'Kick stream created successfully'
     });
   } catch (error) {
+    console.log('🔥🔥🔥 ERROR CAUGHT:', error.message);
+    console.log('🔥🔥🔥 ERROR STACK:', error.stack);
     logger.error('Failed to setup Kick stream', {
       error: error.message,
       stack: error.stack,
