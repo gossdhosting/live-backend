@@ -26,12 +26,18 @@ class TwitchService {
     const config = platformConfig.twitch;
 
     try {
-      const response = await axios.post('https://id.twitch.tv/oauth2/token', {
+      const params = new URLSearchParams({
         client_id: config.clientId,
         client_secret: config.clientSecret,
         code: code,
         grant_type: 'authorization_code',
         redirect_uri: config.redirectUri,
+      });
+
+      const response = await axios.post('https://id.twitch.tv/oauth2/token', params.toString(), {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
       });
 
       return response.data;
@@ -252,11 +258,18 @@ class TwitchService {
     const config = platformConfig.twitch;
 
     try {
-      const response = await axios.post('https://id.twitch.tv/oauth2/token', {
+      // URL encode the refresh token and use x-www-form-urlencoded format
+      const params = new URLSearchParams({
         client_id: config.clientId,
         client_secret: config.clientSecret,
         grant_type: 'refresh_token',
-        refresh_token: refreshToken,
+        refresh_token: refreshToken, // URLSearchParams automatically URL encodes
+      });
+
+      const response = await axios.post('https://id.twitch.tv/oauth2/token', params.toString(), {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
       });
 
       return response.data;
@@ -293,16 +306,18 @@ class TwitchService {
     this.tokenRefreshLocks.set(lockKey, lockPromise);
 
     try {
+      logger.info('Twitch: Refreshing access token', { connectionId: connection.id });
       const newTokens = await this.refreshAccessToken(connection.refresh_token);
 
-      // Update connection with new tokens
+      // Update connection with new tokens (Twitch returns both new access and refresh tokens)
       const expiresAt = new Date(Date.now() + newTokens.expires_in * 1000);
       await PlatformConnection.update(connection.id, {
         access_token: newTokens.access_token,
-        refresh_token: newTokens.refresh_token,
+        refresh_token: newTokens.refresh_token, // Twitch provides a new refresh token
         token_expires_at: expiresAt.toISOString(),
       });
 
+      logger.info('Twitch: Token refreshed successfully', { connectionId: connection.id });
       return newTokens.access_token;
     } finally {
       // Release the lock
