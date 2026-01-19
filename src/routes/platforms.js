@@ -466,7 +466,9 @@ router.delete('/streams/:id', authenticateToken, async (req, res) => {
 
 // Setup Kick stream
 router.post('/kick/setup-stream', authenticateToken, async (req, res) => {
+  console.log('🔥 KICK SETUP REQUEST RECEIVED', new Date().toISOString());
   const { channelId, title } = req.body;
+  console.log('🔥 KICK SETUP BODY:', { channelId, title, user: req.user?.id });
 
   logger.info('=== KICK SETUP STARTED ===', {
     channelId,
