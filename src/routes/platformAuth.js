@@ -29,7 +29,7 @@ router.get('/facebook/callback', async (req, res) => {
   const { code, state } = req.query;
 
   if (!code) {
-    return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?error=facebook_auth_failed`);
+    return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/platforms?error=facebook_auth_failed`);
   }
 
   try {
@@ -73,11 +73,11 @@ router.get('/facebook/callback', async (req, res) => {
 
     logger.info('Facebook account connected', { userId, fbUserId: userInfo.id });
 
-    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?tab=platforms&success=facebook_connected`);
+    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/platforms?success=facebook_connected`);
   } catch (error) {
     logger.error('Facebook OAuth callback failed', { error: error.message, stack: error.stack, userId: state ? JSON.parse(state).userId : 'unknown' });
     console.error('Facebook OAuth callback error:', error);
-    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?tab=platforms&error=facebook_auth_failed`);
+    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/platforms?error=facebook_auth_failed`);
   }
 });
 
@@ -105,7 +105,7 @@ router.get('/youtube/callback', async (req, res) => {
   if (!code) {
     console.log('=== YouTube OAuth - no code provided ===');
     logger.warn('YouTube OAuth callback - no code provided');
-    return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?error=youtube_auth_failed`);
+    return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/platforms?error=youtube_auth_failed`);
   }
 
   try {
@@ -160,11 +160,11 @@ router.get('/youtube/callback', async (req, res) => {
     console.log('=== YouTube account connected successfully ===', { userId, channelId: channelInfo.id });
     logger.info('YouTube account connected successfully', { userId, channelId: channelInfo.id });
 
-    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?tab=platforms&success=youtube_connected`);
+    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/platforms?success=youtube_connected`);
   } catch (error) {
     console.error('=== YouTube OAuth callback FAILED ===', { error: error.message, stack: error.stack });
     logger.error('YouTube OAuth callback failed', { error: error.message, stack: error.stack });
-    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?tab=platforms&error=youtube_auth_failed`);
+    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/platforms?error=youtube_auth_failed`);
   }
 });
 
@@ -187,7 +187,7 @@ router.get('/twitch/callback', async (req, res) => {
   const { code, state } = req.query;
 
   if (!code) {
-    return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?error=twitch_auth_failed`);
+    return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/platforms?error=twitch_auth_failed`);
   }
 
   try {
@@ -222,11 +222,11 @@ router.get('/twitch/callback', async (req, res) => {
 
     logger.info('Twitch account connected', { userId, twitchUserId: userInfo.id });
 
-    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?tab=platforms&success=twitch_connected`);
+    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/platforms?success=twitch_connected`);
   } catch (error) {
     logger.error('Twitch OAuth callback failed', { error: error.message, stack: error.stack, userId: state ? JSON.parse(state).userId : 'unknown' });
     console.error('Twitch OAuth callback error:', error);
-    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?tab=platforms&error=twitch_auth_failed`);
+    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/platforms?error=twitch_auth_failed`);
   }
 });
 
