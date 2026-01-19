@@ -19,6 +19,7 @@ class WebRTCBridgeService {
     this.audioSinks = new Map(); // channelId -> RTCAudioSink
     this.streamStates = new Map(); // channelId -> { status, startTime, errors }
     this.pendingIceCandidates = new Map(); // channelId -> Array of ICE candidates
+    this.remoteDescriptionSet = new Map(); // channelId -> boolean (tracks if remote description is set)
   }
 
   /**
@@ -64,7 +65,9 @@ class WebRTCBridgeService {
             credential: 'openrelayproject'
           }
         ],
-        iceCandidatePoolSize: 10
+        iceCandidatePoolSize: 10,
+        // Configure UDP port range for media traffic (requires firewall to allow these ports)
+        portRange: { min: 50000, max: 50100 }
       });
 
       // Handle incoming tracks (video and audio)
@@ -362,6 +365,9 @@ class WebRTCBridgeService {
       // Clear pending ICE candidates
       this.pendingIceCandidates.delete(channelId);
 
+      // Clear remote description tracking
+      this.remoteDescriptionSet.delete(channelId);
+
       // Update channel status to stopped
       try {
         await Channel.update(channelId, { status: 'stopped' });
@@ -448,6 +454,12 @@ class WebRTCBridgeService {
 
       await peerConnection.setRemoteDescription(offer);
 
+      // Mark that remote description is set for this channel
+      if (!this.remoteDescriptionSet) {
+        this.remoteDescriptionSet = new Map();
+      }
+      this.remoteDescriptionSet.set(channelId, true);
+
       // Process any pending ICE candidates now that remote description is set
       await this.processPendingIceCandidates(channelId);
 
@@ -455,10 +467,41 @@ class WebRTCBridgeService {
       const answer = await peerConnection.createAnswer();
       await peerConnection.setLocalDescription(answer);
 
-      return {
-        type: answer.type,
-        sdp: answer.sdp
+      // Wait for ICE gathering to complete before sending answer
+      // This bundles all server ICE candidates into the SDP
+      if (peerConnection.iceGatheringState !== 'complete') {
+        logger.info(`Waiting for ICE gathering to complete for channel ${channelId}...`);
+        await new Promise((resolve) => {
+          const checkState = () => {
+            logger.debug(`ICE gathering state for channel ${channelId}: ${peerConnection.iceGatheringState}`);
+            if (peerConnection.iceGatheringState === 'complete') {
+              peerConnection.removeEventListener('icegatheringstatechange', checkState);
+              logger.info(`ICE gathering completed for channel ${channelId}`);
+              resolve();
+            }
+          };
+          peerConnection.addEventListener('icegatheringstatechange', checkState);
+
+          // Timeout after 5 seconds if ICE gathering doesn't complete
+          setTimeout(() => {
+            peerConnection.removeEventListener('icegatheringstatechange', checkState);
+            logger.warn(`ICE gathering timeout for channel ${channelId}, proceeding anyway`);
+            resolve();
+          }, 5000);
+        });
+      } else {
+        logger.info(`ICE gathering already complete for channel ${channelId}`);
+      }
+
+      // Return the answer with bundled ICE candidates
+      const finalAnswer = {
+        type: peerConnection.localDescription.type,
+        sdp: peerConnection.localDescription.sdp
       };
+
+      logger.info(`Answer created for channel ${channelId} with bundled ICE candidates`);
+
+      return finalAnswer;
 
     } catch (error) {
       logger.error(`Failed to handle offer for channel ${channelId}`, { error: error.message });
@@ -481,14 +524,17 @@ class WebRTCBridgeService {
         return;
       }
 
-      // Check if remote description is set
-      if (!peerConnection.remoteDescription) {
+      // Check if remote description is set using our tracking map
+      const isRemoteDescSet = this.remoteDescriptionSet && this.remoteDescriptionSet.get(channelId);
+
+      if (!isRemoteDescSet && !peerConnection.remoteDescription) {
         // Queue the candidate for later
         logger.debug(`Queueing ICE candidate for channel ${channelId} - remote description not set yet`);
         if (!this.pendingIceCandidates.has(channelId)) {
           this.pendingIceCandidates.set(channelId, []);
         }
         this.pendingIceCandidates.get(channelId).push(candidateData);
+        logger.info(`Queued ICE candidate for channel ${channelId} (queue size: ${this.pendingIceCandidates.get(channelId).length})`);
         return;
       }
 
