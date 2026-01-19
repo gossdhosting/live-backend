@@ -20,6 +20,7 @@ class WebRTCBridgeService {
     this.streamStates = new Map(); // channelId -> { status, startTime, errors }
     this.pendingIceCandidates = new Map(); // channelId -> Array of ICE candidates
     this.remoteDescriptionSet = new Map(); // channelId -> boolean (tracks if remote description is set)
+    this.ffmpegStdinClosed = new Map(); // channelId -> boolean (tracks if FFmpeg stdin has been closed)
   }
 
   /**
@@ -164,6 +165,8 @@ class WebRTCBridgeService {
               if (ffmpegProcess.audioStdin && !ffmpegProcess.audioStdin.destroyed) {
                 ffmpegProcess.audioStdin.end();
               }
+              // Mark stdin as closed
+              this.ffmpegStdinClosed.set(channelId, true);
               ffmpegProcess.kill('SIGTERM');
             } catch (err) {
               logger.error(`Error killing FFmpeg process for resolution change: ${err.message}`);
@@ -178,12 +181,16 @@ class WebRTCBridgeService {
 
         // Write frame to FFmpeg stdin
         const ffmpegProcess = this.ffmpegProcesses.get(channelId);
-        if (ffmpegProcess && ffmpegProcess.stdin && !ffmpegProcess.stdin.destroyed) {
+        const stdinClosed = this.ffmpegStdinClosed.get(channelId);
+
+        if (ffmpegProcess && ffmpegProcess.stdin && !ffmpegProcess.stdin.destroyed && !stdinClosed) {
           const yuv = this.convertToYUV420(frame);
           try {
             ffmpegProcess.stdin.write(yuv);
           } catch (err) {
             logger.error(`Failed to write video frame for channel ${channelId}`, { error: err.message });
+            // Mark stdin as closed to prevent further write attempts
+            this.ffmpegStdinClosed.set(channelId, true);
           }
         }
       };
@@ -337,6 +344,9 @@ class WebRTCBridgeService {
       // Store FFmpeg process
       this.ffmpegProcesses.set(channelId, ffmpegProcess);
 
+      // Mark stdin as open
+      this.ffmpegStdinClosed.set(channelId, false);
+
       logger.info(`FFmpeg bridge started for channel ${channelId}`);
 
     } catch (error) {
@@ -376,6 +386,9 @@ class WebRTCBridgeService {
           ffmpegProcess.audioStdin.end();
         }
 
+        // Mark stdin as closed
+        this.ffmpegStdinClosed.set(channelId, true);
+
         // Give FFmpeg time to flush buffers
         setTimeout(() => {
           if (ffmpegProcess && !ffmpegProcess.killed) {
@@ -401,6 +414,9 @@ class WebRTCBridgeService {
 
       // Clear remote description tracking
       this.remoteDescriptionSet.delete(channelId);
+
+      // Clear FFmpeg stdin tracking
+      this.ffmpegStdinClosed.delete(channelId);
 
       // Update channel status to stopped
       try {
