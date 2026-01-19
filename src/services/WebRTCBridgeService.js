@@ -234,10 +234,13 @@ class WebRTCBridgeService {
     // Create YUV buffer
     const yuv = Buffer.alloc(ySize + uvSize * 2);
 
+    // Convert frame.data (Uint8ClampedArray) to Buffer
+    const frameBuffer = Buffer.from(frame.data);
+
     // Copy Y, U, V planes from frame data
-    frame.data.copy(yuv, 0, 0, ySize); // Y plane
-    frame.data.copy(yuv, ySize, ySize, ySize + uvSize); // U plane
-    frame.data.copy(yuv, ySize + uvSize, ySize + uvSize, ySize + uvSize * 2); // V plane
+    frameBuffer.copy(yuv, 0, 0, ySize); // Y plane
+    frameBuffer.copy(yuv, ySize, ySize, ySize + uvSize); // U plane
+    frameBuffer.copy(yuv, ySize + uvSize, ySize + uvSize, ySize + uvSize * 2); // V plane
 
     return yuv;
   }
