@@ -128,12 +128,18 @@ class WebRTCBridgeService {
       this.videoSinks.set(channelId, videoSink);
 
       let frameCount = 0;
+      let currentResolution = null; // Track current FFmpeg resolution
+
       videoSink.onframe = async ({ frame }) => {
         frameCount++;
 
+        // Check if resolution has changed (adaptive bitrate)
+        const frameResolution = `${frame.width}x${frame.height}`;
+
         // Start FFmpeg bridge on first frame
         if (frameCount === 1) {
-          logger.info(`First video frame received for channel ${channelId}`);
+          logger.info(`First video frame received for channel ${channelId}: ${frameResolution}`);
+          currentResolution = frameResolution;
           this.startFFmpegBridge(channelId, streamKey, frame);
 
           // Update channel status to running
@@ -143,6 +149,31 @@ class WebRTCBridgeService {
           } catch (err) {
             logger.error(`Failed to update channel status for ${channelId}`, { error: err.message });
           }
+        } else if (currentResolution !== frameResolution) {
+          // Resolution changed - restart FFmpeg with new dimensions
+          logger.warn(`Resolution changed for channel ${channelId}: ${currentResolution} -> ${frameResolution}`);
+          logger.info(`Restarting FFmpeg bridge with new resolution...`);
+
+          // Stop current FFmpeg process
+          const ffmpegProcess = this.ffmpegProcesses.get(channelId);
+          if (ffmpegProcess && !ffmpegProcess.killed) {
+            try {
+              if (ffmpegProcess.stdin && !ffmpegProcess.stdin.destroyed) {
+                ffmpegProcess.stdin.end();
+              }
+              if (ffmpegProcess.audioStdin && !ffmpegProcess.audioStdin.destroyed) {
+                ffmpegProcess.audioStdin.end();
+              }
+              ffmpegProcess.kill('SIGTERM');
+            } catch (err) {
+              logger.error(`Error killing FFmpeg process for resolution change: ${err.message}`);
+            }
+          }
+
+          // Start new FFmpeg with updated resolution
+          currentResolution = frameResolution;
+          this.startFFmpegBridge(channelId, streamKey, frame);
+          logger.info(`FFmpeg restarted with resolution ${frameResolution} for channel ${channelId}`);
         }
 
         // Write frame to FFmpeg stdin
