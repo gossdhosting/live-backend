@@ -18,6 +18,7 @@ class WebRTCBridgeService {
     this.videoSinks = new Map(); // channelId -> RTCVideoSink
     this.audioSinks = new Map(); // channelId -> RTCAudioSink
     this.streamStates = new Map(); // channelId -> { status, startTime, errors }
+    this.pendingIceCandidates = new Map(); // channelId -> Array of ICE candidates
   }
 
   /**
@@ -349,6 +350,9 @@ class WebRTCBridgeService {
       // Clear stream state
       this.streamStates.delete(channelId);
 
+      // Clear pending ICE candidates
+      this.pendingIceCandidates.delete(channelId);
+
       logger.info(`WebRTC bridge stopped for channel ${channelId}`);
 
     } catch (error) {
@@ -427,6 +431,9 @@ class WebRTCBridgeService {
 
       await peerConnection.setRemoteDescription(offer);
 
+      // Process any pending ICE candidates now that remote description is set
+      await this.processPendingIceCandidates(channelId);
+
       // Create answer
       const answer = await peerConnection.createAnswer();
       await peerConnection.setLocalDescription(answer);
@@ -452,16 +459,67 @@ class WebRTCBridgeService {
         throw new Error('Peer connection not found');
       }
 
-      if (candidateData && candidateData.candidate) {
-        const candidate = new RTCIceCandidate(candidateData);
-        await peerConnection.addIceCandidate(candidate);
-        logger.debug(`ICE candidate added for channel ${channelId}`);
+      if (!candidateData || !candidateData.candidate) {
+        logger.debug(`Skipping empty ICE candidate for channel ${channelId}`);
+        return;
       }
 
+      // Check if remote description is set
+      if (!peerConnection.remoteDescription) {
+        // Queue the candidate for later
+        logger.debug(`Queueing ICE candidate for channel ${channelId} - remote description not set yet`);
+        if (!this.pendingIceCandidates.has(channelId)) {
+          this.pendingIceCandidates.set(channelId, []);
+        }
+        this.pendingIceCandidates.get(channelId).push(candidateData);
+        return;
+      }
+
+      // Add candidate immediately
+      const candidate = new RTCIceCandidate(candidateData);
+      await peerConnection.addIceCandidate(candidate);
+      logger.debug(`ICE candidate added for channel ${channelId}`);
+
     } catch (error) {
-      logger.error(`Failed to add ICE candidate for channel ${channelId}`, { error: error.message });
-      throw error;
+      // Don't throw error for ICE candidate failures - just log them
+      // ICE candidates can fail for valid reasons (e.g., candidate not compatible)
+      logger.warn(`Failed to add ICE candidate for channel ${channelId}`, {
+        error: error.message,
+        candidate: candidateData.candidate?.substring(0, 50)
+      });
     }
+  }
+
+  /**
+   * Process pending ICE candidates after remote description is set
+   */
+  async processPendingIceCandidates(channelId) {
+    const pendingCandidates = this.pendingIceCandidates.get(channelId);
+    if (!pendingCandidates || pendingCandidates.length === 0) {
+      return;
+    }
+
+    logger.info(`Processing ${pendingCandidates.length} pending ICE candidates for channel ${channelId}`);
+
+    const peerConnection = this.peerConnections.get(channelId);
+    if (!peerConnection) {
+      return;
+    }
+
+    for (const candidateData of pendingCandidates) {
+      try {
+        const candidate = new RTCIceCandidate(candidateData);
+        await peerConnection.addIceCandidate(candidate);
+        logger.debug(`Pending ICE candidate added for channel ${channelId}`);
+      } catch (error) {
+        logger.warn(`Failed to add pending ICE candidate for channel ${channelId}`, {
+          error: error.message
+        });
+      }
+    }
+
+    // Clear pending candidates
+    this.pendingIceCandidates.delete(channelId);
   }
 
   /**
