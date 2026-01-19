@@ -139,26 +139,42 @@ class KickService {
   static async setupStream(accessToken, slug) {
     try {
       logger.info('Kick: Setting up stream', { slug });
+
+      // Get channel info first to get broadcaster_user_id
       const channelInfo = await this.getChannelInfo(accessToken, slug);
       logger.info('Kick: Channel info received', {
-        hasStream: !!channelInfo.stream,
-        hasUrl: !!channelInfo.stream?.url,
-        hasKey: !!channelInfo.stream?.key,
-        broadcaster_user_id: channelInfo.broadcaster_user_id
+        broadcaster_user_id: channelInfo.broadcaster_user_id,
+        slug: channelInfo.slug
       });
 
-      // Channel info includes stream.url and stream.key in the response
-      if (!channelInfo.stream || !channelInfo.stream.url || !channelInfo.stream.key) {
-        logger.error('Kick: Stream information missing', {
-          stream: channelInfo.stream,
-          channelInfo: JSON.stringify(channelInfo)
+      // Get the publish token (stream key) from the correct endpoint
+      logger.info('Kick: Fetching publish token');
+      const tokenResponse = await axios.get('https://api.kick.com/stream/publish_token', {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Accept': 'application/json',
+        },
+      });
+
+      logger.info('Kick: Publish token response received', {
+        hasToken: !!tokenResponse.data.token,
+        hasUrl: !!tokenResponse.data.url
+      });
+
+      // Kick's standard RTMP URL format
+      const rtmpUrl = tokenResponse.data.url || 'rtmps://fa723fc1b171.global-contribute.live-video.net:443/app';
+      const streamKey = tokenResponse.data.token;
+
+      if (!streamKey) {
+        logger.error('Kick: Stream key not found in publish token response', {
+          response: JSON.stringify(tokenResponse.data)
         });
-        throw new Error('Stream information not available in channel response');
+        throw new Error('Stream key not available from Kick API');
       }
 
       return {
-        rtmp_url: channelInfo.stream.url,
-        stream_key: channelInfo.stream.key,
+        rtmp_url: rtmpUrl,
+        stream_key: streamKey,
         channel_id: channelInfo.broadcaster_user_id,
         channel_name: channelInfo.slug,
       };
@@ -166,6 +182,7 @@ class KickService {
       logger.error('Kick: Failed to setup stream', {
         error: error.message,
         stack: error.stack,
+        response: error.response?.data,
         slug
       });
       throw new Error('Failed to setup Kick stream');
