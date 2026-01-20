@@ -269,7 +269,7 @@ class WebRTCBridgeService {
 
       const width = firstFrame.width;
       const height = firstFrame.height;
-      const rtmpUrl = `rtmp://panel.rexstream.net:1935/live/${streamKey}`;
+      const rtmpUrl = `rtmp://127.0.0.1:1935/live/${streamKey}`;
 
       logger.info(`Starting FFmpeg bridge for channel ${channelId}: ${width}x${height} -> ${rtmpUrl}`);
 
