@@ -192,7 +192,9 @@ class WebRTCBridgeService {
 
               // CRITICAL FIX: Start platform streaming only if NOT already started
               const platformAlreadyStarted = this.platformStreamingStarted.get(channelId);
+              console.log(`[Platform Streaming Check] channel ${channelId}: platformAlreadyStarted = ${platformAlreadyStarted}`);
               if (!platformAlreadyStarted) {
+                console.log(`[Platform Streaming] Scheduling start for channel ${channelId} in 3 seconds`);
                 logger.info(`Scheduling platform streaming start for channel ${channelId} in 3 seconds`);
 
                 // Clear any existing timer first
@@ -203,9 +205,11 @@ class WebRTCBridgeService {
                 }
 
                 const timer = setTimeout(async () => {
+                  console.log(`[Platform Streaming Timer] Fired for channel ${channelId}`);
                   try {
                     // Double-check it hasn't been started by another code path
                     if (!this.platformStreamingStarted.get(channelId)) {
+                      console.log(`[Platform Streaming] STARTING streamManager.startStream(${channelId})`);
                       logger.info(`Starting platform streaming for webcam channel ${channelId} after first frame`);
                       await streamManager.startStream(channelId);
                       this.platformStreamingStarted.set(channelId, true);
