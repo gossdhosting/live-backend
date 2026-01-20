@@ -111,34 +111,7 @@ class WebRTCBridgeService {
 
         if (peerConnection.connectionState === 'connected') {
           this.updateStreamState(channelId, { status: 'connected', startTime: Date.now() });
-
-          // CRITICAL FIX: Only trigger platform streaming when connection is FULLY established
-          // Wait for first frame to be received, then start platform streaming
-          // This is set by a flag in handleVideoTrack when first frame arrives
-          const checkForFirstFrame = setInterval(async () => {
-            const firstFrameReceived = this.firstFrameReceived?.get(channelId);
-            if (firstFrameReceived) {
-              clearInterval(checkForFirstFrame);
-
-              // Wait 2 seconds for WebRTC→RTMP bridge to stabilize
-              setTimeout(async () => {
-                try {
-                  logger.info(`Starting platform streaming for webcam channel ${channelId} (connection fully established)`);
-                  await streamManager.startStream(channelId);
-                  logger.info(`Platform streaming started successfully for channel ${channelId}`);
-                } catch (err) {
-                  logger.error(`Failed to start platform streaming for channel ${channelId}`, { error: err.message });
-                  await Channel.update(channelId, {
-                    status: 'error',
-                    error_message: `Failed to start platform streaming: ${err.message}`
-                  });
-                }
-              }, 2000);
-            }
-          }, 500); // Check every 500ms
-
-          // Timeout after 30 seconds
-          setTimeout(() => clearInterval(checkForFirstFrame), 30000);
+          // Platform streaming is now triggered directly from first frame handler
         } else if (peerConnection.connectionState === 'disconnected' || peerConnection.connectionState === 'failed') {
           this.updateStreamState(channelId, { status: 'disconnected' });
           this.stopBridge(channelId);
@@ -208,10 +181,17 @@ class WebRTCBridgeService {
               currentResolution = frameResolution;
               this.startFFmpegBridge(channelId, streamKey, frame);
 
-              // Set flag that first frame was received
-              // Platform streaming will be triggered by onconnectionstatechange handler
-              this.firstFrameReceived.set(channelId, true);
-              logger.info(`First frame flag set for channel ${channelId}, platform streaming will start after connection stabilizes`);
+              // SIMPLIFIED: Start platform streaming immediately after 3 seconds
+              // Don't wait for complex connection state checking - frames are already flowing
+              setTimeout(async () => {
+                try {
+                  logger.info(`Starting platform streaming for webcam channel ${channelId} after first frame`);
+                  await streamManager.startStream(channelId);
+                  logger.info(`Platform streaming started successfully for channel ${channelId}`);
+                } catch (err) {
+                  logger.error(`Failed to start platform streaming for channel ${channelId}`, { error: err.message });
+                }
+              }, 3000); // 3 second delay to let WebRTC→RTMP bridge stabilize
             } else if (currentResolution !== frameResolution) {
               // Resolution changed - restart FFmpeg with new dimensions
               logger.warn(`Resolution changed for channel ${channelId}: ${currentResolution} -> ${frameResolution}`);
@@ -428,7 +408,9 @@ class WebRTCBridgeService {
         rtmpUrl
       ];
 
-      const ffmpegProcess = spawn('ffmpeg', ffmpegArgs, {
+      // CRITICAL: Use 'nice' to lower FFmpeg CPU priority and prevent event loop blocking
+      // This prevents the Node.js server from becoming unresponsive when FFmpeg starts
+      const ffmpegProcess = spawn('nice', ['-n', '10', 'ffmpeg', ...ffmpegArgs], {
         stdio: ['pipe', 'pipe', 'pipe', 'pipe'] // stdin for video, extra pipe for audio
       });
 
