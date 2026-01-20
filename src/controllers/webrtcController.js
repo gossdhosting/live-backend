@@ -341,9 +341,12 @@ export const getStatus = async (req, res) => {
   try {
     const { channelId } = req.params;
 
+    console.log('[WebRTC Status] Getting status for channel:', channelId);
+
     // Validate channel ownership
     const channel = await Channel.findById(channelId);
     if (!channel) {
+      console.log('[WebRTC Status] Channel not found:', channelId);
       return res.status(404).json({ error: 'Channel not found' });
     }
 
@@ -353,11 +356,14 @@ export const getStatus = async (req, res) => {
     const isAdmin = req.user.isAdmin || req.user.role === 'admin';
 
     if (channelUserId !== requestUserId && !isAdmin) {
+      console.log('[WebRTC Status] Authorization failed');
       return res.status(403).json({ error: 'Unauthorized: You do not own this channel' });
     }
 
     // Get status
     const status = webrtcBridgeService.getStreamStatus(channelId);
+
+    console.log('[WebRTC Status] Status retrieved:', JSON.stringify(status, null, 2));
 
     res.json({
       success: true,
@@ -365,6 +371,7 @@ export const getStatus = async (req, res) => {
     });
 
   } catch (error) {
+    console.error('[WebRTC Status] ERROR:', error.message);
     logger.error('Failed to get WebRTC status', { error: error.message });
     res.status(500).json({ error: 'Failed to get status' });
   }
