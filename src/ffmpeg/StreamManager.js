@@ -444,25 +444,24 @@ class StreamManager {
 
       // If input type is RTMP or Webcam, use nginx-rtmp as input source
       if (isRtmpInput || isWebcamInput) {
-        let rtmpInputUrl;
-
         if (isWebcamInput) {
-          // Webcam uses unique allocated port (prevents conflicts with multiple cameras)
-          const rtmpPort = portAllocator.getPort(channelId);
-          if (!rtmpPort) {
-            throw new Error(`No RTMP port allocated for channel ${channelId}. WebRTC bridge may not have started yet.`);
-          }
-          rtmpInputUrl = `rtmp://127.0.0.1:${rtmpPort}/live/${channel.stream_key}`;
-          logger.info(`Using Webcam input for channel ${channelId}: ${rtmpInputUrl} (port ${rtmpPort}, via WebRTC bridge)`);
-          // Update channel status to waiting for WebRTC connection
+          // IMPORTANT: For webcam, DON'T start platform streaming here!
+          // The WebRTC bridge will automatically trigger platform streaming when first frame arrives
+          // Just update status and return early
           await Channel.updateStatus(channelId, 'waiting_for_input', null, 'Waiting for camera connection...');
+          logger.info(`Webcam stream initiated for channel ${channelId}. Waiting for WebRTC connection...`);
+
+          return {
+            success: true,
+            message: 'Webcam stream waiting for camera connection. Platform streaming will start automatically.',
+            channelId,
+            status: 'waiting_for_input'
+          };
         } else {
           // Custom RTMP uses standard port 1935 (external users push here from OBS/vMix)
-          rtmpInputUrl = `rtmp://127.0.0.1:1935/live/${channel.stream_key}`;
-          logger.info(`Using Custom RTMP input for channel ${channelId}: ${rtmpInputUrl} (external push from OBS/vMix)`);
+          resolvedInputUrl = `rtmp://127.0.0.1:1935/live/${channel.stream_key}`;
+          logger.info(`Using Custom RTMP input for channel ${channelId}: ${resolvedInputUrl} (external push from OBS/vMix)`);
         }
-
-        resolvedInputUrl = rtmpInputUrl;
       }
       // If input type is video, get the file path from MediaFile
       else if (isVideoFile) {
