@@ -2,6 +2,7 @@ import { spawn } from 'child_process';
 import wrtc from 'wrtc';
 import logger from '../utils/logger.js';
 import Channel from '../models/Channel.js';
+import streamManager from '../ffmpeg/StreamManager.js';
 
 const { RTCPeerConnection, RTCSessionDescription, RTCIceCandidate, nonstandard } = wrtc;
 const { RTCAudioSink, RTCVideoSink } = nonstandard;
@@ -178,13 +179,20 @@ class WebRTCBridgeService {
               currentResolution = frameResolution;
               this.startFFmpegBridge(channelId, streamKey, frame);
 
-              // Update channel status to running
-              try {
-                await Channel.update(channelId, { status: 'running' });
-                logger.info(`Channel ${channelId} status updated to running`);
-              } catch (err) {
-                logger.error(`Failed to update channel status for ${channelId}`, { error: err.message });
-              }
+              // Wait 2 seconds for WebRTC→RTMP bridge to stabilize before starting platform streaming
+              setTimeout(async () => {
+                try {
+                  logger.info(`Starting platform streaming for webcam channel ${channelId}`);
+                  await streamManager.startStream(channelId);
+                  logger.info(`Platform streaming started successfully for channel ${channelId}`);
+                } catch (err) {
+                  logger.error(`Failed to start platform streaming for channel ${channelId}`, { error: err.message });
+                  await Channel.update(channelId, {
+                    status: 'error',
+                    error_message: `Failed to start platform streaming: ${err.message}`
+                  });
+                }
+              }, 2000);
             } else if (currentResolution !== frameResolution) {
               // Resolution changed - restart FFmpeg with new dimensions
               logger.warn(`Resolution changed for channel ${channelId}: ${currentResolution} -> ${frameResolution}`);
