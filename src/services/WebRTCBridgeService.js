@@ -21,6 +21,8 @@ class WebRTCBridgeService {
     this.streamStates = new Map(); // channelId -> { status, startTime, errors }
     this.ffmpegStdinClosed = new Map(); // channelId -> boolean (tracks if FFmpeg stdin has been closed)
     this.firstFrameReceived = new Map(); // channelId -> boolean (tracks if first frame received)
+    this.platformStreamingStarted = new Map(); // channelId -> boolean (tracks if platform streaming already started)
+    this.platformStreamingTimers = new Map(); // channelId -> setTimeout reference (for cleanup)
   }
 
   /**
@@ -174,24 +176,56 @@ class WebRTCBridgeService {
             // Check if resolution has changed (adaptive bitrate)
             const frameResolution = `${frame.width}x${frame.height}`;
 
-            // Start FFmpeg bridge on first frame
-            if (frameCount === 1) {
-              console.log(`[WebRTC Bridge] FIRST FRAME! ${frameResolution}`);
+            // CRITICAL FIX: Check if this is the first frame AND FFmpeg bridge not started yet
+            // This handles case where connection persists across restart (frameCount != 1)
+            const ffmpegBridgeRunning = this.ffmpegProcesses.has(channelId);
+
+            if (frameCount === 1 || !ffmpegBridgeRunning) {
+              console.log(`[WebRTC Bridge] FIRST FRAME! ${frameResolution} (frameCount: ${frameCount}, bridge running: ${ffmpegBridgeRunning})`);
               logger.info(`First video frame received for channel ${channelId}: ${frameResolution}`);
               currentResolution = frameResolution;
-              this.startFFmpegBridge(channelId, streamKey, frame);
 
-              // SIMPLIFIED: Start platform streaming immediately after 3 seconds
-              // Don't wait for complex connection state checking - frames are already flowing
-              setTimeout(async () => {
-                try {
-                  logger.info(`Starting platform streaming for webcam channel ${channelId} after first frame`);
-                  await streamManager.startStream(channelId);
-                  logger.info(`Platform streaming started successfully for channel ${channelId}`);
-                } catch (err) {
-                  logger.error(`Failed to start platform streaming for channel ${channelId}`, { error: err.message });
+              // Only start FFmpeg bridge if not already running
+              if (!ffmpegBridgeRunning) {
+                this.startFFmpegBridge(channelId, streamKey, frame);
+              }
+
+              // CRITICAL FIX: Start platform streaming only if NOT already started
+              const platformAlreadyStarted = this.platformStreamingStarted.get(channelId);
+              if (!platformAlreadyStarted) {
+                logger.info(`Scheduling platform streaming start for channel ${channelId} in 3 seconds`);
+
+                // Clear any existing timer first
+                const existingTimer = this.platformStreamingTimers.get(channelId);
+                if (existingTimer) {
+                  clearTimeout(existingTimer);
+                  logger.warn(`Cleared existing platform streaming timer for channel ${channelId}`);
                 }
-              }, 3000); // 3 second delay to let WebRTC→RTMP bridge stabilize
+
+                const timer = setTimeout(async () => {
+                  try {
+                    // Double-check it hasn't been started by another code path
+                    if (!this.platformStreamingStarted.get(channelId)) {
+                      logger.info(`Starting platform streaming for webcam channel ${channelId} after first frame`);
+                      await streamManager.startStream(channelId);
+                      this.platformStreamingStarted.set(channelId, true);
+                      this.platformStreamingTimers.delete(channelId);
+                      logger.info(`Platform streaming started successfully for channel ${channelId}`);
+                    } else {
+                      logger.warn(`Platform streaming already started for channel ${channelId}, skipping`);
+                    }
+                  } catch (err) {
+                    logger.error(`Failed to start platform streaming for channel ${channelId}`, { error: err.message });
+                    this.platformStreamingTimers.delete(channelId);
+                    // Retry after 5 seconds if failed
+                    setTimeout(() => this.retryPlatformStreaming(channelId), 5000);
+                  }
+                }, 3000); // 3 second delay to let WebRTC→RTMP bridge stabilize
+
+                this.platformStreamingTimers.set(channelId, timer);
+              } else {
+                logger.info(`Platform streaming already started for channel ${channelId}, skipping trigger`);
+              }
             } else if (currentResolution !== frameResolution) {
               // Resolution changed - restart FFmpeg with new dimensions
               logger.warn(`Resolution changed for channel ${channelId}: ${currentResolution} -> ${frameResolution}`);
@@ -482,6 +516,14 @@ class WebRTCBridgeService {
     try {
       logger.info(`Stopping WebRTC bridge for channel ${channelId}`);
 
+      // CRITICAL FIX: Clear platform streaming timer if exists
+      const timer = this.platformStreamingTimers.get(channelId);
+      if (timer) {
+        clearTimeout(timer);
+        this.platformStreamingTimers.delete(channelId);
+        logger.info(`Cleared platform streaming timer for channel ${channelId}`);
+      }
+
       // Stop video sink
       const videoSink = this.videoSinks.get(channelId);
       if (videoSink) {
@@ -526,11 +568,11 @@ class WebRTCBridgeService {
         this.peerConnections.delete(channelId);
       }
 
-      // Clear stream state
+      // CRITICAL FIX: Clear ALL state tracking maps
       this.streamStates.delete(channelId);
-
-      // Clear FFmpeg stdin tracking
       this.ffmpegStdinClosed.delete(channelId);
+      this.firstFrameReceived.delete(channelId);
+      this.platformStreamingStarted.delete(channelId);
 
       // Update channel status to stopped
       try {
@@ -540,7 +582,7 @@ class WebRTCBridgeService {
         logger.error(`Failed to update channel status for ${channelId}`, { error: err.message });
       }
 
-      logger.info(`WebRTC bridge stopped for channel ${channelId}`);
+      logger.info(`WebRTC bridge stopped and all state cleared for channel ${channelId}`);
 
     } catch (error) {
       logger.error(`Failed to stop WebRTC bridge for channel ${channelId}`, { error: error.message });
@@ -777,10 +819,43 @@ class WebRTCBridgeService {
   }
 
   /**
+   * Retry platform streaming after failure
+   */
+  async retryPlatformStreaming(channelId) {
+    try {
+      // Check if WebRTC bridge still active
+      if (!this.ffmpegProcesses.has(channelId)) {
+        logger.warn(`WebRTC bridge not active for channel ${channelId}, skipping platform streaming retry`);
+        return;
+      }
+
+      // Check if already started
+      if (this.platformStreamingStarted.get(channelId)) {
+        logger.info(`Platform streaming already running for channel ${channelId}, skipping retry`);
+        return;
+      }
+
+      logger.info(`Retrying platform streaming for channel ${channelId}`);
+      await streamManager.startStream(channelId);
+      this.platformStreamingStarted.set(channelId, true);
+      logger.info(`Platform streaming retry successful for channel ${channelId}`);
+    } catch (err) {
+      logger.error(`Platform streaming retry failed for channel ${channelId}`, { error: err.message });
+      // Don't retry again - let user manually restart
+    }
+  }
+
+  /**
    * Cleanup all connections (for graceful shutdown)
    */
   async cleanup() {
     logger.info('Cleaning up all WebRTC bridges...');
+
+    // Clear all timers first
+    for (const timer of this.platformStreamingTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.platformStreamingTimers.clear();
 
     const channelIds = Array.from(this.peerConnections.keys());
     for (const channelId of channelIds) {
