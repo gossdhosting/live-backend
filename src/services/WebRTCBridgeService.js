@@ -73,10 +73,18 @@ class WebRTCBridgeService {
       peerConnection.remoteDescriptionSet = false;
       peerConnection.candidateQueue = [];
 
+      // CRITICAL: Add transceivers so server knows it's a receiver
+      // This "primes" the connection to listen for audio and video from the browser
+      logger.info(`Adding transceivers for channel ${channelId} to receive media`);
+      peerConnection.addTransceiver('video', { direction: 'recvonly' });
+      peerConnection.addTransceiver('audio', { direction: 'recvonly' });
+      logger.info(`Transceivers added for channel ${channelId}`);
+
       // Handle incoming tracks (video and audio)
       peerConnection.ontrack = (event) => {
         const track = event.track;
         logger.info(`WebRTC track received for channel ${channelId}: ${track.kind}`);
+        console.log(`[WebRTC Bridge] Track received - Kind: ${track.kind}, ID: ${track.id}, Label: ${track.label}`);
 
         if (track.kind === 'video') {
           this.handleVideoTrack(channelId, track, streamKey);
