@@ -444,24 +444,25 @@ class StreamManager {
 
       // If input type is RTMP or Webcam, use nginx-rtmp as input source
       if (isRtmpInput || isWebcamInput) {
-        // Get allocated port for this channel (each channel has unique port)
-        const rtmpPort = portAllocator.getPort(channelId);
-        if (!rtmpPort) {
-          throw new Error(`No RTMP port allocated for channel ${channelId}. WebRTC bridge may not have started yet.`);
-        }
-
-        // RTMP/Webcam input comes from localhost nginx-rtmp on allocated port
-        // Format: rtmp://127.0.0.1:{port}/live/{stream_key}
-        const rtmpInputUrl = `rtmp://127.0.0.1:${rtmpPort}/live/${channel.stream_key}`;
-        resolvedInputUrl = rtmpInputUrl;
+        let rtmpInputUrl;
 
         if (isWebcamInput) {
+          // Webcam uses unique allocated port (prevents conflicts with multiple cameras)
+          const rtmpPort = portAllocator.getPort(channelId);
+          if (!rtmpPort) {
+            throw new Error(`No RTMP port allocated for channel ${channelId}. WebRTC bridge may not have started yet.`);
+          }
+          rtmpInputUrl = `rtmp://127.0.0.1:${rtmpPort}/live/${channel.stream_key}`;
           logger.info(`Using Webcam input for channel ${channelId}: ${rtmpInputUrl} (port ${rtmpPort}, via WebRTC bridge)`);
           // Update channel status to waiting for WebRTC connection
           await Channel.updateStatus(channelId, 'waiting_for_input', null, 'Waiting for camera connection...');
         } else {
-          logger.info(`Using RTMP input for channel ${channelId}: ${rtmpInputUrl} (port ${rtmpPort})`);
+          // Custom RTMP uses standard port 1935 (external users push here from OBS/vMix)
+          rtmpInputUrl = `rtmp://127.0.0.1:1935/live/${channel.stream_key}`;
+          logger.info(`Using Custom RTMP input for channel ${channelId}: ${rtmpInputUrl} (external push from OBS/vMix)`);
         }
+
+        resolvedInputUrl = rtmpInputUrl;
       }
       // If input type is video, get the file path from MediaFile
       else if (isVideoFile) {
