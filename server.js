@@ -182,7 +182,7 @@ const startServer = async () => {
     // Initialize Stripe configuration
     const stripeInitialized = await stripeConfig.initialize();
 
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
       logger.info(`Server started on port ${PORT}`, {
         nodeEnv: process.env.NODE_ENV,
         hlsBasePath,
@@ -213,10 +213,34 @@ const startServer = async () => {
       console.log('='.repeat(60));
       console.log('');
     });
+
+    // Handle server errors gracefully (prevents ECONNRESET crashes)
+    server.on('error', (error) => {
+      logger.error('HTTP Server error:', { error: error.message, code: error.code });
+    });
+
+    // Handle client connection errors
+    server.on('clientError', (err, socket) => {
+      logger.warn('Client connection error:', { error: err.message });
+      if (!socket.destroyed) {
+        socket.end('HTTP/1.1 400 Bad Request\r\n\r\n');
+      }
+    });
   } catch (error) {
     logger.error('Failed to start server', { error: error.message });
     process.exit(1);
   }
 };
+
+// Global error handlers to prevent crashes
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught Exception:', { error: error.message, stack: error.stack });
+  // Don't exit - log and continue
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('Unhandled Rejection:', { reason, promise });
+  // Don't exit - log and continue
+});
 
 startServer();
