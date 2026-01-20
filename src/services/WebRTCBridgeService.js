@@ -1,5 +1,5 @@
 import { spawn } from 'child_process';
-import wrtc from '@roamhq/wrtc';
+import wrtc from 'wrtc';
 import logger from '../utils/logger.js';
 import Channel from '../models/Channel.js';
 
