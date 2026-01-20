@@ -608,11 +608,21 @@ class WebRTCBridgeService {
   startFFmpegBridge(channelId, streamKey, firstFrame) {
     console.log(`[startFFmpegBridge] CALLED for channel ${channelId}, streamKey: ${streamKey}`);
     try {
-      // Check if already running
+      // FORCE CLEANUP: Check if entry exists but process is actually dead
       if (this.ffmpegProcesses.has(channelId)) {
-        console.log(`[startFFmpegBridge] Already running for channel ${channelId}`);
-        logger.warn(`FFmpeg bridge already running for channel ${channelId}`);
-        return;
+        const existingProcess = this.ffmpegProcesses.get(channelId);
+        // Check if process is actually running
+        if (!existingProcess || existingProcess.killed || existingProcess.exitCode !== null) {
+          console.log(`[startFFmpegBridge] Stale entry detected for channel ${channelId}, cleaning up`);
+          logger.warn(`FFmpeg bridge had stale entry for channel ${channelId}, forcing cleanup`);
+          this.ffmpegProcesses.delete(channelId);
+          this.ffmpegStdinClosed.delete(channelId);
+          // Continue to start fresh FFmpeg
+        } else {
+          console.log(`[startFFmpegBridge] Already running for channel ${channelId}`);
+          logger.warn(`FFmpeg bridge already running for channel ${channelId}`);
+          return;
+        }
       }
 
       console.log(`[startFFmpegBridge] Frame dimensions: ${firstFrame.width}x${firstFrame.height}`);
