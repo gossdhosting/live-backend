@@ -3,6 +3,7 @@ import wrtc from 'wrtc';
 import logger from '../utils/logger.js';
 import Channel from '../models/Channel.js';
 import streamManager from '../ffmpeg/StreamManager.js';
+import portAllocator from './PortAllocator.js';
 
 const { RTCPeerConnection, RTCSessionDescription, RTCIceCandidate, nonstandard } = wrtc;
 const { RTCAudioSink, RTCVideoSink } = nonstandard;
@@ -264,8 +265,16 @@ class WebRTCBridgeService {
                 // Mark as started immediately to prevent duplicate triggers
                 this.platformStreamingStarted.set(channelId, true);
 
-                // Build RTMP URL for polling (localhost for fast internal pipeline)
-                const rtmpUrl = `rtmp://127.0.0.1:1935/live/${streamKey}`;
+                // Get allocated port for this channel
+                const rtmpPort = portAllocator.getPort(channelId);
+                if (!rtmpPort) {
+                  logger.error(`No RTMP port allocated for channel ${channelId}`);
+                  this.platformStreamingStarted.set(channelId, false);
+                  return;
+                }
+
+                // Build RTMP URL for polling using allocated port
+                const rtmpUrl = `rtmp://127.0.0.1:${rtmpPort}/live/${streamKey}`;
 
                 // Use smart polling instead of fixed timeout - wait for stream to be available
                 this.waitForRtmpStream(rtmpUrl, 20)
@@ -603,10 +612,12 @@ class WebRTCBridgeService {
       console.log(`[startFFmpegBridge] Frame dimensions: ${firstFrame.width}x${firstFrame.height}`);
       const width = firstFrame.width;
       const height = firstFrame.height;
-      // Use localhost for internal transcoding pipeline (avoid internet latency)
-      const rtmpUrl = `rtmp://127.0.0.1:1935/live/${streamKey}`;
 
-      console.log(`[startFFmpegBridge] RTMP URL: ${rtmpUrl}`);
+      // Allocate unique RTMP port for this channel to prevent conflicts
+      const rtmpPort = portAllocator.allocate(channelId);
+      const rtmpUrl = `rtmp://127.0.0.1:${rtmpPort}/live/${streamKey}`;
+
+      console.log(`[startFFmpegBridge] RTMP URL: ${rtmpUrl} (port ${rtmpPort})`);
       logger.info(`Starting FFmpeg bridge for channel ${channelId}: ${width}x${height} -> ${rtmpUrl}`);
 
       // FFmpeg command to convert raw video/audio to RTMP
@@ -784,6 +795,10 @@ class WebRTCBridgeService {
       this.ffmpegStdinClosed.delete(channelId);
       this.firstFrameReceived.delete(channelId);
       this.platformStreamingStarted.delete(channelId);
+
+      // Release allocated RTMP port
+      portAllocator.release(channelId);
+      logger.info(`Released RTMP port for channel ${channelId}`);
 
       // Update channel status to stopped
       try {

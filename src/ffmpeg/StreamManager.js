@@ -12,6 +12,7 @@ import User from '../models/User.js';
 import Plan from '../models/Plan.js';
 import logger from '../utils/logger.js';
 import webrtcBridgeService from '../services/WebRTCBridgeService.js';
+import portAllocator from '../services/PortAllocator.js';
 
 class StreamManager {
   constructor() {
@@ -443,17 +444,23 @@ class StreamManager {
 
       // If input type is RTMP or Webcam, use nginx-rtmp as input source
       if (isRtmpInput || isWebcamInput) {
-        // RTMP/Webcam input comes from localhost nginx-rtmp for fast internal pipeline
-        // Format: rtmp://127.0.0.1:1935/live/{stream_key}
-        const rtmpInputUrl = `rtmp://127.0.0.1:1935/live/${channel.stream_key}`;
+        // Get allocated port for this channel (each channel has unique port)
+        const rtmpPort = portAllocator.getPort(channelId);
+        if (!rtmpPort) {
+          throw new Error(`No RTMP port allocated for channel ${channelId}. WebRTC bridge may not have started yet.`);
+        }
+
+        // RTMP/Webcam input comes from localhost nginx-rtmp on allocated port
+        // Format: rtmp://127.0.0.1:{port}/live/{stream_key}
+        const rtmpInputUrl = `rtmp://127.0.0.1:${rtmpPort}/live/${channel.stream_key}`;
         resolvedInputUrl = rtmpInputUrl;
 
         if (isWebcamInput) {
-          logger.info(`Using Webcam input for channel ${channelId}: ${rtmpInputUrl} (via WebRTC bridge)`);
+          logger.info(`Using Webcam input for channel ${channelId}: ${rtmpInputUrl} (port ${rtmpPort}, via WebRTC bridge)`);
           // Update channel status to waiting for WebRTC connection
           await Channel.updateStatus(channelId, 'waiting_for_input', null, 'Waiting for camera connection...');
         } else {
-          logger.info(`Using RTMP input for channel ${channelId}: ${rtmpInputUrl}`);
+          logger.info(`Using RTMP input for channel ${channelId}: ${rtmpInputUrl} (port ${rtmpPort})`);
         }
       }
       // If input type is video, get the file path from MediaFile
