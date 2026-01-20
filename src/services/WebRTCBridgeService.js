@@ -110,6 +110,12 @@ class WebRTCBridgeService {
         console.log(`[WebRTC Bridge] Existing connection stopped, creating fresh connection`);
       }
 
+      // CRITICAL: Allocate unique RTMP port IMMEDIATELY when peer connection is created
+      // This ensures the port is available when platform streaming starts
+      const allocatedPort = portAllocator.allocate(channelId);
+      logger.info(`Allocated RTMP port ${allocatedPort} for channel ${channelId} (before peer connection)`);
+      console.log(`[WebRTC Bridge] Pre-allocated port ${allocatedPort} for channel ${channelId}`);
+
       // Create peer connection with STUN and TURN servers for NAT traversal
       const peerConnection = new RTCPeerConnection({
         iceServers: [
