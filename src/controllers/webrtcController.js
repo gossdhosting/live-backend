@@ -7,14 +7,26 @@ import logger from '../utils/logger.js';
  */
 export const startWebRTC = async (req, res) => {
   try {
+    console.log('[WebRTC Start] ========== START WebRTC Request ==========');
     const { channelId } = req.params;
     const userId = req.user.userId;
+    console.log('[WebRTC Start] Channel ID:', channelId, 'User ID:', userId);
 
     // Validate channel ownership
     const channel = await Channel.findById(channelId);
     if (!channel) {
+      console.log('[WebRTC Start] Channel not found:', channelId);
       return res.status(404).json({ error: 'Channel not found' });
     }
+
+    console.log('[WebRTC Start] Channel found:', {
+      id: channel.id,
+      name: channel.name,
+      user_id: channel.user_id,
+      input_type: channel.input_type,
+      status: channel.status,
+      stream_key: channel.stream_key
+    });
 
     // Compare user IDs (handle both number and string types)
     const channelUserId = parseInt(channel.user_id);
@@ -29,6 +41,7 @@ export const startWebRTC = async (req, res) => {
     });
 
     if (channelUserId !== requestUserId && !isAdmin) {
+      console.log('[WebRTC Start] Authorization failed - user does not own channel');
       logger.warn(`Unauthorized WebRTC access attempt`, {
         channelId,
         channelUserId,
@@ -39,21 +52,27 @@ export const startWebRTC = async (req, res) => {
     }
 
     if (channel.input_type !== 'webcam') {
+      console.log('[WebRTC Start] Invalid input type:', channel.input_type);
       return res.status(400).json({ error: 'Channel input type must be webcam' });
     }
 
     // Check if channel is already streaming
     if (channel.status === 'running') {
+      console.log('[WebRTC Start] Channel already running');
       return res.status(400).json({ error: 'Channel is already streaming' });
     }
 
+    console.log('[WebRTC Start] Creating peer connection...');
     // Create peer connection
     await webrtcBridgeService.createPeerConnection(channelId, channel.stream_key);
+    console.log('[WebRTC Start] Peer connection created');
 
     // Update channel status
     await Channel.update(channelId, { status: 'waiting_for_input' });
+    console.log('[WebRTC Start] Channel status updated to waiting_for_input');
 
     logger.info(`WebRTC session initialized for channel ${channelId}`);
+    console.log('[WebRTC Start] SUCCESS - Session initialized');
 
     res.json({
       success: true,
@@ -62,6 +81,8 @@ export const startWebRTC = async (req, res) => {
     });
 
   } catch (error) {
+    console.error('[WebRTC Start] ERROR:', error.message);
+    console.error('[WebRTC Start] Stack:', error.stack);
     logger.error('Failed to start WebRTC session', { error: error.message });
     res.status(500).json({ error: 'Failed to start WebRTC session' });
   }
@@ -72,30 +93,48 @@ export const startWebRTC = async (req, res) => {
  */
 export const handleOffer = async (req, res) => {
   try {
+    console.log('[WebRTC Offer] ========== HANDLE OFFER Request ==========');
     const { channelId } = req.params;
     const { offer } = req.body;
+    console.log('[WebRTC Offer] Channel ID:', channelId);
+    console.log('[WebRTC Offer] Offer present:', !!offer);
+    console.log('[WebRTC Offer] Offer type:', offer?.type);
+    console.log('[WebRTC Offer] SDP length:', offer?.sdp?.length);
 
     if (!offer || !offer.type || !offer.sdp) {
+      console.log('[WebRTC Offer] Invalid offer data');
       return res.status(400).json({ error: 'Invalid offer data' });
     }
 
     // Validate channel ownership
     const channel = await Channel.findById(channelId);
     if (!channel) {
+      console.log('[WebRTC Offer] Channel not found:', channelId);
       return res.status(404).json({ error: 'Channel not found' });
     }
+
+    console.log('[WebRTC Offer] Channel found, checking authorization...');
 
     // Compare user IDs (handle both number and string types)
     const channelUserId = parseInt(channel.user_id);
     const requestUserId = parseInt(req.user.userId);
     const isAdmin = req.user.isAdmin || req.user.role === 'admin';
 
+    console.log('[WebRTC Offer] Auth check - Channel user:', channelUserId, 'Request user:', requestUserId, 'Is admin:', isAdmin);
+
     if (channelUserId !== requestUserId && !isAdmin) {
+      console.log('[WebRTC Offer] Authorization failed');
       return res.status(403).json({ error: 'Unauthorized: You do not own this channel' });
     }
 
+    console.log('[WebRTC Offer] Authorized, processing offer...');
+
     // Handle offer and get answer
     const answer = await webrtcBridgeService.handleOffer(channelId, offer);
+
+    console.log('[WebRTC Offer] Answer created successfully');
+    console.log('[WebRTC Offer] Answer type:', answer?.type);
+    console.log('[WebRTC Offer] Answer SDP length:', answer?.sdp?.length);
 
     logger.info(`WebRTC offer handled for channel ${channelId}`);
 
@@ -105,6 +144,8 @@ export const handleOffer = async (req, res) => {
     });
 
   } catch (error) {
+    console.error('[WebRTC Offer] ERROR:', error.message);
+    console.error('[WebRTC Offer] Stack:', error.stack);
     logger.error('Failed to handle WebRTC offer', { error: error.message });
     res.status(500).json({ error: 'Failed to handle offer' });
   }
@@ -199,13 +240,17 @@ export const addIceCandidate = async (req, res) => {
     const { channelId } = req.params;
     const { candidate } = req.body;
 
+    console.log('[WebRTC ICE] Received ICE candidate for channel:', channelId);
+
     if (!candidate) {
+      console.log('[WebRTC ICE] Invalid candidate data');
       return res.status(400).json({ error: 'Invalid candidate data' });
     }
 
     // Validate channel ownership
     const channel = await Channel.findById(channelId);
     if (!channel) {
+      console.log('[WebRTC ICE] Channel not found:', channelId);
       return res.status(404).json({ error: 'Channel not found' });
     }
 
@@ -215,6 +260,7 @@ export const addIceCandidate = async (req, res) => {
     const isAdmin = req.user.isAdmin || req.user.role === 'admin';
 
     if (channelUserId !== requestUserId && !isAdmin) {
+      console.log('[WebRTC ICE] Authorization failed');
       return res.status(403).json({ error: 'Unauthorized: You do not own this channel' });
     }
 
@@ -227,6 +273,8 @@ export const addIceCandidate = async (req, res) => {
 
     await webrtcBridgeService.addIceCandidate(channelId, candidate);
 
+    console.log('[WebRTC ICE] ICE candidate added successfully');
+
     logger.info(`ICE candidate added successfully for channel ${channelId}`);
 
     res.json({
@@ -235,6 +283,7 @@ export const addIceCandidate = async (req, res) => {
     });
 
   } catch (error) {
+    console.error('[WebRTC ICE] ERROR:', error.message);
     logger.error(`Failed to add ICE candidate for channel ${channelId}`, {
       error: error.message,
       stack: error.stack,
