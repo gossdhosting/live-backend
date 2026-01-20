@@ -244,9 +244,11 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 // Graceful shutdown handlers to cleanup native C++ objects (wrtc) before PM2 restart
+// CRITICAL: Must force process.exit(0) to ensure OS reclaims all native memory and threads
 process.on('SIGTERM', async () => {
   logger.info('SIGTERM received - Starting graceful shutdown');
   console.log('[Graceful Shutdown] SIGTERM received, cleaning up WebRTC connections...');
+  console.log('[Graceful Shutdown] Process PID:', process.pid);
 
   try {
     // Import WebRTC bridge service
@@ -261,8 +263,11 @@ process.on('SIGTERM', async () => {
       await webrtcBridge.stopBridge(channelId);
     }
 
-    logger.info('Graceful shutdown completed, exiting...');
+    logger.info('Graceful shutdown completed - forcing exit to reclaim native memory');
     console.log('[Graceful Shutdown] All WebRTC connections cleaned up successfully');
+    console.log('[Graceful Shutdown] Forcing process exit to ensure OS reclaims native C++ threads');
+
+    // CRITICAL: Force hard exit to ensure OS kills all native threads
     process.exit(0);
   } catch (error) {
     logger.error('Error during graceful shutdown:', { error: error.message });
@@ -274,6 +279,7 @@ process.on('SIGTERM', async () => {
 process.on('SIGINT', async () => {
   logger.info('SIGINT received - Starting graceful shutdown');
   console.log('[Graceful Shutdown] SIGINT received, cleaning up WebRTC connections...');
+  console.log('[Graceful Shutdown] Process PID:', process.pid);
 
   try {
     const webrtcBridge = (await import('./src/services/WebRTCBridgeService.js')).default;
@@ -285,8 +291,11 @@ process.on('SIGINT', async () => {
       await webrtcBridge.stopBridge(channelId);
     }
 
-    logger.info('Graceful shutdown completed, exiting...');
+    logger.info('Graceful shutdown completed - forcing exit to reclaim native memory');
     console.log('[Graceful Shutdown] All WebRTC connections cleaned up successfully');
+    console.log('[Graceful Shutdown] Forcing process exit to ensure OS reclaims native C++ threads');
+
+    // CRITICAL: Force hard exit to ensure OS kills all native threads
     process.exit(0);
   } catch (error) {
     logger.error('Error during graceful shutdown:', { error: error.message });

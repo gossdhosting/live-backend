@@ -26,6 +26,67 @@ class WebRTCBridgeService {
   }
 
   /**
+   * Wait for RTMP stream to be available on nginx-rtmp before starting platform streaming
+   * This prevents the race condition where FFmpeg tries to pull before data is available
+   * @param {string} streamUrl - The RTMP URL to check (e.g., rtmp://127.0.0.1:1935/live/STREAMKEY)
+   * @param {number} maxAttempts - Maximum number of polling attempts (default: 20)
+   * @returns {Promise<boolean>} - Resolves when stream is available, rejects on timeout
+   */
+  async waitForRtmpStream(streamUrl, maxAttempts = 20) {
+    return new Promise((resolve, reject) => {
+      let attempt = 0;
+
+      const check = () => {
+        attempt++;
+        logger.info(`Checking RTMP stream availability (attempt ${attempt}/${maxAttempts}): ${streamUrl}`);
+
+        // Probe the stream with FFmpeg and a short timeout
+        // -rw_timeout 1000000 = 1 second timeout (in microseconds)
+        const args = [
+          '-v', 'error',
+          '-rw_timeout', '1000000',
+          '-rtmp_live', 'live',
+          '-i', streamUrl,
+          '-f', 'null',
+          '-'
+        ];
+
+        const child = spawn('ffmpeg', args);
+        let errorOutput = '';
+
+        child.stderr.on('data', (data) => {
+          errorOutput += data.toString();
+        });
+
+        child.on('exit', (code) => {
+          if (code === 0) {
+            logger.info(`RTMP stream is ready: ${streamUrl}`);
+            resolve(true); // Stream is ready!
+          } else {
+            logger.warn(`Stream not ready yet (attempt ${attempt}): ${errorOutput.slice(0, 100)}`);
+            if (attempt >= maxAttempts) {
+              reject(new Error(`Stream availability timeout after ${maxAttempts} attempts`));
+            } else {
+              setTimeout(check, 500); // Retry every 500ms
+            }
+          }
+        });
+
+        child.on('error', (err) => {
+          logger.error(`Error probing RTMP stream: ${err.message}`);
+          if (attempt >= maxAttempts) {
+            reject(err);
+          } else {
+            setTimeout(check, 500);
+          }
+        });
+      };
+
+      check();
+    });
+  }
+
+  /**
    * Create WebRTC peer connection for a channel
    */
   async createPeerConnection(channelId, streamKey) {
@@ -193,42 +254,43 @@ class WebRTCBridgeService {
               }
 
               // CRITICAL FIX: Start platform streaming only if NOT already started
+              // Use smart RTMP stream polling instead of fixed delay to prevent race conditions
               const platformAlreadyStarted = this.platformStreamingStarted.get(channelId);
               console.log(`[Platform Streaming Check] channel ${channelId}: platformAlreadyStarted = ${platformAlreadyStarted}`);
               if (!platformAlreadyStarted) {
-                console.log(`[Platform Streaming] Scheduling start for channel ${channelId} in 3 seconds`);
-                logger.info(`Scheduling platform streaming start for channel ${channelId} in 3 seconds`);
+                console.log(`[Platform Streaming] Starting smart RTMP polling for channel ${channelId}`);
+                logger.info(`Starting smart RTMP stream polling for channel ${channelId}`);
 
-                // Clear any existing timer first
-                const existingTimer = this.platformStreamingTimers.get(channelId);
-                if (existingTimer) {
-                  clearTimeout(existingTimer);
-                  logger.warn(`Cleared existing platform streaming timer for channel ${channelId}`);
-                }
+                // Mark as started immediately to prevent duplicate triggers
+                this.platformStreamingStarted.set(channelId, true);
 
-                const timer = setTimeout(async () => {
-                  console.log(`[Platform Streaming Timer] Fired for channel ${channelId}`);
-                  try {
-                    // Double-check it hasn't been started by another code path
-                    if (!this.platformStreamingStarted.get(channelId)) {
-                      console.log(`[Platform Streaming] STARTING streamManager.startStream(${channelId})`);
-                      logger.info(`Starting platform streaming for webcam channel ${channelId} after first frame`);
+                // Build RTMP URL for polling
+                const rtmpUrl = `rtmp://127.0.0.1:1935/live/${streamKey}`;
+
+                // Use smart polling instead of fixed timeout - wait for stream to be available
+                this.waitForRtmpStream(rtmpUrl, 20)
+                  .then(async () => {
+                    console.log(`[Platform Streaming] Stream verified active for channel ${channelId}, starting platform stream`);
+                    logger.info(`RTMP stream verified active for channel ${channelId}, starting platform streaming`);
+
+                    try {
                       await streamManager.startStream(channelId);
-                      this.platformStreamingStarted.set(channelId, true);
-                      this.platformStreamingTimers.delete(channelId);
                       logger.info(`Platform streaming started successfully for channel ${channelId}`);
-                    } else {
-                      logger.warn(`Platform streaming already started for channel ${channelId}, skipping`);
+                    } catch (err) {
+                      logger.error(`Failed to start platform streaming for channel ${channelId}`, { error: err.message });
+                      // Reset flag so it can be retried
+                      this.platformStreamingStarted.set(channelId, false);
+                      // Retry after 5 seconds
+                      setTimeout(() => this.retryPlatformStreaming(channelId), 5000);
                     }
-                  } catch (err) {
-                    logger.error(`Failed to start platform streaming for channel ${channelId}`, { error: err.message });
-                    this.platformStreamingTimers.delete(channelId);
-                    // Retry after 5 seconds if failed
+                  })
+                  .catch((err) => {
+                    logger.error(`Failed to verify RTMP stream for channel ${channelId}`, { error: err.message });
+                    // Reset flag so it can be retried
+                    this.platformStreamingStarted.set(channelId, false);
+                    // Retry after 5 seconds
                     setTimeout(() => this.retryPlatformStreaming(channelId), 5000);
-                  }
-                }, 3000); // 3 second delay to let WebRTC→RTMP bridge stabilize
-
-                this.platformStreamingTimers.set(channelId, timer);
+                  });
               } else {
                 logger.info(`Platform streaming already started for channel ${channelId}, skipping trigger`);
               }
@@ -668,18 +730,22 @@ class WebRTCBridgeService {
         logger.info(`Cleared platform streaming timer for channel ${channelId}`);
       }
 
-      // Stop video sink
+      // Stop video sink - CRITICAL: Explicitly detach C++ callback and break JS references
       const videoSink = this.videoSinks.get(channelId);
       if (videoSink) {
-        videoSink.stop();
+        videoSink.stop(); // Detaches C++ callback
+        videoSink.onframe = null; // Break JS reference to prevent memory leak
         this.videoSinks.delete(channelId);
+        logger.info(`Video sink stopped and references cleared for channel ${channelId}`);
       }
 
-      // Stop audio sink
+      // Stop audio sink - CRITICAL: Explicitly detach C++ callback and break JS references
       const audioSink = this.audioSinks.get(channelId);
       if (audioSink) {
-        audioSink.stop();
+        audioSink.stop(); // Detaches C++ callback
+        audioSink.ondata = null; // Break JS reference to prevent memory leak
         this.audioSinks.delete(channelId);
+        logger.info(`Audio sink stopped and references cleared for channel ${channelId}`);
       }
 
       // Stop FFmpeg process

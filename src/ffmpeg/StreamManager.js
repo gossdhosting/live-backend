@@ -790,17 +790,23 @@ class StreamManager {
       }
 
       // For RTMP input, add specific buffer settings to handle incoming stream
+      // Following Gemini's recommendations for robust RTMP client configuration
       if (isRtmpInput || isWebcamInput) {
         ffmpegArgs.push(
-          '-rtmp_live', 'live',    // Optimize for live streaming (act as client)
-          '-rtmp_buffer', '1000',  // 1 second buffer to handle jitter
-          '-rw_timeout', '5000000' // 5 second read/write timeout (5,000,000 microseconds)
+          // Force FLV container format for RTMP input (ensures proper format detection)
+          '-f', 'flv',
+          // Force FFmpeg to act as a client reading a live stream (never server mode)
+          '-rtmp_live', 'live',
+          // Timeout for socket I/O operations (15 seconds = 15,000,000 microseconds)
+          // Allows for brief WebRTC hiccups/transcoding lag without killing the process
+          '-rw_timeout', '15000000',
+          // Input buffer: Read 3 seconds ahead to smooth out jitter from local ingest
+          // This prevents "Input/output error" when there are temporary gaps
+          '-rtmp_buffer', '3000'
         );
 
-        // CRITICAL FIX for webcam: Add reconnect attempts to handle race condition
-        // where FFmpeg starts before WebRTC bridge finishes pushing to nginx-rtmp
         if (isWebcamInput) {
-          logger.info(`Adding reconnect logic for webcam input on channel ${channelId}`);
+          logger.info(`Optimized RTMP client parameters applied for webcam input on channel ${channelId}`);
         }
       }
 
