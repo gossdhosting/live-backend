@@ -151,6 +151,7 @@ class WebRTCBridgeService {
       let currentResolution = null; // Track current FFmpeg resolution
 
       videoSink.onframe = async ({ frame }) => {
+        console.log(`[WebRTC Bridge] ONFRAME FIRED! Frame ${frameCount + 1} for channel ${channelId}`);
         try {
           frameCount++;
 
@@ -159,6 +160,7 @@ class WebRTCBridgeService {
 
           // Start FFmpeg bridge on first frame
           if (frameCount === 1) {
+            console.log(`[WebRTC Bridge] FIRST FRAME! ${frameResolution}`);
             logger.info(`First video frame received for channel ${channelId}: ${frameResolution}`);
             currentResolution = frameResolution;
             this.startFFmpegBridge(channelId, streamKey, frame);
@@ -219,12 +221,22 @@ class WebRTCBridgeService {
       };
 
       logger.info(`Video track handler attached for channel ${channelId}`);
+      console.log(`[WebRTC Bridge] Sink reference stored in Map, has ${this.videoSinks.size} video sinks total`);
+      console.log(`[WebRTC Bridge] VideoSink object:`, {
+        hasOnframe: typeof videoSink.onframe === 'function',
+        sinkToString: videoSink.toString()
+      });
 
       // Debug: Log when frames start/stop
       setTimeout(() => {
         if (frameCount === 0) {
           logger.warn(`NO VIDEO FRAMES received after 5 seconds for channel ${channelId}`);
           console.log(`[WebRTC Bridge] WARNING: Video sink created but no frames received yet`);
+          console.log(`[WebRTC Bridge] Track state after 5s:`, {
+            enabled: track.enabled,
+            readyState: track.readyState,
+            muted: track.muted
+          });
         } else {
           logger.info(`Video frames flowing normally for channel ${channelId}: ${frameCount} frames in 5 seconds`);
         }
@@ -252,6 +264,7 @@ class WebRTCBridgeService {
       this.audioSinks.set(channelId, audioSink);
 
       audioSink.ondata = ({ samples }) => {
+        console.log(`[WebRTC Bridge] AUDIO ONDATA FIRED! Samples: ${samples.length} for channel ${channelId}`);
         try {
           // Write audio samples to FFmpeg
           const ffmpegProcess = this.ffmpegProcesses.get(channelId);
