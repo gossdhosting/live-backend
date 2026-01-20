@@ -132,66 +132,70 @@ class WebRTCBridgeService {
       let currentResolution = null; // Track current FFmpeg resolution
 
       videoSink.onframe = async ({ frame }) => {
-        frameCount++;
+        try {
+          frameCount++;
 
-        // Check if resolution has changed (adaptive bitrate)
-        const frameResolution = `${frame.width}x${frame.height}`;
+          // Check if resolution has changed (adaptive bitrate)
+          const frameResolution = `${frame.width}x${frame.height}`;
 
-        // Start FFmpeg bridge on first frame
-        if (frameCount === 1) {
-          logger.info(`First video frame received for channel ${channelId}: ${frameResolution}`);
-          currentResolution = frameResolution;
-          this.startFFmpegBridge(channelId, streamKey, frame);
+          // Start FFmpeg bridge on first frame
+          if (frameCount === 1) {
+            logger.info(`First video frame received for channel ${channelId}: ${frameResolution}`);
+            currentResolution = frameResolution;
+            this.startFFmpegBridge(channelId, streamKey, frame);
 
-          // Update channel status to running
-          try {
-            await Channel.update(channelId, { status: 'running' });
-            logger.info(`Channel ${channelId} status updated to running`);
-          } catch (err) {
-            logger.error(`Failed to update channel status for ${channelId}`, { error: err.message });
-          }
-        } else if (currentResolution !== frameResolution) {
-          // Resolution changed - restart FFmpeg with new dimensions
-          logger.warn(`Resolution changed for channel ${channelId}: ${currentResolution} -> ${frameResolution}`);
-          logger.info(`Restarting FFmpeg bridge with new resolution...`);
-
-          // Stop current FFmpeg process
-          const ffmpegProcess = this.ffmpegProcesses.get(channelId);
-          if (ffmpegProcess && !ffmpegProcess.killed) {
+            // Update channel status to running
             try {
-              if (ffmpegProcess.stdin && !ffmpegProcess.stdin.destroyed) {
-                ffmpegProcess.stdin.end();
-              }
-              if (ffmpegProcess.audioStdin && !ffmpegProcess.audioStdin.destroyed) {
-                ffmpegProcess.audioStdin.end();
-              }
-              // Mark stdin as closed
-              this.ffmpegStdinClosed.set(channelId, true);
-              ffmpegProcess.kill('SIGTERM');
+              await Channel.update(channelId, { status: 'running' });
+              logger.info(`Channel ${channelId} status updated to running`);
             } catch (err) {
-              logger.error(`Error killing FFmpeg process for resolution change: ${err.message}`);
+              logger.error(`Failed to update channel status for ${channelId}`, { error: err.message });
+            }
+          } else if (currentResolution !== frameResolution) {
+            // Resolution changed - restart FFmpeg with new dimensions
+            logger.warn(`Resolution changed for channel ${channelId}: ${currentResolution} -> ${frameResolution}`);
+            logger.info(`Restarting FFmpeg bridge with new resolution...`);
+
+            // Stop current FFmpeg process
+            const ffmpegProcess = this.ffmpegProcesses.get(channelId);
+            if (ffmpegProcess && !ffmpegProcess.killed) {
+              try {
+                if (ffmpegProcess.stdin && !ffmpegProcess.stdin.destroyed) {
+                  ffmpegProcess.stdin.end();
+                }
+                if (ffmpegProcess.audioStdin && !ffmpegProcess.audioStdin.destroyed) {
+                  ffmpegProcess.audioStdin.end();
+                }
+                // Mark stdin as closed
+                this.ffmpegStdinClosed.set(channelId, true);
+                ffmpegProcess.kill('SIGTERM');
+              } catch (err) {
+                logger.error(`Error killing FFmpeg process for resolution change: ${err.message}`);
+              }
+            }
+
+            // Start new FFmpeg with updated resolution
+            currentResolution = frameResolution;
+            this.startFFmpegBridge(channelId, streamKey, frame);
+            logger.info(`FFmpeg restarted with resolution ${frameResolution} for channel ${channelId}`);
+          }
+
+          // Write frame to FFmpeg stdin
+          const ffmpegProcess = this.ffmpegProcesses.get(channelId);
+          const stdinClosed = this.ffmpegStdinClosed.get(channelId);
+
+          if (ffmpegProcess && ffmpegProcess.stdin && !ffmpegProcess.stdin.destroyed && !stdinClosed) {
+            const yuv = this.convertToYUV420(frame);
+            try {
+              ffmpegProcess.stdin.write(yuv);
+            } catch (err) {
+              logger.error(`Failed to write video frame for channel ${channelId}`, { error: err.message });
+              // Mark stdin as closed to prevent further write attempts
+              this.ffmpegStdinClosed.set(channelId, true);
             }
           }
-
-          // Start new FFmpeg with updated resolution
-          currentResolution = frameResolution;
-          this.startFFmpegBridge(channelId, streamKey, frame);
-          logger.info(`FFmpeg restarted with resolution ${frameResolution} for channel ${channelId}`);
-        }
-
-        // Write frame to FFmpeg stdin
-        const ffmpegProcess = this.ffmpegProcesses.get(channelId);
-        const stdinClosed = this.ffmpegStdinClosed.get(channelId);
-
-        if (ffmpegProcess && ffmpegProcess.stdin && !ffmpegProcess.stdin.destroyed && !stdinClosed) {
-          const yuv = this.convertToYUV420(frame);
-          try {
-            ffmpegProcess.stdin.write(yuv);
-          } catch (err) {
-            logger.error(`Failed to write video frame for channel ${channelId}`, { error: err.message });
-            // Mark stdin as closed to prevent further write attempts
-            this.ffmpegStdinClosed.set(channelId, true);
-          }
+        } catch (error) {
+          logger.error(`Unhandled error in video frame handler for channel ${channelId}`, { error: error.message, stack: error.stack });
         }
       };
 
@@ -210,20 +214,24 @@ class WebRTCBridgeService {
       this.audioSinks.set(channelId, audioSink);
 
       audioSink.ondata = ({ samples }) => {
-        // Write audio samples to FFmpeg
-        const ffmpegProcess = this.ffmpegProcesses.get(channelId);
-        const stdinClosed = this.ffmpegStdinClosed.get(channelId);
+        try {
+          // Write audio samples to FFmpeg
+          const ffmpegProcess = this.ffmpegProcesses.get(channelId);
+          const stdinClosed = this.ffmpegStdinClosed.get(channelId);
 
-        if (ffmpegProcess && ffmpegProcess.audioStdin && !ffmpegProcess.audioStdin.destroyed && !stdinClosed) {
-          try {
-            // Convert samples to buffer
-            const buffer = Buffer.from(samples.buffer);
-            ffmpegProcess.audioStdin.write(buffer);
-          } catch (err) {
-            logger.error(`Failed to write audio samples for channel ${channelId}`, { error: err.message });
-            // Mark stdin as closed to prevent further write attempts
-            this.ffmpegStdinClosed.set(channelId, true);
+          if (ffmpegProcess && ffmpegProcess.audioStdin && !ffmpegProcess.audioStdin.destroyed && !stdinClosed) {
+            try {
+              // Convert samples to buffer
+              const buffer = Buffer.from(samples.buffer);
+              ffmpegProcess.audioStdin.write(buffer);
+            } catch (err) {
+              logger.error(`Failed to write audio samples for channel ${channelId}`, { error: err.message });
+              // Mark stdin as closed to prevent further write attempts
+              this.ffmpegStdinClosed.set(channelId, true);
+            }
           }
+        } catch (error) {
+          logger.error(`Unhandled error in audio data handler for channel ${channelId}`, { error: error.message, stack: error.stack });
         }
       };
 
