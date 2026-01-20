@@ -780,7 +780,7 @@ class StreamManager {
       // Video files don't need reconnection as they're local files
       // RTMP protocol doesn't support -reconnect/-timeout options (HTTP/HLS only)
       // CRITICAL: -timeout for RTMP implies -rtmp_listen 1 (server mode)
-      if (!isVideoFile && !isRtmpInput) {
+      if (!isVideoFile && !isRtmpInput && !isWebcamInput) {
         ffmpegArgs.push(
           '-reconnect', '1',
           '-reconnect_streamed', '1',

@@ -243,4 +243,56 @@ process.on('unhandledRejection', (reason, promise) => {
   // Don't exit - log and continue
 });
 
+// Graceful shutdown handlers to cleanup native C++ objects (wrtc) before PM2 restart
+process.on('SIGTERM', async () => {
+  logger.info('SIGTERM received - Starting graceful shutdown');
+  console.log('[Graceful Shutdown] SIGTERM received, cleaning up WebRTC connections...');
+
+  try {
+    // Import WebRTC bridge service
+    const webrtcBridge = (await import('./src/services/WebRTCBridgeService.js')).default;
+
+    // Stop all WebRTC bridges to cleanup native C++ objects
+    const activeChannels = Array.from(webrtcBridge.peerConnections.keys());
+    console.log('[Graceful Shutdown] Active WebRTC channels:', activeChannels);
+
+    for (const channelId of activeChannels) {
+      console.log('[Graceful Shutdown] Stopping WebRTC bridge for channel:', channelId);
+      await webrtcBridge.stopBridge(channelId);
+    }
+
+    logger.info('Graceful shutdown completed, exiting...');
+    console.log('[Graceful Shutdown] All WebRTC connections cleaned up successfully');
+    process.exit(0);
+  } catch (error) {
+    logger.error('Error during graceful shutdown:', { error: error.message });
+    console.error('[Graceful Shutdown] Error:', error.message);
+    process.exit(1);
+  }
+});
+
+process.on('SIGINT', async () => {
+  logger.info('SIGINT received - Starting graceful shutdown');
+  console.log('[Graceful Shutdown] SIGINT received, cleaning up WebRTC connections...');
+
+  try {
+    const webrtcBridge = (await import('./src/services/WebRTCBridgeService.js')).default;
+    const activeChannels = Array.from(webrtcBridge.peerConnections.keys());
+    console.log('[Graceful Shutdown] Active WebRTC channels:', activeChannels);
+
+    for (const channelId of activeChannels) {
+      console.log('[Graceful Shutdown] Stopping WebRTC bridge for channel:', channelId);
+      await webrtcBridge.stopBridge(channelId);
+    }
+
+    logger.info('Graceful shutdown completed, exiting...');
+    console.log('[Graceful Shutdown] All WebRTC connections cleaned up successfully');
+    process.exit(0);
+  } catch (error) {
+    logger.error('Error during graceful shutdown:', { error: error.message });
+    console.error('[Graceful Shutdown] Error:', error.message);
+    process.exit(1);
+  }
+});
+
 startServer();
