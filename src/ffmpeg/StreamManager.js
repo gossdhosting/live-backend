@@ -443,10 +443,9 @@ class StreamManager {
 
       // If input type is RTMP or Webcam, use nginx-rtmp as input source
       if (isRtmpInput || isWebcamInput) {
-        // RTMP/Webcam input comes from nginx-rtmp server on 127.0.0.1
-        // Use explicit IPv4 to avoid IPv6 resolution issues
-        // Format: rtmp://127.0.0.1:1935/live/{stream_key}
-        const rtmpInputUrl = `rtmp://127.0.0.1:1935/live/${channel.stream_key}`;
+        // RTMP/Webcam input comes from nginx-rtmp server
+        // Format: rtmp://panel.rexstream.net:1935/live/{stream_key}
+        const rtmpInputUrl = `rtmp://panel.rexstream.net:1935/live/${channel.stream_key}`;
         resolvedInputUrl = rtmpInputUrl;
 
         if (isWebcamInput) {
