@@ -280,19 +280,38 @@ class WebRTCBridgeService {
         console.log(`[WebRTC Bridge] Video sink onframe handler attached (delayed) for channel ${channelId}`);
       };
 
-      // Call the attachment function after 500ms delay (wrtc 0.4.7 workaround)
-      setTimeout(() => {
-        attachVideoSinkHandler();
+      // AGGRESSIVE FIX for wrtc 0.4.7 cold start bug
+      // Force track to start by toggling it multiple times with increasing delays
+      const forceTrackStart = async () => {
+        console.log(`[WebRTC Bridge] Starting aggressive track forcing for channel ${channelId}`);
 
-        // CRITICAL FIX: Toggle track enabled to force wrtc to start sending frames
-        // This fixes the "cold start" issue where track is live but no frames flow
+        // Toggle 1: Immediate (forces wrtc to initialize)
         track.enabled = false;
-        setTimeout(() => {
-          track.enabled = true;
-          console.log(`[WebRTC Bridge] Track enabled toggled for channel ${channelId}`);
-        }, 100);
-      }, 500);
-      console.log(`[WebRTC Bridge] Scheduled delayed onframe attachment in 500ms for channel ${channelId}`);
+        await new Promise(resolve => setTimeout(resolve, 50));
+        track.enabled = true;
+        console.log(`[WebRTC Bridge] Track toggle 1/3 completed`);
+
+        // Toggle 2: After 200ms
+        await new Promise(resolve => setTimeout(resolve, 200));
+        track.enabled = false;
+        await new Promise(resolve => setTimeout(resolve, 50));
+        track.enabled = true;
+        console.log(`[WebRTC Bridge] Track toggle 2/3 completed`);
+
+        // Toggle 3: After 500ms (attach handler)
+        await new Promise(resolve => setTimeout(resolve, 500));
+        attachVideoSinkHandler();
+        track.enabled = false;
+        await new Promise(resolve => setTimeout(resolve, 50));
+        track.enabled = true;
+        console.log(`[WebRTC Bridge] Track toggle 3/3 completed, handler attached`);
+      };
+
+      forceTrackStart().catch(err => {
+        logger.error(`Error in forceTrackStart for channel ${channelId}`, { error: err.message });
+      });
+
+      console.log(`[WebRTC Bridge] Scheduled aggressive track forcing for channel ${channelId}`);
 
       logger.info(`Video track handler attached for channel ${channelId}`);
       console.log(`[WebRTC Bridge] Sink reference stored in Map, has ${this.videoSinks.size} video sinks total`);
@@ -300,6 +319,121 @@ class WebRTCBridgeService {
         hasOnframe: typeof videoSink.onframe === 'function',
         sinkToString: videoSink.toString()
       });
+
+      // NUCLEAR OPTION: If no frames after 2 seconds, recreate the sink
+      setTimeout(() => {
+        if (frameCount === 0) {
+          console.log(`[WebRTC Bridge] ⚠️ NO FRAMES after 2s, forcing sink recreation for channel ${channelId}`);
+
+          // Remove old sink
+          const oldSink = this.videoSinks.get(channelId);
+          if (oldSink) {
+            try {
+              oldSink.stop();
+            } catch (e) {
+              // Ignore
+            }
+          }
+
+          // Create new sink and attach handler immediately
+          const newVideoSink = new wrtc.nonstandard.RTCVideoSink(track);
+          this.videoSinks.set(channelId, newVideoSink);
+
+          // Attach handler immediately this time
+          newVideoSink.onframe = ({ frame }) => {
+            try {
+              frameCount++;
+              const frameResolution = `${frame.width}x${frame.height}`;
+              console.log(`[WebRTC Bridge] !!! FRAME DETECTED IN CALLBACK !!! ${frameResolution}, frame ${frameCount} for channel ${channelId}`);
+
+              // Check if this is the first frame OR if FFmpeg bridge isn't running
+              // This handles case where connection persists across restart (frameCount != 1)
+              const ffmpegBridgeRunning = this.ffmpegProcesses.has(channelId);
+
+              if (frameCount === 1 || !ffmpegBridgeRunning) {
+                console.log(`[WebRTC Bridge] FIRST FRAME! ${frameResolution} (frameCount: ${frameCount}, bridge running: ${ffmpegBridgeRunning})`);
+                logger.info(`First video frame received for channel ${channelId}: ${frameResolution}`);
+                currentResolution = frameResolution;
+
+                // Only start FFmpeg bridge if not already running
+                if (!ffmpegBridgeRunning) {
+                  this.startFFmpegBridge(channelId, streamKey, frame);
+                }
+
+                // CRITICAL FIX: Start platform streaming only if NOT already started
+                const platformAlreadyStarted = this.platformStreamingStarted.get(channelId);
+                console.log(`[Platform Streaming Check] channel ${channelId}: platformAlreadyStarted = ${platformAlreadyStarted}`);
+                if (!platformAlreadyStarted) {
+                  console.log(`[Platform Streaming] Scheduling start for channel ${channelId} in 3 seconds`);
+                  logger.info(`Scheduling platform streaming start for channel ${channelId} in 3 seconds`);
+
+                  // Clear any existing timer first
+                  const existingTimer = this.platformStreamingTimers.get(channelId);
+                  if (existingTimer) {
+                    clearTimeout(existingTimer);
+                    logger.warn(`Cleared existing platform streaming timer for channel ${channelId}`);
+                  }
+
+                  const timer = setTimeout(async () => {
+                    console.log(`[Platform Streaming Timer] Fired for channel ${channelId}`);
+                    try {
+                      // Double-check it hasn't been started by another code path
+                      if (!this.platformStreamingStarted.get(channelId)) {
+                        console.log(`[Platform Streaming] STARTING streamManager.startStream(${channelId})`);
+                        logger.info(`Starting platform streaming for webcam channel ${channelId} after first frame`);
+                        await streamManager.startStream(channelId);
+                        this.platformStreamingStarted.set(channelId, true);
+                        this.platformStreamingTimers.delete(channelId);
+                        logger.info(`Platform streaming started successfully for channel ${channelId}`);
+                      } else {
+                        logger.warn(`Platform streaming already started for channel ${channelId}, skipping`);
+                      }
+                    } catch (err) {
+                      logger.error(`Failed to start platform streaming for channel ${channelId}`, { error: err.message });
+                      this.platformStreamingTimers.delete(channelId);
+                      // Retry after 5 seconds if failed
+                      setTimeout(() => this.retryPlatformStreaming(channelId), 5000);
+                    }
+                  }, 3000); // 3 second delay to let WebRTC→RTMP bridge stabilize
+
+                  this.platformStreamingTimers.set(channelId, timer);
+                } else {
+                  logger.info(`Platform streaming already started for channel ${channelId}, skipping trigger`);
+                }
+              } else if (currentResolution !== frameResolution) {
+                // Resolution changed - restart FFmpeg with new dimensions
+                logger.info(`Resolution changed from ${currentResolution} to ${frameResolution} for channel ${channelId}, restarting FFmpeg`);
+                currentResolution = frameResolution;
+                this.startFFmpegBridge(channelId, streamKey, frame);
+              }
+
+              // Write frame to FFmpeg stdin
+              const ffmpegProcess = this.ffmpegProcesses.get(channelId);
+              const stdinClosed = this.ffmpegStdinClosed.get(channelId);
+
+              if (ffmpegProcess && ffmpegProcess.stdin && !ffmpegProcess.stdin.destroyed && !stdinClosed) {
+                const yuv = this.convertToYUV420(frame);
+                try {
+                  ffmpegProcess.stdin.write(yuv);
+                } catch (err) {
+                  logger.error(`Failed to write video frame for channel ${channelId}`, { error: err.message });
+                  // Mark stdin as closed to prevent further write attempts
+                  this.ffmpegStdinClosed.set(channelId, true);
+                }
+              }
+            } catch (error) {
+              logger.error(`Unhandled error in video frame handler for channel ${channelId}`, { error: error.message, stack: error.stack });
+            }
+          };
+
+          // Force track toggle one more time
+          track.enabled = false;
+          setTimeout(() => {
+            track.enabled = true;
+            console.log(`[WebRTC Bridge] ✅ Sink recreated and track re-enabled for channel ${channelId}`);
+          }, 100);
+        }
+      }, 2000);
 
       // Debug: Log when frames start/stop
       setTimeout(() => {
