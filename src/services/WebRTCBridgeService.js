@@ -264,8 +264,8 @@ class WebRTCBridgeService {
                 // Mark as started immediately to prevent duplicate triggers
                 this.platformStreamingStarted.set(channelId, true);
 
-                // Build RTMP URL for polling (external server)
-                const rtmpUrl = `rtmp://panel.rexstream.net/live/${streamKey}`;
+                // Build RTMP URL for polling (localhost for fast internal pipeline)
+                const rtmpUrl = `rtmp://127.0.0.1:1935/live/${streamKey}`;
 
                 // Use smart polling instead of fixed timeout - wait for stream to be available
                 this.waitForRtmpStream(rtmpUrl, 20)
@@ -603,8 +603,8 @@ class WebRTCBridgeService {
       console.log(`[startFFmpegBridge] Frame dimensions: ${firstFrame.width}x${firstFrame.height}`);
       const width = firstFrame.width;
       const height = firstFrame.height;
-      // Use external RTMP server instead of localhost
-      const rtmpUrl = `rtmp://panel.rexstream.net/live/${streamKey}`;
+      // Use localhost for internal transcoding pipeline (avoid internet latency)
+      const rtmpUrl = `rtmp://127.0.0.1:1935/live/${streamKey}`;
 
       console.log(`[startFFmpegBridge] RTMP URL: ${rtmpUrl}`);
       logger.info(`Starting FFmpeg bridge for channel ${channelId}: ${width}x${height} -> ${rtmpUrl}`);
