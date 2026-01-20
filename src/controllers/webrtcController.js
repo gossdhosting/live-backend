@@ -62,6 +62,17 @@ export const startWebRTC = async (req, res) => {
       return res.status(400).json({ error: 'Channel is already streaming' });
     }
 
+    // CRITICAL: Force stop any existing connection first (fixes persistence bug)
+    console.log('[WebRTC Start] Checking for existing connection...');
+    if (webrtcBridgeService.peerConnections.has(channelId)) {
+      console.log('[WebRTC Start] ⚠️ EXISTING CONNECTION FOUND - FORCING STOP');
+      logger.warn(`Force stopping existing WebRTC connection for channel ${channelId}`);
+      await webrtcBridgeService.stopBridge(channelId);
+      console.log('[WebRTC Start] ✅ Existing connection stopped');
+    } else {
+      console.log('[WebRTC Start] No existing connection found');
+    }
+
     console.log('[WebRTC Start] Creating peer connection...');
     // Create peer connection
     await webrtcBridgeService.createPeerConnection(channelId, channel.stream_key);
