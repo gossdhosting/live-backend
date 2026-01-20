@@ -40,10 +40,12 @@ class WebRTCBridgeService {
         throw new Error('Channel input type must be webcam');
       }
 
-      // Check if connection already exists
+      // Check if connection already exists - FORCE STOP IT
       if (this.peerConnections.has(channelId)) {
-        logger.warn(`WebRTC connection already exists for channel ${channelId}`);
-        return this.peerConnections.get(channelId);
+        logger.warn(`WebRTC connection already exists for channel ${channelId} - FORCING CLEANUP`);
+        console.log(`[WebRTC Bridge] FORCING stopBridge for existing connection on channel ${channelId}`);
+        await this.stopBridge(channelId);
+        console.log(`[WebRTC Bridge] Existing connection stopped, creating fresh connection`);
       }
 
       // Create peer connection with STUN and TURN servers for NAT traversal
