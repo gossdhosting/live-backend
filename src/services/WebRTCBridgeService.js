@@ -135,6 +135,15 @@ class WebRTCBridgeService {
    */
   handleVideoTrack(channelId, track, streamKey) {
     try {
+      logger.info(`Handling video track for channel ${channelId}`, {
+        trackId: track.id,
+        trackKind: track.kind,
+        trackEnabled: track.enabled,
+        trackReadyState: track.readyState,
+        trackMuted: track.muted
+      });
+      console.log(`[WebRTC Bridge] Creating video sink for track ${track.id}, enabled: ${track.enabled}, readyState: ${track.readyState}`);
+
       const videoSink = new RTCVideoSink(track);
       this.videoSinks.set(channelId, videoSink);
 
@@ -210,8 +219,18 @@ class WebRTCBridgeService {
       };
 
       logger.info(`Video track handler attached for channel ${channelId}`);
+
+      // Debug: Log when frames start/stop
+      setTimeout(() => {
+        if (frameCount === 0) {
+          logger.warn(`NO VIDEO FRAMES received after 5 seconds for channel ${channelId}`);
+          console.log(`[WebRTC Bridge] WARNING: Video sink created but no frames received yet`);
+        } else {
+          logger.info(`Video frames flowing normally for channel ${channelId}: ${frameCount} frames in 5 seconds`);
+        }
+      }, 5000);
     } catch (error) {
-      logger.error(`Failed to handle video track for channel ${channelId}`, { error: error.message });
+      logger.error(`Failed to handle video track for channel ${channelId}`, { error: error.message, stack: error.stack });
     }
   }
 
@@ -220,6 +239,15 @@ class WebRTCBridgeService {
    */
   handleAudioTrack(channelId, track, streamKey) {
     try {
+      logger.info(`Handling audio track for channel ${channelId}`, {
+        trackId: track.id,
+        trackKind: track.kind,
+        trackEnabled: track.enabled,
+        trackReadyState: track.readyState,
+        trackMuted: track.muted
+      });
+      console.log(`[WebRTC Bridge] Creating audio sink for track ${track.id}, enabled: ${track.enabled}, readyState: ${track.readyState}`);
+
       const audioSink = new RTCAudioSink(track);
       this.audioSinks.set(channelId, audioSink);
 
