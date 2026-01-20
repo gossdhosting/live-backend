@@ -527,17 +527,21 @@ class WebRTCBridgeService {
    * Start FFmpeg bridge to convert WebRTC stream to RTMP
    */
   startFFmpegBridge(channelId, streamKey, firstFrame) {
+    console.log(`[startFFmpegBridge] CALLED for channel ${channelId}, streamKey: ${streamKey}`);
     try {
       // Check if already running
       if (this.ffmpegProcesses.has(channelId)) {
+        console.log(`[startFFmpegBridge] Already running for channel ${channelId}`);
         logger.warn(`FFmpeg bridge already running for channel ${channelId}`);
         return;
       }
 
+      console.log(`[startFFmpegBridge] Frame dimensions: ${firstFrame.width}x${firstFrame.height}`);
       const width = firstFrame.width;
       const height = firstFrame.height;
       const rtmpUrl = `rtmp://127.0.0.1:1935/live/${streamKey}`;
 
+      console.log(`[startFFmpegBridge] RTMP URL: ${rtmpUrl}`);
       logger.info(`Starting FFmpeg bridge for channel ${channelId}: ${width}x${height} -> ${rtmpUrl}`);
 
       // FFmpeg command to convert raw video/audio to RTMP
