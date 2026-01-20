@@ -398,6 +398,20 @@ class WebRTCBridgeService {
       // Create separate audio stdin
       ffmpegProcess.audioStdin = ffmpegProcess.stdio[3];
 
+      // Handle FFmpeg stdin errors (CRITICAL: prevents EPIPE/ECONNRESET crashes)
+      if (ffmpegProcess.stdin) {
+        ffmpegProcess.stdin.on('error', (error) => {
+          logger.warn(`FFmpeg video stdin error for channel ${channelId}: ${error.message}`);
+          this.ffmpegStdinClosed.set(channelId, true);
+        });
+      }
+
+      if (ffmpegProcess.audioStdin) {
+        ffmpegProcess.audioStdin.on('error', (error) => {
+          logger.warn(`FFmpeg audio stdin error for channel ${channelId}: ${error.message}`);
+        });
+      }
+
       // Handle FFmpeg output
       ffmpegProcess.stderr.on('data', (data) => {
         const message = data.toString();
@@ -405,6 +419,11 @@ class WebRTCBridgeService {
           logger.error(`FFmpeg bridge error for channel ${channelId}: ${message}`);
           this.incrementErrors(channelId);
         }
+      });
+
+      // Handle FFmpeg stderr errors
+      ffmpegProcess.stderr.on('error', (error) => {
+        logger.warn(`FFmpeg stderr error for channel ${channelId}: ${error.message}`);
       });
 
       // Handle FFmpeg exit
