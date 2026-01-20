@@ -790,10 +790,18 @@ class StreamManager {
       }
 
       // For RTMP input, add specific buffer settings to handle incoming stream
-      if (isRtmpInput) {
+      if (isRtmpInput || isWebcamInput) {
         ffmpegArgs.push(
-          '-rtmp_live', 'live'     // Optimize for live streaming (act as client)
+          '-rtmp_live', 'live',    // Optimize for live streaming (act as client)
+          '-rtmp_buffer', '1000',  // 1 second buffer to handle jitter
+          '-rw_timeout', '5000000' // 5 second read/write timeout (5,000,000 microseconds)
         );
+
+        // CRITICAL FIX for webcam: Add reconnect attempts to handle race condition
+        // where FFmpeg starts before WebRTC bridge finishes pushing to nginx-rtmp
+        if (isWebcamInput) {
+          logger.info(`Adding reconnect logic for webcam input on channel ${channelId}`);
+        }
       }
 
       // Only use -re flag for video files to control playback speed

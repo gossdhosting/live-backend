@@ -20,6 +20,7 @@ class WebRTCBridgeService {
     this.audioSinks = new Map(); // channelId -> RTCAudioSink
     this.streamStates = new Map(); // channelId -> { status, startTime, errors }
     this.ffmpegStdinClosed = new Map(); // channelId -> boolean (tracks if FFmpeg stdin has been closed)
+    this.firstFrameReceived = new Map(); // channelId -> boolean (tracks if first frame received)
   }
 
   /**
@@ -105,11 +106,39 @@ class WebRTCBridgeService {
       };
 
       // Handle connection state changes
-      peerConnection.onconnectionstatechange = () => {
+      peerConnection.onconnectionstatechange = async () => {
         logger.info(`WebRTC connection state for channel ${channelId}: ${peerConnection.connectionState}`);
 
         if (peerConnection.connectionState === 'connected') {
           this.updateStreamState(channelId, { status: 'connected', startTime: Date.now() });
+
+          // CRITICAL FIX: Only trigger platform streaming when connection is FULLY established
+          // Wait for first frame to be received, then start platform streaming
+          // This is set by a flag in handleVideoTrack when first frame arrives
+          const checkForFirstFrame = setInterval(async () => {
+            const firstFrameReceived = this.firstFrameReceived?.get(channelId);
+            if (firstFrameReceived) {
+              clearInterval(checkForFirstFrame);
+
+              // Wait 2 seconds for WebRTC→RTMP bridge to stabilize
+              setTimeout(async () => {
+                try {
+                  logger.info(`Starting platform streaming for webcam channel ${channelId} (connection fully established)`);
+                  await streamManager.startStream(channelId);
+                  logger.info(`Platform streaming started successfully for channel ${channelId}`);
+                } catch (err) {
+                  logger.error(`Failed to start platform streaming for channel ${channelId}`, { error: err.message });
+                  await Channel.update(channelId, {
+                    status: 'error',
+                    error_message: `Failed to start platform streaming: ${err.message}`
+                  });
+                }
+              }, 2000);
+            }
+          }, 500); // Check every 500ms
+
+          // Timeout after 30 seconds
+          setTimeout(() => clearInterval(checkForFirstFrame), 30000);
         } else if (peerConnection.connectionState === 'disconnected' || peerConnection.connectionState === 'failed') {
           this.updateStreamState(channelId, { status: 'disconnected' });
           this.stopBridge(channelId);
@@ -179,20 +208,10 @@ class WebRTCBridgeService {
               currentResolution = frameResolution;
               this.startFFmpegBridge(channelId, streamKey, frame);
 
-              // Wait 2 seconds for WebRTC→RTMP bridge to stabilize before starting platform streaming
-              setTimeout(async () => {
-                try {
-                  logger.info(`Starting platform streaming for webcam channel ${channelId}`);
-                  await streamManager.startStream(channelId);
-                  logger.info(`Platform streaming started successfully for channel ${channelId}`);
-                } catch (err) {
-                  logger.error(`Failed to start platform streaming for channel ${channelId}`, { error: err.message });
-                  await Channel.update(channelId, {
-                    status: 'error',
-                    error_message: `Failed to start platform streaming: ${err.message}`
-                  });
-                }
-              }, 2000);
+              // Set flag that first frame was received
+              // Platform streaming will be triggered by onconnectionstatechange handler
+              this.firstFrameReceived.set(channelId, true);
+              logger.info(`First frame flag set for channel ${channelId}, platform streaming will start after connection stabilizes`);
             } else if (currentResolution !== frameResolution) {
               // Resolution changed - restart FFmpeg with new dimensions
               logger.warn(`Resolution changed for channel ${channelId}: ${currentResolution} -> ${frameResolution}`);
@@ -244,7 +263,17 @@ class WebRTCBridgeService {
       };
 
       // Call the attachment function after 500ms delay (wrtc 0.4.7 workaround)
-      setTimeout(attachVideoSinkHandler, 500);
+      setTimeout(() => {
+        attachVideoSinkHandler();
+
+        // CRITICAL FIX: Toggle track enabled to force wrtc to start sending frames
+        // This fixes the "cold start" issue where track is live but no frames flow
+        track.enabled = false;
+        setTimeout(() => {
+          track.enabled = true;
+          console.log(`[WebRTC Bridge] Track enabled toggled for channel ${channelId}`);
+        }, 100);
+      }, 500);
       console.log(`[WebRTC Bridge] Scheduled delayed onframe attachment in 500ms for channel ${channelId}`);
 
       logger.info(`Video track handler attached for channel ${channelId}`);
