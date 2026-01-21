@@ -445,33 +445,52 @@ class StreamManager {
       // If input type is RTMP or Webcam, use nginx-rtmp as input source
       if (isRtmpInput || isWebcamInput) {
         if (isWebcamInput) {
-          // IMPORTANT: For webcam, DON'T start platform streaming here!
-          // The WebRTC bridge will automatically trigger platform streaming when first frame arrives
-          // Just update status and return early
-          await Channel.updateStatus(channelId, 'waiting_for_input', null, 'Waiting for camera connection...');
-          logger.info(`Webcam stream initiated for channel ${channelId}. Waiting for WebRTC connection...`);
-
-          // FIX: Add a 60-second watchdog to prevent infinite stuck in waiting_for_input
-          // If no connection arrives within 60 seconds, revert to stopped state
-          setTimeout(async () => {
-            try {
-              const freshChannel = await Channel.findById(channelId);
-              if (freshChannel && freshChannel.status === 'waiting_for_input') {
-                logger.warn(`Webcam connection timeout for channel ${channelId}. No camera connected within 60 seconds.`);
-                console.log(`[Watchdog] Channel ${channelId} stuck in waiting_for_input. Reverting to stopped.`);
-                await this.stopStream(channelId); // Cleans up and sets status to 'stopped'
-              }
-            } catch (watchdogError) {
-              logger.error(`Watchdog error for channel ${channelId}:`, { error: watchdogError.message });
+          // Check if webcam is already connected (status = waiting_for_input or running)
+          // If it's already waiting or running, this is the platform streaming trigger, NOT the initial setup
+          if (channel.status === 'waiting_for_input' || channel.status === 'running') {
+            // WebRTC bridge is already active, frames are flowing
+            // Now start actual platform streaming by pulling from nginx-rtmp
+            const allocatedPort = portAllocator.getPort(channelId);
+            if (!allocatedPort) {
+              logger.error(`[StreamManager] No RTMP port allocated for webcam channel ${channelId}`);
+              throw new Error('No RTMP port allocated for webcam stream');
             }
-          }, 60000); // 60 seconds
 
-          return {
-            success: true,
-            message: 'Webcam stream waiting for camera connection. Platform streaming will start automatically.',
-            channelId,
-            status: 'waiting_for_input'
-          };
+            resolvedInputUrl = `rtmp://127.0.0.1:${allocatedPort}/live/${channel.stream_key}`;
+            logger.info(`[StreamManager] Starting platform streaming for webcam channel ${channelId}`);
+            logger.info(`[StreamManager] Input: ${resolvedInputUrl} (WebRTC bridge → nginx-rtmp)`);
+            console.log(`[StreamManager] Platform streaming triggered for webcam ${channelId}, pulling from ${resolvedInputUrl}`);
+
+            // Continue to platform streaming setup below (don't return early)
+          } else {
+            // Initial "Go Live" click - webcam not connected yet
+            // Just update status and return early
+            await Channel.updateStatus(channelId, 'waiting_for_input', null, 'Waiting for camera connection...');
+            logger.info(`[StreamManager] Webcam stream initiated for channel ${channelId}. Waiting for WebRTC connection...`);
+            console.log(`[StreamManager] Channel ${channelId} set to waiting_for_input`);
+
+            // FIX: Add a 60-second watchdog to prevent infinite stuck in waiting_for_input
+            // If no connection arrives within 60 seconds, revert to stopped state
+            setTimeout(async () => {
+              try {
+                const freshChannel = await Channel.findById(channelId);
+                if (freshChannel && freshChannel.status === 'waiting_for_input') {
+                  logger.warn(`[StreamManager] Webcam connection timeout for channel ${channelId}. No camera connected within 60 seconds.`);
+                  console.log(`[StreamManager Watchdog] Channel ${channelId} stuck in waiting_for_input. Reverting to stopped.`);
+                  await this.stopStream(channelId); // Cleans up and sets status to 'stopped'
+                }
+              } catch (watchdogError) {
+                logger.error(`[StreamManager] Watchdog error for channel ${channelId}:`, { error: watchdogError.message });
+              }
+            }, 60000); // 60 seconds
+
+            return {
+              success: true,
+              message: 'Webcam stream waiting for camera connection. Platform streaming will start automatically.',
+              channelId,
+              status: 'waiting_for_input'
+            };
+          }
         } else {
           // Custom RTMP uses standard port 1935 (external users push here from OBS/vMix)
           resolvedInputUrl = `rtmp://127.0.0.1:1935/live/${channel.stream_key}`;
