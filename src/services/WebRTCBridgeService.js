@@ -250,6 +250,17 @@ class WebRTCBridgeService {
       });
       console.log(`[WebRTC Bridge] Creating video sink for track ${track.id}, enabled: ${track.enabled}, readyState: ${track.readyState}`);
 
+      // CRITICAL: Stop and cleanup any existing video sink BEFORE creating new one
+      // This prevents old 640x360 sinks from continuing to send frames after new connection starts
+      const existingSink = this.videoSinks.get(channelId);
+      if (existingSink) {
+        console.log(`[WebRTC Bridge] ⚠️ STOPPING OLD VIDEO SINK before creating new one for channel ${channelId}`);
+        logger.warn(`Stopping existing video sink before creating new one for channel ${channelId}`);
+        existingSink.onframe = null; // Break callback immediately
+        existingSink.stop(); // Stop C++ sink
+        this.videoSinks.delete(channelId);
+      }
+
       const videoSink = new RTCVideoSink(track);
       this.videoSinks.set(channelId, videoSink);
 
@@ -676,6 +687,16 @@ class WebRTCBridgeService {
         trackMuted: track.muted
       });
       console.log(`[WebRTC Bridge] Creating audio sink for track ${track.id}, enabled: ${track.enabled}, readyState: ${track.readyState}`);
+
+      // CRITICAL: Stop and cleanup any existing audio sink BEFORE creating new one
+      const existingAudioSink = this.audioSinks.get(channelId);
+      if (existingAudioSink) {
+        console.log(`[WebRTC Bridge] ⚠️ STOPPING OLD AUDIO SINK before creating new one for channel ${channelId}`);
+        logger.warn(`Stopping existing audio sink before creating new one for channel ${channelId}`);
+        existingAudioSink.ondata = null; // Break callback immediately
+        existingAudioSink.stop(); // Stop C++ sink
+        this.audioSinks.delete(channelId);
+      }
 
       const audioSink = new RTCAudioSink(track);
       this.audioSinks.set(channelId, audioSink);
