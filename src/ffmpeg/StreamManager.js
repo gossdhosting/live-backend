@@ -467,12 +467,15 @@ class StreamManager {
             // WebRTC bridge is already active, frames are flowing
             // Now start actual platform streaming by pulling from nginx-rtmp
             const allocatedPort = portAllocator.getPort(channelId);
+            debugLogger.writeLog(`🔌 Port allocated: ${allocatedPort} for channel ${channelId}`);
             if (!allocatedPort) {
+              debugLogger.writeLog(`❌ No port allocated for channel ${channelId}`);
               logger.error(`[StreamManager] No RTMP port allocated for webcam channel ${channelId}`);
               throw new Error('No RTMP port allocated for webcam stream');
             }
 
             resolvedInputUrl = `rtmp://127.0.0.1:${allocatedPort}/live/${channel.stream_key}`;
+            debugLogger.writeLog(`📡 Resolved input URL: ${resolvedInputUrl}`);
             logger.info(`[StreamManager] Starting platform streaming for webcam channel ${channelId}`);
             logger.info(`[StreamManager] Input: ${resolvedInputUrl} (WebRTC bridge → nginx-rtmp)`);
             console.log(`[StreamManager] Platform streaming triggered for webcam ${channelId}, pulling from ${resolvedInputUrl}`);
@@ -630,6 +633,8 @@ class StreamManager {
       // Get platform streams (OAuth platforms) and RTMP destinations (custom RTMP) for this channel
       const platformStreams = await PlatformStream.getByChannelId(channelId);
       const customRtmpDestinations = await RtmpDestination.getEnabledForChannel(channelId);
+
+      debugLogger.writeLog(`📺 Platform streams found: ${platformStreams?.length || 0} for channel ${channelId}`);
 
       // Convert platform streams to rtmpDestinations format, respecting enabled state
       const platformRtmpDests = (Array.isArray(platformStreams) ? platformStreams : [])
@@ -1211,8 +1216,10 @@ class StreamManager {
       logger.info(`FFmpeg command for channel ${channelId}: ${fullCommand}`);
       logStream.write(`[CMD] ${new Date().toISOString()} - ${fullCommand}\n`);
 
+      debugLogger.writeLog(`🚀 About to spawn FFmpeg process for channel ${channelId}`);
       // Spawn FFmpeg process
       const ffmpegProcess = spawn(this.ffmpegPath, ffmpegArgs);
+      debugLogger.writeLog(`✅ FFmpeg process spawned for channel ${channelId}, PID: ${ffmpegProcess.pid}`);
 
       // Store process reference
       this.processes.set(channelId, {
