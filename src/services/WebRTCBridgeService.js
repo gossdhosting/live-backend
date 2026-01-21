@@ -540,7 +540,7 @@ class WebRTCBridgeService {
 
                   const timer = setTimeout(async () => {
                     console.log(`[Platform Streaming Timer] Fired for channel ${channelId}`);
-                    debugLogger.platformStreamingTriggered(channelId, 10000);
+                    debugLogger.platformStreamingTriggered(channelId, 20000);
                     try {
                       // Double-check it hasn't been started by another code path
                       if (!this.platformStreamingStarted.get(channelId)) {
@@ -561,9 +561,9 @@ class WebRTCBridgeService {
                       // Retry after 5 seconds if failed
                       setTimeout(() => this.retryPlatformStreaming(channelId), 5000);
                     }
-                  }, 10000); // 10 second delay to let WebRTC→RTMP bridge fully establish
+                  }, 20000); // 20 second delay to let WebRTC→RTMP bridge fully establish
 
-                  debugLogger.writeLog(`Platform streaming timer created for channel ${channelId} (10000ms delay)`);
+                  debugLogger.writeLog(`Platform streaming timer created for channel ${channelId} (20000ms delay)`);
                   this.platformStreamingTimers.set(channelId, timer);
                 } else {
                   logger.info(`Platform streaming already started for channel ${channelId}, skipping trigger`);
