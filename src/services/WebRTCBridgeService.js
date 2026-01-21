@@ -258,14 +258,13 @@ class WebRTCBridgeService {
 
               // Force reset state to ensure clean start
               frameCount = 0; // Reset will increment to 1 on next line
-              await this.stopBridge(channelId); // Kill any zombies
 
-              // Re-create peer connection if needed
-              const peerConnection = this.peerConnections.get(channelId);
-              if (!peerConnection || peerConnection.connectionState === 'closed') {
-                logger.error(`Peer connection is closed for channel ${channelId} during zombie cleanup. Client must reconnect.`);
-                return; // Exit, client needs to reconnect
-              }
+              // Clean up zombie process entry (non-blocking)
+              this.ffmpegProcesses.delete(channelId);
+              this.ffmpegStdinClosed.delete(channelId);
+              this.platformStreamingStarted.delete(channelId);
+
+              console.log(`[WebRTC Bridge] Zombie process cleaned up for channel ${channelId}, will restart on next frame`);
             }
 
             if (frameCount === 1 || !isProcessRunning) {
@@ -455,14 +454,13 @@ class WebRTCBridgeService {
 
                 // Force reset state to ensure clean start
                 frameCount = 0; // Reset will increment to 1 on next line
-                await this.stopBridge(channelId); // Kill any zombies
 
-                // Re-create peer connection if needed
-                const peerConnection = this.peerConnections.get(channelId);
-                if (!peerConnection || peerConnection.connectionState === 'closed') {
-                  logger.error(`Peer connection is closed for channel ${channelId} during zombie cleanup (recreated sink). Client must reconnect.`);
-                  return; // Exit, client needs to reconnect
-                }
+                // Clean up zombie process entry (non-blocking)
+                this.ffmpegProcesses.delete(channelId);
+                this.ffmpegStdinClosed.delete(channelId);
+                this.platformStreamingStarted.delete(channelId);
+
+                console.log(`[WebRTC Bridge] Zombie process cleaned up (recreated sink) for channel ${channelId}, will restart on next frame`);
               }
 
               if (frameCount === 1 || !isProcessRunning2) {
