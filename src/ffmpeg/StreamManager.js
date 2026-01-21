@@ -366,11 +366,14 @@ class StreamManager {
       this.manualStops.delete(channelId);
 
       const channel = await Channel.findById(channelId);
+      debugLogger.writeLog(`🚀 StreamManager.startStream() AFTER Channel.findById: channelId=${channelId}, found=${!!channel}`);
       if (!channel) {
         console.log(`[StreamManager] ERROR: Channel ${channelId} not found`);
+        debugLogger.writeLog(`❌ StreamManager.startStream() ERROR: Channel ${channelId} not found`);
         throw new Error('Channel not found');
       }
 
+      debugLogger.writeLog(`🚀 StreamManager.startStream() Channel details: type=${channel.input_type}, status=${channel.status}`);
       console.log(`[StreamManager] Channel ${channelId} found: type=${channel.input_type}, status=${channel.status}`);
       logger.info(`[StreamManager] Channel ${channelId}: type=${channel.input_type}, status=${channel.status}`);
 
@@ -454,10 +457,13 @@ class StreamManager {
 
       // If input type is RTMP or Webcam, use nginx-rtmp as input source
       if (isRtmpInput || isWebcamInput) {
+        debugLogger.writeLog(`🚀 StreamManager.startStream() Input type check: isWebcam=${isWebcamInput}, isRtmp=${isRtmpInput}`);
         if (isWebcamInput) {
+          debugLogger.writeLog(`🚀 StreamManager.startStream() Webcam input detected. status=${channel.status}`);
           // Check if webcam is already connected (status = waiting_for_input or running)
           // If it's already waiting or running, this is the platform streaming trigger, NOT the initial setup
           if (channel.status === 'waiting_for_input' || channel.status === 'running') {
+            debugLogger.writeLog(`✅ StreamManager.startStream() PLATFORM STREAMING PATH: status=${channel.status}`);
             // WebRTC bridge is already active, frames are flowing
             // Now start actual platform streaming by pulling from nginx-rtmp
             const allocatedPort = portAllocator.getPort(channelId);
@@ -473,6 +479,7 @@ class StreamManager {
 
             // Continue to platform streaming setup below (don't return early)
           } else {
+            debugLogger.writeLog(`⏸️ StreamManager.startStream() INITIAL SETUP PATH: status=${channel.status}, returning early`);
             // Initial "Go Live" click - webcam not connected yet
             // Just update status and return early
             await Channel.updateStatus(channelId, 'waiting_for_input', null, 'Waiting for camera connection...');
