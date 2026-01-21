@@ -244,31 +244,43 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 // Graceful shutdown handlers to cleanup native C++ objects (wrtc) before PM2 restart
-// CRITICAL: Must force process.exit(0) to ensure OS reclaims all native memory and threads
+// CRITICAL: Stop FFmpeg first, then WebRTC, then wait for C++ destructors before exiting
 process.on('SIGTERM', async () => {
   logger.info('SIGTERM received - Starting graceful shutdown');
-  console.log('[Graceful Shutdown] SIGTERM received, cleaning up WebRTC connections...');
+  console.log('[Graceful Shutdown] SIGTERM received, cleaning up all resources...');
   console.log('[Graceful Shutdown] Process PID:', process.pid);
 
   try {
-    // Import WebRTC bridge service
+    // Import services
     const webrtcBridge = (await import('./src/services/WebRTCBridgeService.js')).default;
+    const streamManager = (await import('./src/ffmpeg/StreamManager.js')).default;
 
-    // Stop all WebRTC bridges to cleanup native C++ objects
+    // 1. Stop all FFmpeg processes first (cleans up video/audio pipelines)
+    console.log('[Graceful Shutdown] Step 1: Stopping all FFmpeg streams...');
+    await streamManager.stopAllStreams();
+    logger.info('All FFmpeg streams stopped');
+
+    // 2. Then stop WebRTC bridges (closes peer connections and native sinks)
+    console.log('[Graceful Shutdown] Step 2: Stopping WebRTC bridges...');
     const activeChannels = Array.from(webrtcBridge.peerConnections.keys());
     console.log('[Graceful Shutdown] Active WebRTC channels:', activeChannels);
 
-    for (const channelId of activeChannels) {
+    // Stop all bridges in parallel using Promise.all
+    await Promise.all(activeChannels.map(channelId => {
       console.log('[Graceful Shutdown] Stopping WebRTC bridge for channel:', channelId);
-      await webrtcBridge.stopBridge(channelId);
-    }
+      return webrtcBridge.stopBridge(channelId);
+    }));
 
-    logger.info('Graceful shutdown completed - forcing exit to reclaim native memory');
-    console.log('[Graceful Shutdown] All WebRTC connections cleaned up successfully');
-    console.log('[Graceful Shutdown] Forcing process exit to ensure OS reclaims native C++ threads');
+    logger.info('Graceful shutdown cleanup completed - waiting for C++ destructors');
+    console.log('[Graceful Shutdown] All resources cleaned up successfully');
+    console.log('[Graceful Shutdown] Waiting 1 second for C++ destructors before exit...');
 
-    // CRITICAL: Force hard exit to ensure OS kills all native threads
-    process.exit(0);
+    // 3. Allow a 1-second grace period for C++ destructors and OS to release resources
+    setTimeout(() => {
+      console.log('[Graceful Shutdown] Grace period complete. Forcing process exit.');
+      process.exit(0);
+    }, 1000);
+
   } catch (error) {
     logger.error('Error during graceful shutdown:', { error: error.message });
     console.error('[Graceful Shutdown] Error:', error.message);
@@ -278,25 +290,40 @@ process.on('SIGTERM', async () => {
 
 process.on('SIGINT', async () => {
   logger.info('SIGINT received - Starting graceful shutdown');
-  console.log('[Graceful Shutdown] SIGINT received, cleaning up WebRTC connections...');
+  console.log('[Graceful Shutdown] SIGINT received, cleaning up all resources...');
   console.log('[Graceful Shutdown] Process PID:', process.pid);
 
   try {
+    // Import services
     const webrtcBridge = (await import('./src/services/WebRTCBridgeService.js')).default;
+    const streamManager = (await import('./src/ffmpeg/StreamManager.js')).default;
+
+    // 1. Stop all FFmpeg processes first (cleans up video/audio pipelines)
+    console.log('[Graceful Shutdown] Step 1: Stopping all FFmpeg streams...');
+    await streamManager.stopAllStreams();
+    logger.info('All FFmpeg streams stopped');
+
+    // 2. Then stop WebRTC bridges (closes peer connections and native sinks)
+    console.log('[Graceful Shutdown] Step 2: Stopping WebRTC bridges...');
     const activeChannels = Array.from(webrtcBridge.peerConnections.keys());
     console.log('[Graceful Shutdown] Active WebRTC channels:', activeChannels);
 
-    for (const channelId of activeChannels) {
+    // Stop all bridges in parallel using Promise.all
+    await Promise.all(activeChannels.map(channelId => {
       console.log('[Graceful Shutdown] Stopping WebRTC bridge for channel:', channelId);
-      await webrtcBridge.stopBridge(channelId);
-    }
+      return webrtcBridge.stopBridge(channelId);
+    }));
 
-    logger.info('Graceful shutdown completed - forcing exit to reclaim native memory');
-    console.log('[Graceful Shutdown] All WebRTC connections cleaned up successfully');
-    console.log('[Graceful Shutdown] Forcing process exit to ensure OS reclaims native C++ threads');
+    logger.info('Graceful shutdown cleanup completed - waiting for C++ destructors');
+    console.log('[Graceful Shutdown] All resources cleaned up successfully');
+    console.log('[Graceful Shutdown] Waiting 1 second for C++ destructors before exit...');
 
-    // CRITICAL: Force hard exit to ensure OS kills all native threads
-    process.exit(0);
+    // 3. Allow a 1-second grace period for C++ destructors and OS to release resources
+    setTimeout(() => {
+      console.log('[Graceful Shutdown] Grace period complete. Forcing process exit.');
+      process.exit(0);
+    }, 1000);
+
   } catch (error) {
     logger.error('Error during graceful shutdown:', { error: error.message });
     console.error('[Graceful Shutdown] Error:', error.message);

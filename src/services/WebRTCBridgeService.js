@@ -248,15 +248,33 @@ class WebRTCBridgeService {
 
             // CRITICAL FIX: Check if this is the first frame AND FFmpeg bridge not started yet
             // This handles case where connection persists across restart (frameCount != 1)
-            const ffmpegBridgeRunning = this.ffmpegProcesses.has(channelId);
+            const ffmpegProcess = this.ffmpegProcesses.get(channelId);
+            const isProcessRunning = ffmpegProcess && !ffmpegProcess.killed && ffmpegProcess.exitCode === null;
 
-            if (frameCount === 1 || !ffmpegBridgeRunning) {
-              console.log(`[WebRTC Bridge] FIRST FRAME! ${frameResolution} (frameCount: ${frameCount}, bridge running: ${ffmpegBridgeRunning})`);
-              logger.info(`First video frame received for channel ${channelId}: ${frameResolution}`);
+            // ZOMBIE DETECTION: If frames are coming but process is dead/missing, we must restart
+            if (frameCount > 1 && !isProcessRunning) {
+              logger.warn(`ZOMBIE DETECTED for channel ${channelId}: Frame ${frameCount} but no running process. Forcing cleanup and restart.`);
+              console.log(`[WebRTC Bridge] 🧟 ZOMBIE CONNECTION: Frame ${frameCount} but process dead. Resetting...`);
+
+              // Force reset state to ensure clean start
+              frameCount = 0; // Reset will increment to 1 on next line
+              await this.stopBridge(channelId); // Kill any zombies
+
+              // Re-create peer connection if needed
+              const peerConnection = this.peerConnections.get(channelId);
+              if (!peerConnection || peerConnection.connectionState === 'closed') {
+                logger.error(`Peer connection is closed for channel ${channelId} during zombie cleanup. Client must reconnect.`);
+                return; // Exit, client needs to reconnect
+              }
+            }
+
+            if (frameCount === 1 || !isProcessRunning) {
+              console.log(`[WebRTC Bridge] FIRST FRAME! ${frameResolution} (frameCount: ${frameCount}, process running: ${isProcessRunning})`);
+              logger.info(`First video frame received for channel ${channelId}: ${frameResolution} (trigger condition: frameCount=${frameCount}, processRunning=${isProcessRunning})`);
               currentResolution = frameResolution;
 
               // Only start FFmpeg bridge if not already running
-              if (!ffmpegBridgeRunning) {
+              if (!isProcessRunning) {
                 this.startFFmpegBridge(channelId, streamKey, frame);
               }
 
@@ -427,15 +445,33 @@ class WebRTCBridgeService {
 
               // Check if this is the first frame OR if FFmpeg bridge isn't running
               // This handles case where connection persists across restart (frameCount != 1)
-              const ffmpegBridgeRunning = this.ffmpegProcesses.has(channelId);
+              const ffmpegProcess2 = this.ffmpegProcesses.get(channelId);
+              const isProcessRunning2 = ffmpegProcess2 && !ffmpegProcess2.killed && ffmpegProcess2.exitCode === null;
 
-              if (frameCount === 1 || !ffmpegBridgeRunning) {
-                console.log(`[WebRTC Bridge] FIRST FRAME! ${frameResolution} (frameCount: ${frameCount}, bridge running: ${ffmpegBridgeRunning})`);
-                logger.info(`First video frame received for channel ${channelId}: ${frameResolution}`);
+              // ZOMBIE DETECTION: If frames are coming but process is dead/missing, we must restart
+              if (frameCount > 1 && !isProcessRunning2) {
+                logger.warn(`ZOMBIE DETECTED (recreated sink) for channel ${channelId}: Frame ${frameCount} but no running process. Forcing cleanup and restart.`);
+                console.log(`[WebRTC Bridge] 🧟 ZOMBIE CONNECTION (recreated sink): Frame ${frameCount} but process dead. Resetting...`);
+
+                // Force reset state to ensure clean start
+                frameCount = 0; // Reset will increment to 1 on next line
+                await this.stopBridge(channelId); // Kill any zombies
+
+                // Re-create peer connection if needed
+                const peerConnection = this.peerConnections.get(channelId);
+                if (!peerConnection || peerConnection.connectionState === 'closed') {
+                  logger.error(`Peer connection is closed for channel ${channelId} during zombie cleanup (recreated sink). Client must reconnect.`);
+                  return; // Exit, client needs to reconnect
+                }
+              }
+
+              if (frameCount === 1 || !isProcessRunning2) {
+                console.log(`[WebRTC Bridge] FIRST FRAME (recreated sink)! ${frameResolution} (frameCount: ${frameCount}, process running: ${isProcessRunning2})`);
+                logger.info(`First video frame received for channel ${channelId} (recreated sink): ${frameResolution} (trigger condition: frameCount=${frameCount}, processRunning=${isProcessRunning2})`);
                 currentResolution = frameResolution;
 
                 // Only start FFmpeg bridge if not already running
-                if (!ffmpegBridgeRunning) {
+                if (!isProcessRunning2) {
                   this.startFFmpegBridge(channelId, streamKey, frame);
                 }
 
@@ -758,20 +794,20 @@ class WebRTCBridgeService {
         logger.info(`Cleared platform streaming timer for channel ${channelId}`);
       }
 
-      // Stop video sink - CRITICAL: Explicitly detach C++ callback and break JS references
+      // Stop video sink - CRITICAL: Null handler FIRST to break JS loop, THEN stop C++ sink
       const videoSink = this.videoSinks.get(channelId);
       if (videoSink) {
-        videoSink.stop(); // Detaches C++ callback
-        videoSink.onframe = null; // Break JS reference to prevent memory leak
+        videoSink.onframe = null; // 1. Break JS reference immediately to stop event loop
+        videoSink.stop(); // 2. Then detach C++ callback and release native resources
         this.videoSinks.delete(channelId);
         logger.info(`Video sink stopped and references cleared for channel ${channelId}`);
       }
 
-      // Stop audio sink - CRITICAL: Explicitly detach C++ callback and break JS references
+      // Stop audio sink - CRITICAL: Null handler FIRST to break JS loop, THEN stop C++ sink
       const audioSink = this.audioSinks.get(channelId);
       if (audioSink) {
-        audioSink.stop(); // Detaches C++ callback
-        audioSink.ondata = null; // Break JS reference to prevent memory leak
+        audioSink.ondata = null; // 1. Break JS reference immediately to stop event loop
+        audioSink.stop(); // 2. Then detach C++ callback and release native resources
         this.audioSinks.delete(channelId);
         logger.info(`Audio sink stopped and references cleared for channel ${channelId}`);
       }

@@ -451,6 +451,21 @@ class StreamManager {
           await Channel.updateStatus(channelId, 'waiting_for_input', null, 'Waiting for camera connection...');
           logger.info(`Webcam stream initiated for channel ${channelId}. Waiting for WebRTC connection...`);
 
+          // FIX: Add a 60-second watchdog to prevent infinite stuck in waiting_for_input
+          // If no connection arrives within 60 seconds, revert to stopped state
+          setTimeout(async () => {
+            try {
+              const freshChannel = await Channel.findById(channelId);
+              if (freshChannel && freshChannel.status === 'waiting_for_input') {
+                logger.warn(`Webcam connection timeout for channel ${channelId}. No camera connected within 60 seconds.`);
+                console.log(`[Watchdog] Channel ${channelId} stuck in waiting_for_input. Reverting to stopped.`);
+                await this.stopStream(channelId); // Cleans up and sets status to 'stopped'
+              }
+            } catch (watchdogError) {
+              logger.error(`Watchdog error for channel ${channelId}:`, { error: watchdogError.message });
+            }
+          }, 60000); // 60 seconds
+
           return {
             success: true,
             message: 'Webcam stream waiting for camera connection. Platform streaming will start automatically.',
