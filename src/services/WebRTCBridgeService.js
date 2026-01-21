@@ -692,23 +692,10 @@ class WebRTCBridgeService {
    * Convert WebRTC frame to YUV420 format for FFmpeg
    */
   convertToYUV420(frame) {
-    const width = frame.width;
-    const height = frame.height;
-    const ySize = width * height;
-    const uvSize = (width / 2) * (height / 2);
-
-    // Create YUV buffer
-    const yuv = Buffer.alloc(ySize + uvSize * 2);
-
-    // Convert frame.data (Uint8ClampedArray) to Buffer
-    const frameBuffer = Buffer.from(frame.data);
-
-    // Copy Y, U, V planes from frame data
-    frameBuffer.copy(yuv, 0, 0, ySize); // Y plane
-    frameBuffer.copy(yuv, ySize, ySize, ySize + uvSize); // U plane
-    frameBuffer.copy(yuv, ySize + uvSize, ySize + uvSize, ySize + uvSize * 2); // V plane
-
-    return yuv;
+    // The wrtc library provides frame.data in I420 format (YUV420p planar)
+    // Format: Y plane (width*height), U plane (width/2*height/2), V plane (width/2*height/2)
+    // We just need to convert the Uint8ClampedArray to Buffer - no plane manipulation needed
+    return Buffer.from(frame.data);
   }
 
   /**
@@ -765,11 +752,6 @@ class WebRTCBridgeService {
         '-video_size', `${width}x${height}`,
         '-framerate', '30',
         '-thread_queue_size', '1024',
-        // Color space flags for WebRTC input (BT.709, full range)
-        '-color_range', 'pc',  // full range (0-255)
-        '-colorspace', 'bt709',
-        '-color_primaries', 'bt709',
-        '-color_trc', 'iec61966-2-1',  // sRGB transfer
         '-i', 'pipe:0',
 
         // Audio input (raw PCM from WebRTC) - FIXED: use pipe:3 not pipe:1 (stdout)
@@ -779,19 +761,11 @@ class WebRTCBridgeService {
         '-thread_queue_size', '1024',
         '-i', 'pipe:3',
 
-        // Video filter to handle color space conversion explicitly
-        '-vf', 'scale=in_range=pc:in_color_matrix=bt709:out_range=tv:out_color_matrix=bt709',
-
         // Video encoding
         '-c:v', 'libx264',
         '-preset', 'ultrafast',
         '-tune', 'zerolatency',
         '-pix_fmt', 'yuv420p',
-        // Output color space flags (BT.709, TV range for streaming compatibility)
-        '-colorspace', 'bt709',
-        '-color_primaries', 'bt709',
-        '-color_trc', 'bt709',
-        '-color_range', 'tv',  // limited range (16-235) for broadcast compatibility
         '-b:v', '3000k',  // Increased from 2500k to improve stability
         '-maxrate', '3500k',  // Increased from 2500k
         '-bufsize', '6000k',  // Increased from 5000k
