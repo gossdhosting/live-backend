@@ -753,8 +753,25 @@ class WebRTCBridgeService {
       return Buffer.from(i420Frame.data);
     }
 
-    // Otherwise assume I420 and pass through
-    return Buffer.from(frame.data);
+    // Test: Swap U and V planes to see if data is actually YV12 (YVU) instead of I420 (YUV)
+    // This would explain the green tint
+    const ySize = width * height;
+    const uvSize = (width / 2) * (height / 2);
+
+    const inputBuffer = Buffer.from(frame.data);
+    const outputBuffer = Buffer.alloc(actualSize);
+
+    // Copy Y plane (unchanged)
+    inputBuffer.copy(outputBuffer, 0, 0, ySize);
+
+    // Swap U and V planes
+    // Original: Y, U, V
+    // Swapped: Y, V, U (to correct if source is actually YV12)
+    inputBuffer.copy(outputBuffer, ySize, ySize + uvSize, ySize + uvSize * 2); // Copy V to U position
+    inputBuffer.copy(outputBuffer, ySize + uvSize, ySize, ySize + uvSize);      // Copy U to V position
+
+    logger.info(`[YUV Conversion] Swapped U/V planes for ${width}x${height} frame`);
+    return outputBuffer;
   }
 
   /**
