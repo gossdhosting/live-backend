@@ -356,13 +356,20 @@ class StreamManager {
   // Start a stream for a channel
   async startStream(channelId, user = null) {
     try {
+      console.log(`[StreamManager] startStream CALLED for channel ${channelId}`);
+      logger.info(`[StreamManager] startStream CALLED for channel ${channelId}`);
+
       // Clear manual stop flag when starting a new stream
       this.manualStops.delete(channelId);
 
       const channel = await Channel.findById(channelId);
       if (!channel) {
+        console.log(`[StreamManager] ERROR: Channel ${channelId} not found`);
         throw new Error('Channel not found');
       }
+
+      console.log(`[StreamManager] Channel ${channelId} found: type=${channel.input_type}, status=${channel.status}`);
+      logger.info(`[StreamManager] Channel ${channelId}: type=${channel.input_type}, status=${channel.status}`);
 
       // Check user plan limits (skip for admins)
       if (user && user.role !== 'admin') {
