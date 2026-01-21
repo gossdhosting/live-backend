@@ -841,55 +841,62 @@ class WebRTCBridgeService {
       console.log(`[startFFmpegBridge] RTMP URL: ${rtmpUrl} (port ${rtmpPort})`);
       logger.info(`Starting FFmpeg bridge for channel ${channelId}: ${width}x${height} -> ${rtmpUrl}`);
 
-      // FFmpeg command to convert raw video/audio to RTMP
+      // OPTIMIZED FFmpeg command for Ultra-Low Latency
       const ffmpegArgs = [
         '-loglevel', 'warning',
-        '-threads', '4',  // Increased from 2 for faster encoding
+        '-threads', '4',
+
+        // GLOBAL FLAGS - CRITICAL for low latency
+        '-fflags', '+nobuffer',  // Prevent input buffering
+        '-flags', 'low_delay',   // Low delay mode
 
         // Video input (raw YUV420 from WebRTC)
         '-f', 'rawvideo',
         '-pixel_format', 'yuv420p',
         '-video_size', `${width}x${height}`,
         '-framerate', '30',
-        '-thread_queue_size', '512',  // Reduced from 1024
+        '-thread_queue_size', '512',
         '-i', 'pipe:0',
 
-        // Audio input (raw PCM from WebRTC) - FIXED: use pipe:3 not pipe:1 (stdout)
+        // Audio input (raw PCM from WebRTC)
         '-f', 's16le',
         '-ar', '48000',
         '-ac', '2',
-        '-thread_queue_size', '512',  // Reduced from 1024
+        '-thread_queue_size', '512',
         '-i', 'pipe:3',
 
-        // Video encoding - optimized for speed
+        // Video encoding - TUNED FOR SPEED
         '-c:v', 'libx264',
-        '-preset', 'veryfast',  // Changed from ultrafast (better quality, still fast)
+        '-preset', 'ultrafast',  // Lowest CPU usage for real-time encoding
         '-tune', 'zerolatency',
         '-pix_fmt', 'yuv420p',
-        '-b:v', '2000k',  // Reduced from 2500k
-        '-maxrate', '2500k',  // Reduced from 3000k
-        '-bufsize', '4000k',  // Reduced from 5000k
-        '-g', '60',
-        '-keyint_min', '60',
+        '-b:v', '2500k',
+        '-maxrate', '2500k',     // Match bitrate to prevent spikes
+        '-bufsize', '1000k',     // CRITICAL: Small buffer forces low latency
+        '-g', '30',              // 1 keyframe/sec helps player sync faster
+        '-keyint_min', '30',
         '-sc_threshold', '0',
-        '-x264opts', 'no-scenecut:ref=1',  // Disable scene detection, minimal references for speed
-        // Simple rotation only - removed scale/pad for speed
+        '-x264opts', 'no-scenecut:ref=1:bframes=0',  // Disable B-frames for lower latency
+        // Simple rotation only
         ...(width === 1280 && height === 720 ? ['-vf', 'transpose=1'] : []),
 
         // Audio encoding
         '-c:a', 'aac',
         '-b:a', '128k',
         '-ar', '48000',
+        '-ac', '2',
 
         // Output format
         '-f', 'flv',
+        '-flvflags', 'no_duration_filesize',  // Don't wait for duration calculation
         rtmpUrl
       ];
 
-      // CRITICAL: Use 'nice' to lower FFmpeg CPU priority and prevent event loop blocking
-      // This prevents the Node.js server from becoming unresponsive when FFmpeg starts
-      const ffmpegProcess = spawn('nice', ['-n', '10', 'ffmpeg', ...ffmpegArgs], {
-        stdio: ['pipe', 'pipe', 'pipe', 'pipe'] // stdin for video, extra pipe for audio
+      // CRITICAL FIX: Removed 'nice' wrapper
+      // 'nice -n 10' lowers priority, causing FFmpeg to lag behind Node.js
+      // Run ffmpeg directly to ensure it gets sufficient CPU time
+      const ffmpegProcess = spawn('ffmpeg', ffmpegArgs, {
+        stdio: ['pipe', 'pipe', 'pipe', 'pipe'] // stdin, stdout, stderr, pipe:3 (audio)
       });
 
       // Create separate audio stdin
@@ -912,7 +919,8 @@ class WebRTCBridgeService {
       // Handle FFmpeg output
       ffmpegProcess.stderr.on('data', (data) => {
         const message = data.toString();
-        if (message.includes('error') || message.includes('Error')) {
+        // Only log actual errors, ignore common warnings in low-latency mode
+        if ((message.includes('error') || message.includes('Error')) && !message.includes('buffer underflow')) {
           logger.error(`FFmpeg bridge error for channel ${channelId}: ${message}`);
           this.incrementErrors(channelId);
         }
