@@ -779,7 +779,8 @@ class WebRTCBridgeService {
    */
   startFFmpegBridge(channelId, streamKey, firstFrame) {
     console.log(`[startFFmpegBridge] CALLED for channel ${channelId}, streamKey: ${streamKey}`);
-    debugLogger.writeLog(`>>> startFFmpegBridge CALLED: Channel ${channelId} | StreamKey: ${streamKey}`);
+    console.log(`[startFFmpegBridge] firstFrame dimensions: ${firstFrame.width}x${firstFrame.height}, data size: ${firstFrame.data.length} bytes`);
+    debugLogger.writeLog(`>>> startFFmpegBridge CALLED: Channel ${channelId} | StreamKey: ${streamKey} | FirstFrame: ${firstFrame.width}x${firstFrame.height} (${firstFrame.data.length} bytes)`);
     debugLogger.mapState('BEFORE_FFMPEG_START', channelId);
 
     try {
