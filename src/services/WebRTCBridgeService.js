@@ -872,6 +872,8 @@ class WebRTCBridgeService {
         '-g', '60',
         '-keyint_min', '60',
         '-sc_threshold', '0',
+        // Auto-rotate portrait video: transpose=1 rotates 90° clockwise
+        ...(height > width ? ['-vf', 'transpose=1'] : []),
 
         // Audio encoding
         '-c:a', 'aac',
