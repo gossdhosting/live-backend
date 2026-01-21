@@ -476,7 +476,11 @@ class WebRTCBridgeService {
             try {
               frameCount++;
               const frameResolution = `${frame.width}x${frame.height}`;
-              console.log(`[WebRTC Bridge] !!! FRAME DETECTED IN CALLBACK !!! ${frameResolution}, frame ${frameCount} for channel ${channelId}`);
+
+              // Log every frame's actual resolution for diagnostics
+              if (frameCount % 30 === 0) {
+                console.log(`[WebRTC Bridge] Frame ${frameCount} resolution: ${frameResolution}, data size: ${frame.data.length} bytes`);
+              }
 
               // Check if this is the first frame OR if FFmpeg bridge isn't running
               // This handles case where connection persists across restart (frameCount != 1)
@@ -569,10 +573,27 @@ class WebRTCBridgeService {
                   logger.info(`Platform streaming already started for channel ${channelId}, skipping trigger`);
                 }
               } else if (currentResolution !== frameResolution) {
-                // Resolution changed - restart FFmpeg with new dimensions
-                logger.info(`Resolution changed from ${currentResolution} to ${frameResolution} for channel ${channelId}, restarting FFmpeg`);
+                // Resolution changed - log detailed info and restart FFmpeg with new dimensions
+                logger.warn(`⚠️ RESOLUTION MISMATCH DETECTED for channel ${channelId}!`);
+                logger.warn(`  Expected: ${currentResolution}`);
+                logger.warn(`  Received: ${frameResolution} (${frame.width}x${frame.height})`);
+                logger.warn(`  Frame data size: ${frame.data.length} bytes (expected: ${frame.width * frame.height * 1.5})`);
+                logger.info(`Restarting FFmpeg with new dimensions: ${frameResolution}`);
+
                 currentResolution = frameResolution;
                 this.startFFmpegBridge(channelId, streamKey, frame);
+
+                // Don't write this frame - let the new FFmpeg process start fresh
+                return;
+              }
+
+              // CRITICAL: Validate frame resolution matches current FFmpeg configuration
+              // If resolution doesn't match, drop the frame to prevent corruption
+              if (frameResolution !== currentResolution) {
+                if (frameCount % 30 === 0) {
+                  logger.warn(`Dropping frame ${frameCount}: resolution ${frameResolution} doesn't match FFmpeg config ${currentResolution}`);
+                }
+                return; // Drop this frame
               }
 
               // Write frame to FFmpeg stdin with intelligent frame dropping
