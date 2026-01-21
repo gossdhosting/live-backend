@@ -560,21 +560,32 @@ class WebRTCBridgeService {
                 this.startFFmpegBridge(channelId, streamKey, frame);
               }
 
-              // Write frame to FFmpeg stdin
+              // Write frame to FFmpeg stdin with intelligent frame dropping
               const ffmpegProc = this.ffmpegProcesses.get(channelId);
               const stdinClosed = this.ffmpegStdinClosed.get(channelId);
 
               if (ffmpegProc && ffmpegProc.stdin && !ffmpegProc.stdin.destroyed && !stdinClosed) {
+                // CRITICAL FIX: Check buffer state BEFORE expensive YUV conversion
+                // If buffer is full (write would fail), skip this frame entirely
+                const bufferFull = ffmpegProc.stdin.writableLength > ffmpegProc.stdin.writableHighWaterMark;
+
+                if (bufferFull) {
+                  // DROP this frame - don't even convert to YUV
+                  // This prevents memory accumulation in Node.js buffers
+                  if (frameCount % 60 === 0) {
+                    debugLogger.writeLog(`⚠️ DROPPING FRAME: FFmpeg stdin buffer full (${ffmpegProc.stdin.writableLength} bytes buffered) at frame ${frameCount}`);
+                  }
+                  return; // Skip this frame entirely
+                }
+
+                // Buffer has space - convert and write
                 const yuv = this.convertToYUV420(frame);
                 try {
                   const writeSuccess = ffmpegProc.stdin.write(yuv);
                   debugLogger.ffmpegStdinWrite(channelId, writeSuccess);
 
-                  // IMPORTANT: write() returning false just means the internal buffer is full
-                  // It does NOT mean the stream is broken - it will drain and accept more data
-                  // We do NOT stop writing, we just acknowledge backpressure is happening
                   if (!writeSuccess && frameCount % 30 === 0) {
-                    debugLogger.writeLog(`⚠️ BACKPRESSURE: FFmpeg stdin buffer full for channel ${channelId} at frame ${frameCount} (continuing to write)`);
+                    debugLogger.writeLog(`⚠️ BACKPRESSURE: Write returned false at frame ${frameCount} (buffer: ${ffmpegProc.stdin.writableLength} bytes)`);
                   }
                 } catch (err) {
                   debugLogger.writeLog(`FFMPEG_STDIN_WRITE_ERROR: Channel ${channelId} | Error: ${err.message}`);
