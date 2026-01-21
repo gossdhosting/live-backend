@@ -11,6 +11,7 @@ import RtmpDestination from '../models/RtmpDestination.js';
 import User from '../models/User.js';
 import Plan from '../models/Plan.js';
 import logger from '../utils/logger.js';
+import debugLogger from '../utils/debugLogger.js';
 import webrtcBridgeService from '../services/WebRTCBridgeService.js';
 import portAllocator from '../services/PortAllocator.js';
 
@@ -355,7 +356,9 @@ class StreamManager {
 
   // Start a stream for a channel
   async startStream(channelId, user = null) {
+    debugLogger.writeLog(`🚀 StreamManager.startStream() ENTRY POINT: channelId=${channelId}, user=${user?.id || 'null'}`);
     try {
+      debugLogger.writeLog(`🚀 StreamManager.startStream() INSIDE TRY BLOCK: channelId=${channelId}`);
       console.log(`[StreamManager] startStream CALLED for channel ${channelId}`);
       logger.info(`[StreamManager] startStream CALLED for channel ${channelId}`);
 
