@@ -510,10 +510,18 @@ class WebRTCBridgeService {
 
                   // Update channel status to waiting_for_input when WebRTC bridge starts
                   // This signals StreamManager that the webcam is connected and ready for platform streaming
-                  const Channel = (await import('../models/Channel.js')).default;
-                  await Channel.updateStatus(channelId, 'waiting_for_input', null, 'Webcam connected, preparing stream...');
-                  debugLogger.writeLog(`Channel ${channelId} status updated to waiting_for_input (WebRTC bridge started)`);
-                  logger.info(`Channel ${channelId} status updated to waiting_for_input (WebRTC connected)`);
+                  // Use .then() instead of await since we're in a non-async callback
+                  import('../models/Channel.js').then(({ default: Channel }) => {
+                    Channel.updateStatus(channelId, 'waiting_for_input', null, 'Webcam connected, preparing stream...')
+                      .then(() => {
+                        debugLogger.writeLog(`Channel ${channelId} status updated to waiting_for_input (WebRTC bridge started)`);
+                        logger.info(`Channel ${channelId} status updated to waiting_for_input (WebRTC connected)`);
+                      })
+                      .catch(err => {
+                        debugLogger.writeLog(`ERROR updating channel status: ${err.message}`);
+                        logger.error(`Failed to update channel status for ${channelId}:`, { error: err.message });
+                      });
+                  });
                 }
 
                 // CRITICAL FIX: Start platform streaming only if NOT already started
