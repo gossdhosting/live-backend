@@ -764,13 +764,15 @@ class WebRTCBridgeService {
         '-pixel_format', 'yuv420p',
         '-video_size', `${width}x${height}`,
         '-framerate', '30',
+        '-thread_queue_size', '1024',
         '-i', 'pipe:0',
 
-        // Audio input (raw PCM from WebRTC)
+        // Audio input (raw PCM from WebRTC) - FIXED: use pipe:3 not pipe:1 (stdout)
         '-f', 's16le',
         '-ar', '48000',
         '-ac', '2',
-        '-i', 'pipe:1',
+        '-thread_queue_size', '1024',
+        '-i', 'pipe:3',
 
         // Video encoding
         '-c:v', 'libx264',
