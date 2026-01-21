@@ -333,18 +333,18 @@ class WebRTCBridgeService {
               logger.info(`Restarting FFmpeg bridge with new resolution...`);
 
               // Stop current FFmpeg process
-              const ffmpegProcess = this.ffmpegProcesses.get(channelId);
-              if (ffmpegProcess && !ffmpegProcess.killed) {
+              const ffmpegProcToKill = this.ffmpegProcesses.get(channelId);
+              if (ffmpegProcToKill && !ffmpegProcToKill.killed) {
                 try {
-                  if (ffmpegProcess.stdin && !ffmpegProcess.stdin.destroyed) {
-                    ffmpegProcess.stdin.end();
+                  if (ffmpegProcToKill.stdin && !ffmpegProcToKill.stdin.destroyed) {
+                    ffmpegProcToKill.stdin.end();
                   }
-                  if (ffmpegProcess.audioStdin && !ffmpegProcess.audioStdin.destroyed) {
-                    ffmpegProcess.audioStdin.end();
+                  if (ffmpegProcToKill.audioStdin && !ffmpegProcToKill.audioStdin.destroyed) {
+                    ffmpegProcToKill.audioStdin.end();
                   }
                   // Mark stdin as closed
                   this.ffmpegStdinClosed.set(channelId, true);
-                  ffmpegProcess.kill('SIGTERM');
+                  ffmpegProcToKill.kill('SIGTERM');
                 } catch (err) {
                   logger.error(`Error killing FFmpeg process for resolution change: ${err.message}`);
                 }
@@ -357,13 +357,13 @@ class WebRTCBridgeService {
             }
 
             // Write frame to FFmpeg stdin
-            const ffmpegProcess = this.ffmpegProcesses.get(channelId);
+            const ffmpegProcWrite = this.ffmpegProcesses.get(channelId);
             const stdinClosed = this.ffmpegStdinClosed.get(channelId);
 
-            if (ffmpegProcess && ffmpegProcess.stdin && !ffmpegProcess.stdin.destroyed && !stdinClosed) {
+            if (ffmpegProcWrite && ffmpegProcWrite.stdin && !ffmpegProcWrite.stdin.destroyed && !stdinClosed) {
               const yuv = this.convertToYUV420(frame);
               try {
-                ffmpegProcess.stdin.write(yuv);
+                ffmpegProcWrite.stdin.write(yuv);
               } catch (err) {
                 logger.error(`Failed to write video frame for channel ${channelId}`, { error: err.message });
                 // Mark stdin as closed to prevent further write attempts
@@ -523,13 +523,13 @@ class WebRTCBridgeService {
               }
 
               // Write frame to FFmpeg stdin
-              const ffmpegProcess = this.ffmpegProcesses.get(channelId);
+              const ffmpegProc = this.ffmpegProcesses.get(channelId);
               const stdinClosed = this.ffmpegStdinClosed.get(channelId);
 
-              if (ffmpegProcess && ffmpegProcess.stdin && !ffmpegProcess.stdin.destroyed && !stdinClosed) {
+              if (ffmpegProc && ffmpegProc.stdin && !ffmpegProc.stdin.destroyed && !stdinClosed) {
                 const yuv = this.convertToYUV420(frame);
                 try {
-                  ffmpegProcess.stdin.write(yuv);
+                  ffmpegProc.stdin.write(yuv);
                 } catch (err) {
                   logger.error(`Failed to write video frame for channel ${channelId}`, { error: err.message });
                   // Mark stdin as closed to prevent further write attempts
