@@ -594,9 +594,9 @@ class WebRTCBridgeService {
                       // Retry after 5 seconds if failed
                       setTimeout(() => this.retryPlatformStreaming(channelId), 5000);
                     }
-                  }, 20000); // 20 second delay to let WebRTC→RTMP bridge fully establish
+                  }, 5000); // 5 second delay to let WebRTC→RTMP bridge establish
 
-                  debugLogger.writeLog(`Platform streaming timer created for channel ${channelId} (20000ms delay)`);
+                  debugLogger.writeLog(`Platform streaming timer created for channel ${channelId} (5000ms delay)`);
                   this.platformStreamingTimers.set(channelId, timer);
                 } else {
                   logger.info(`Platform streaming already started for channel ${channelId}, skipping trigger`);
@@ -866,14 +866,15 @@ class WebRTCBridgeService {
         '-preset', 'ultrafast',
         '-tune', 'zerolatency',
         '-pix_fmt', 'yuv420p',
-        '-b:v', '3000k',  // Increased from 2500k to improve stability
-        '-maxrate', '3500k',  // Increased from 2500k
-        '-bufsize', '6000k',  // Increased from 5000k
+        '-b:v', '2500k',  // Reduced for faster encoding
+        '-maxrate', '3000k',  // Reduced for faster encoding
+        '-bufsize', '5000k',  // Reduced buffer size
         '-g', '60',
         '-keyint_min', '60',
         '-sc_threshold', '0',
-        // Auto-rotate portrait video: transpose=1 rotates 90° clockwise
-        ...(height > width ? ['-vf', 'transpose=1'] : []),
+        // Always add video filter for rotation correction and padding
+        // If camera is physically sideways (most common for mobile), rotate and pad
+        '-vf', 'transpose=1,scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:black',
 
         // Audio encoding
         '-c:a', 'aac',
