@@ -1,6 +1,7 @@
 import { spawn } from 'child_process';
 import wrtc from 'wrtc';
 import logger from '../utils/logger.js';
+import debugLogger from '../utils/debugLogger.js';
 import Channel from '../models/Channel.js';
 import streamManager from '../ffmpeg/StreamManager.js';
 import portAllocator from './PortAllocator.js';
@@ -24,6 +25,16 @@ class WebRTCBridgeService {
     this.firstFrameReceived = new Map(); // channelId -> boolean (tracks if first frame received)
     this.platformStreamingStarted = new Map(); // channelId -> boolean (tracks if platform streaming already started)
     this.platformStreamingTimers = new Map(); // channelId -> setTimeout reference (for cleanup)
+
+    // Share Map references with debug logger for state inspection
+    debugLogger.constructor.setServiceMaps(
+      this.peerConnections,
+      this.ffmpegProcesses,
+      this.videoSinks,
+      this.audioSinks
+    );
+
+    debugLogger.writeLog('WebRTCBridgeService constructor called');
   }
 
   /**
@@ -92,20 +103,29 @@ class WebRTCBridgeService {
    */
   async createPeerConnection(channelId, streamKey) {
     try {
+      debugLogger.writeLog(`>>> createPeerConnection CALLED: Channel ${channelId}`);
+      debugLogger.mapState('BEFORE_CREATE', channelId);
+
       // Validate channel exists
       const channel = await Channel.findById(channelId);
       if (!channel) {
+        debugLogger.writeLog(`ERROR: Channel ${channelId} not found in database`);
         throw new Error('Channel not found');
       }
 
       if (channel.input_type !== 'webcam') {
+        debugLogger.writeLog(`ERROR: Channel ${channelId} input_type is ${channel.input_type}, not webcam`);
         throw new Error('Channel input type must be webcam');
       }
 
       // Check if connection already exists - FORCE STOP IT
-      if (this.peerConnections.has(channelId)) {
+      const hasExisting = this.peerConnections.has(channelId);
+      debugLogger.sessionCreated(channelId, hasExisting);
+
+      if (hasExisting) {
         logger.warn(`WebRTC connection already exists for channel ${channelId} - FORCING CLEANUP`);
         console.log(`[WebRTC Bridge] FORCING stopBridge for existing connection on channel ${channelId}`);
+        debugLogger.writeLog(`FORCING CLEANUP of existing connection for channel ${channelId}`);
         await this.stopBridge(channelId);
         console.log(`[WebRTC Bridge] Existing connection stopped, creating fresh connection`);
       }
@@ -113,6 +133,7 @@ class WebRTCBridgeService {
       // CRITICAL: Allocate unique RTMP port IMMEDIATELY when peer connection is created
       // This ensures the port is available when platform streaming starts
       const allocatedPort = portAllocator.allocate(channelId);
+      debugLogger.portAllocated(channelId, allocatedPort);
       logger.info(`Allocated RTMP port ${allocatedPort} for channel ${channelId} (before peer connection)`);
       console.log(`[WebRTC Bridge] Pre-allocated port ${allocatedPort} for channel ${channelId}`);
 
@@ -251,8 +272,15 @@ class WebRTCBridgeService {
             const ffmpegProcess = this.ffmpegProcesses.get(channelId);
             const isProcessRunning = ffmpegProcess && !ffmpegProcess.killed && ffmpegProcess.exitCode === null;
 
+            // Log frame details every 30 frames
+            if (frameCount % 30 === 0 || frameCount === 1) {
+              debugLogger.frameReceived(channelId, frameCount, frameResolution, !!ffmpegProcess, isProcessRunning);
+              debugLogger.mapState('FRAME_CALLBACK', channelId);
+            }
+
             // ZOMBIE DETECTION: If frames are coming but process is dead/missing, we must restart
             if (frameCount > 1 && !isProcessRunning) {
+              debugLogger.zombieDetected(channelId, frameCount, `Process dead - hasProcess: ${!!ffmpegProcess}, isRunning: ${isProcessRunning}`);
               logger.warn(`ZOMBIE DETECTED for channel ${channelId}: Frame ${frameCount} but no running process. Forcing cleanup and restart.`);
               console.log(`[WebRTC Bridge] 🧟 ZOMBIE CONNECTION: Frame ${frameCount} but process dead. Resetting...`);
 
@@ -260,10 +288,18 @@ class WebRTCBridgeService {
               frameCount = 0; // Reset will increment to 1 on next line
 
               // Clean up zombie process entry (non-blocking)
+              const actions = {
+                deletedFFmpegProcess: this.ffmpegProcesses.has(channelId),
+                deletedStdinClosed: this.ffmpegStdinClosed.has(channelId),
+                deletedPlatformStreaming: this.platformStreamingStarted.has(channelId)
+              };
+
               this.ffmpegProcesses.delete(channelId);
               this.ffmpegStdinClosed.delete(channelId);
               this.platformStreamingStarted.delete(channelId);
 
+              debugLogger.zombieCleanup(channelId, actions);
+              debugLogger.mapState('AFTER_ZOMBIE_CLEANUP', channelId);
               console.log(`[WebRTC Bridge] Zombie process cleaned up for channel ${channelId}, will restart on next frame`);
             }
 
@@ -489,6 +525,7 @@ class WebRTCBridgeService {
 
                   const timer = setTimeout(async () => {
                     console.log(`[Platform Streaming Timer] Fired for channel ${channelId}`);
+                    debugLogger.platformStreamingTriggered(channelId, 3000);
                     try {
                       // Double-check it hasn't been started by another code path
                       if (!this.platformStreamingStarted.get(channelId)) {
@@ -497,11 +534,13 @@ class WebRTCBridgeService {
                         await streamManager.startStream(channelId);
                         this.platformStreamingStarted.set(channelId, true);
                         this.platformStreamingTimers.delete(channelId);
+                        debugLogger.platformStreamingStarted(channelId);
                         logger.info(`Platform streaming started successfully for channel ${channelId}`);
                       } else {
                         logger.warn(`Platform streaming already started for channel ${channelId}, skipping`);
                       }
                     } catch (err) {
+                      debugLogger.platformStreamingFailed(channelId, err.message);
                       logger.error(`Failed to start platform streaming for channel ${channelId}`, { error: err.message });
                       this.platformStreamingTimers.delete(channelId);
                       // Retry after 5 seconds if failed
@@ -509,6 +548,7 @@ class WebRTCBridgeService {
                     }
                   }, 3000); // 3 second delay to let WebRTC→RTMP bridge stabilize
 
+                  debugLogger.writeLog(`Platform streaming timer created for channel ${channelId} (3000ms delay)`);
                   this.platformStreamingTimers.set(channelId, timer);
                 } else {
                   logger.info(`Platform streaming already started for channel ${channelId}, skipping trigger`);
@@ -527,8 +567,10 @@ class WebRTCBridgeService {
               if (ffmpegProc && ffmpegProc.stdin && !ffmpegProc.stdin.destroyed && !stdinClosed) {
                 const yuv = this.convertToYUV420(frame);
                 try {
-                  ffmpegProc.stdin.write(yuv);
+                  const writeSuccess = ffmpegProc.stdin.write(yuv);
+                  debugLogger.ffmpegStdinWrite(channelId, writeSuccess);
                 } catch (err) {
+                  debugLogger.writeLog(`FFMPEG_STDIN_WRITE_ERROR: Channel ${channelId} | Error: ${err.message}`);
                   logger.error(`Failed to write video frame for channel ${channelId}`, { error: err.message });
                   // Mark stdin as closed to prevent further write attempts
                   this.ffmpegStdinClosed.set(channelId, true);
@@ -641,20 +683,29 @@ class WebRTCBridgeService {
    */
   startFFmpegBridge(channelId, streamKey, firstFrame) {
     console.log(`[startFFmpegBridge] CALLED for channel ${channelId}, streamKey: ${streamKey}`);
+    debugLogger.writeLog(`>>> startFFmpegBridge CALLED: Channel ${channelId} | StreamKey: ${streamKey}`);
+    debugLogger.mapState('BEFORE_FFMPEG_START', channelId);
+
     try {
       // FORCE CLEANUP: Check if entry exists but process is actually dead
       if (this.ffmpegProcesses.has(channelId)) {
         const existingProcess = this.ffmpegProcesses.get(channelId);
+        const isStale = !existingProcess || existingProcess.killed || existingProcess.exitCode !== null;
+
+        debugLogger.writeLog(`Existing FFmpeg process found for channel ${channelId}: Stale=${isStale}, Killed=${existingProcess?.killed}, ExitCode=${existingProcess?.exitCode}`);
+
         // Check if process is actually running
-        if (!existingProcess || existingProcess.killed || existingProcess.exitCode !== null) {
+        if (isStale) {
           console.log(`[startFFmpegBridge] Stale entry detected for channel ${channelId}, cleaning up`);
           logger.warn(`FFmpeg bridge had stale entry for channel ${channelId}, forcing cleanup`);
+          debugLogger.writeLog(`Cleaning up STALE FFmpeg entry for channel ${channelId}`);
           this.ffmpegProcesses.delete(channelId);
           this.ffmpegStdinClosed.delete(channelId);
           // Continue to start fresh FFmpeg
         } else {
           console.log(`[startFFmpegBridge] Already running for channel ${channelId}`);
           logger.warn(`FFmpeg bridge already running for channel ${channelId}`);
+          debugLogger.writeLog(`FFmpeg ALREADY RUNNING for channel ${channelId} - ABORTING start`);
           return;
         }
       }
@@ -749,6 +800,7 @@ class WebRTCBridgeService {
 
       // Handle FFmpeg exit
       ffmpegProcess.on('exit', (code, signal) => {
+        debugLogger.ffmpegStopped(channelId, ffmpegProcess.pid, code, signal);
         logger.info(`FFmpeg bridge exited for channel ${channelId}: code=${code}, signal=${signal}`);
         this.ffmpegProcesses.delete(channelId);
 
@@ -759,6 +811,7 @@ class WebRTCBridgeService {
 
       // Handle FFmpeg errors
       ffmpegProcess.on('error', (error) => {
+        debugLogger.ffmpegError(channelId, error.message);
         logger.error(`FFmpeg bridge process error for channel ${channelId}`, { error: error.message });
         this.incrementErrors(channelId);
       });
@@ -769,6 +822,8 @@ class WebRTCBridgeService {
       // Mark stdin as open
       this.ffmpegStdinClosed.set(channelId, false);
 
+      debugLogger.ffmpegStarted(channelId, ffmpegProcess.pid);
+      debugLogger.mapState('AFTER_FFMPEG_START', channelId);
       logger.info(`FFmpeg bridge started for channel ${channelId}`);
 
     } catch (error) {
@@ -782,6 +837,8 @@ class WebRTCBridgeService {
    */
   async stopBridge(channelId) {
     try {
+      debugLogger.sessionStopped(channelId, 'stopBridge called');
+      debugLogger.mapState('BEFORE_STOP', channelId);
       logger.info(`Stopping WebRTC bridge for channel ${channelId}`);
 
       // CRITICAL FIX: Clear platform streaming timer if exists
@@ -789,21 +846,25 @@ class WebRTCBridgeService {
       if (timer) {
         clearTimeout(timer);
         this.platformStreamingTimers.delete(channelId);
+        debugLogger.writeLog(`Cleared platform streaming timer for channel ${channelId}`);
         logger.info(`Cleared platform streaming timer for channel ${channelId}`);
       }
 
       // Stop video sink - CRITICAL: Null handler FIRST to break JS loop, THEN stop C++ sink
       const videoSink = this.videoSinks.get(channelId);
       if (videoSink) {
+        debugLogger.videoSinkStopped(channelId, 'onframe nulled');
         videoSink.onframe = null; // 1. Break JS reference immediately to stop event loop
         videoSink.stop(); // 2. Then detach C++ callback and release native resources
         this.videoSinks.delete(channelId);
+        debugLogger.videoSinkDeleted(channelId);
         logger.info(`Video sink stopped and references cleared for channel ${channelId}`);
       }
 
       // Stop audio sink - CRITICAL: Null handler FIRST to break JS loop, THEN stop C++ sink
       const audioSink = this.audioSinks.get(channelId);
       if (audioSink) {
+        debugLogger.writeLog(`Audio sink stopped for channel ${channelId}`);
         audioSink.ondata = null; // 1. Break JS reference immediately to stop event loop
         audioSink.stop(); // 2. Then detach C++ callback and release native resources
         this.audioSinks.delete(channelId);
@@ -813,6 +874,7 @@ class WebRTCBridgeService {
       // Stop FFmpeg process
       const ffmpegProcess = this.ffmpegProcesses.get(channelId);
       if (ffmpegProcess) {
+        debugLogger.writeLog(`Stopping FFmpeg process for channel ${channelId} (PID: ${ffmpegProcess.pid})`);
         if (ffmpegProcess.stdin && !ffmpegProcess.stdin.destroyed) {
           ffmpegProcess.stdin.end();
         }
@@ -826,18 +888,22 @@ class WebRTCBridgeService {
         // Give FFmpeg time to flush buffers
         setTimeout(() => {
           if (ffmpegProcess && !ffmpegProcess.killed) {
+            debugLogger.writeLog(`Killing FFmpeg process ${ffmpegProcess.pid} with SIGTERM`);
             ffmpegProcess.kill('SIGTERM');
           }
         }, 1000);
 
         this.ffmpegProcesses.delete(channelId);
+        debugLogger.writeLog(`FFmpeg process deleted from map for channel ${channelId}`);
       }
 
       // Close peer connection
       const peerConnection = this.peerConnections.get(channelId);
       if (peerConnection) {
+        debugLogger.peerConnectionState(channelId, 'closing', { connectionState: peerConnection.connectionState });
         peerConnection.close();
         this.peerConnections.delete(channelId);
+        debugLogger.writeLog(`Peer connection closed and deleted for channel ${channelId}`);
       }
 
       // CRITICAL FIX: Clear ALL state tracking maps
@@ -847,16 +913,21 @@ class WebRTCBridgeService {
       this.platformStreamingStarted.delete(channelId);
 
       // Release allocated RTMP port
-      portAllocator.release(channelId);
+      const releasedPort = portAllocator.release(channelId);
+      debugLogger.portReleased(channelId, releasedPort);
       logger.info(`Released RTMP port for channel ${channelId}`);
 
       // Update channel status to stopped
       try {
         await Channel.update(channelId, { status: 'stopped' });
+        debugLogger.writeLog(`Channel ${channelId} status updated to stopped in database`);
         logger.info(`Channel ${channelId} status updated to stopped`);
       } catch (err) {
+        debugLogger.writeLog(`Failed to update channel status for ${channelId}: ${err.message}`);
         logger.error(`Failed to update channel status for ${channelId}`, { error: err.message });
       }
+
+      debugLogger.mapState('AFTER_STOP_COMPLETE', channelId);
 
       logger.info(`WebRTC bridge stopped and all state cleared for channel ${channelId}`);
 
