@@ -25,6 +25,8 @@ class WebRTCBridgeService {
     this.firstFrameReceived = new Map(); // channelId -> boolean (tracks if first frame received)
     this.platformStreamingStarted = new Map(); // channelId -> boolean (tracks if platform streaming already started)
     this.platformStreamingTimers = new Map(); // channelId -> setTimeout reference (for cleanup)
+    this.stdinBackpressure = new Map(); // channelId -> boolean (tracks if FFmpeg stdin has backpressure)
+    this.droppedFrameCount = new Map(); // channelId -> number (tracks dropped frames due to backpressure)
 
     // Share Map references with debug logger for state inspection
     debugLogger.constructor.setServiceMaps(
@@ -560,15 +562,42 @@ class WebRTCBridgeService {
                 this.startFFmpegBridge(channelId, streamKey, frame);
               }
 
-              // Write frame to FFmpeg stdin
+              // Write frame to FFmpeg stdin with backpressure handling
               const ffmpegProc = this.ffmpegProcesses.get(channelId);
               const stdinClosed = this.ffmpegStdinClosed.get(channelId);
+              const hasBackpressure = this.stdinBackpressure.get(channelId);
 
               if (ffmpegProc && ffmpegProc.stdin && !ffmpegProc.stdin.destroyed && !stdinClosed) {
+                // CRITICAL FIX: If stdin has backpressure, SKIP frame conversion and writing
+                // This prevents native C++ memory accumulation in wrtc library
+                if (hasBackpressure) {
+                  const droppedCount = (this.droppedFrameCount.get(channelId) || 0) + 1;
+                  this.droppedFrameCount.set(channelId, droppedCount);
+
+                  if (droppedCount % 60 === 0) {
+                    debugLogger.writeLog(`⚠️ BACKPRESSURE: Dropped ${droppedCount} frames for channel ${channelId} (stdin buffer full)`);
+                  }
+                  return; // Skip this frame entirely - don't even convert to YUV
+                }
+
                 const yuv = this.convertToYUV420(frame);
                 try {
                   const writeSuccess = ffmpegProc.stdin.write(yuv);
                   debugLogger.ffmpegStdinWrite(channelId, writeSuccess);
+
+                  // If write returns false, stdin internal buffer is full - enable backpressure mode
+                  if (!writeSuccess) {
+                    this.stdinBackpressure.set(channelId, true);
+                    debugLogger.writeLog(`⚠️ BACKPRESSURE ENABLED: FFmpeg stdin full for channel ${channelId} at frame ${frameCount}`);
+
+                    // Wait for 'drain' event to re-enable writing
+                    ffmpegProc.stdin.once('drain', () => {
+                      this.stdinBackpressure.set(channelId, false);
+                      const droppedCount = this.droppedFrameCount.get(channelId) || 0;
+                      debugLogger.writeLog(`✅ BACKPRESSURE CLEARED: FFmpeg stdin drained for channel ${channelId}, dropped ${droppedCount} frames`);
+                      this.droppedFrameCount.set(channelId, 0); // Reset counter
+                    });
+                  }
                 } catch (err) {
                   debugLogger.writeLog(`FFMPEG_STDIN_WRITE_ERROR: Channel ${channelId} | Error: ${err.message}`);
                   logger.error(`Failed to write video frame for channel ${channelId}`, { error: err.message });
@@ -911,6 +940,8 @@ class WebRTCBridgeService {
       this.ffmpegStdinClosed.delete(channelId);
       this.firstFrameReceived.delete(channelId);
       this.platformStreamingStarted.delete(channelId);
+      this.stdinBackpressure.delete(channelId);
+      this.droppedFrameCount.delete(channelId);
 
       // Release allocated RTMP port
       const releasedPort = portAllocator.release(channelId);
