@@ -526,6 +526,15 @@ class WebRTCBridgeService {
               if (frameCount === 1 || !isProcessRunning2) {
                 console.log(`[WebRTC Bridge] FIRST FRAME (recreated sink)! ${frameResolution} (frameCount: ${frameCount}, process running: ${isProcessRunning2})`);
                 logger.info(`First video frame received for channel ${channelId} (recreated sink): ${frameResolution} (trigger condition: frameCount=${frameCount}, processRunning=${isProcessRunning2})`);
+
+                // CRITICAL: Only accept 1280x720 frames - drop anything else to prevent 640x360 green tint bug
+                if (frame.width !== 1280 || frame.height !== 720) {
+                  logger.warn(`⚠️ DROPPING FIRST FRAME (recreated sink): Wrong resolution ${frameResolution}, waiting for 1280x720`);
+                  console.log(`[WebRTC Bridge] ❌ DROPPING FIRST FRAME (recreated sink): Got ${frameResolution}, need 1280x720`);
+                  frameCount = 0; // Reset so next frame is treated as first
+                  return; // Skip this frame completely
+                }
+
                 currentResolution = frameResolution;
 
                 // Only start FFmpeg bridge if not already running
