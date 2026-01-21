@@ -507,6 +507,13 @@ class WebRTCBridgeService {
                 // Only start FFmpeg bridge if not already running
                 if (!isProcessRunning2) {
                   this.startFFmpegBridge(channelId, streamKey, frame);
+
+                  // Update channel status to waiting_for_input when WebRTC bridge starts
+                  // This signals StreamManager that the webcam is connected and ready for platform streaming
+                  const Channel = (await import('../models/Channel.js')).default;
+                  await Channel.updateStatus(channelId, 'waiting_for_input', null, 'Webcam connected, preparing stream...');
+                  debugLogger.writeLog(`Channel ${channelId} status updated to waiting_for_input (WebRTC bridge started)`);
+                  logger.info(`Channel ${channelId} status updated to waiting_for_input (WebRTC connected)`);
                 }
 
                 // CRITICAL FIX: Start platform streaming only if NOT already started
