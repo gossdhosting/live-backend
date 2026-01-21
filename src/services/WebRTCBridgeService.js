@@ -713,9 +713,43 @@ class WebRTCBridgeService {
    * Convert WebRTC frame to YUV420 format for FFmpeg
    */
   convertToYUV420(frame) {
-    // The wrtc library provides frame.data in I420 format (YUV420p planar)
-    // Format: Y plane (width*height), U plane (width/2*height/2), V plane (width/2*height/2)
-    // We just need to convert the Uint8ClampedArray to Buffer - no plane manipulation needed
+    const width = frame.width;
+    const height = frame.height;
+    const expectedI420Size = width * height * 1.5;  // I420 format
+    const expectedRGBASize = width * height * 4;     // RGBA format
+    const actualSize = frame.data.length;
+
+    // Log format detection once
+    if (!this._formatLogged) {
+      console.log(`[YUV Conversion] Frame format detection:`);
+      console.log(`  Resolution: ${width}x${height}`);
+      console.log(`  Actual data size: ${actualSize} bytes`);
+      console.log(`  Expected I420 size: ${expectedI420Size} bytes`);
+      console.log(`  Expected RGBA size: ${expectedRGBASize} bytes`);
+
+      if (actualSize === expectedRGBASize) {
+        console.log(`  ⚠️  WARNING: Frame data is RGBA, not I420! Need to convert.`);
+      } else if (actualSize === expectedI420Size) {
+        console.log(`  ✓ Frame data is I420 format (correct)`);
+      } else {
+        console.log(`  ⚠️  WARNING: Unknown format! Size doesn't match I420 or RGBA`);
+      }
+      this._formatLogged = true;
+    }
+
+    // If RGBA, convert to I420 using wrtc's built-in converter
+    if (actualSize === expectedRGBASize) {
+      const { rgbaToI420 } = require('wrtc').nonstandard;
+      const i420Frame = {
+        width,
+        height,
+        data: new Uint8ClampedArray(expectedI420Size)
+      };
+      rgbaToI420({ width, height, data: frame.data }, i420Frame);
+      return Buffer.from(i420Frame.data);
+    }
+
+    // Otherwise assume I420 and pass through
     return Buffer.from(frame.data);
   }
 
