@@ -765,6 +765,11 @@ class WebRTCBridgeService {
         '-video_size', `${width}x${height}`,
         '-framerate', '30',
         '-thread_queue_size', '1024',
+        // Color space flags for WebRTC input (BT.709, full range)
+        '-color_range', 'pc',  // full range (0-255)
+        '-colorspace', 'bt709',
+        '-color_primaries', 'bt709',
+        '-color_trc', 'iec61966-2-1',  // sRGB transfer
         '-i', 'pipe:0',
 
         // Audio input (raw PCM from WebRTC) - FIXED: use pipe:3 not pipe:1 (stdout)
@@ -774,14 +779,22 @@ class WebRTCBridgeService {
         '-thread_queue_size', '1024',
         '-i', 'pipe:3',
 
+        // Video filter to handle color space conversion explicitly
+        '-vf', 'scale=in_range=pc:in_color_matrix=bt709:out_range=tv:out_color_matrix=bt709',
+
         // Video encoding
         '-c:v', 'libx264',
         '-preset', 'ultrafast',
         '-tune', 'zerolatency',
         '-pix_fmt', 'yuv420p',
-        '-b:v', '2500k',
-        '-maxrate', '2500k',
-        '-bufsize', '5000k',
+        // Output color space flags (BT.709, TV range for streaming compatibility)
+        '-colorspace', 'bt709',
+        '-color_primaries', 'bt709',
+        '-color_trc', 'bt709',
+        '-color_range', 'tv',  // limited range (16-235) for broadcast compatibility
+        '-b:v', '3000k',  // Increased from 2500k to improve stability
+        '-maxrate', '3500k',  // Increased from 2500k
+        '-bufsize', '6000k',  // Increased from 5000k
         '-g', '60',
         '-keyint_min', '60',
         '-sc_threshold', '0',
