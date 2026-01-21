@@ -719,22 +719,26 @@ class WebRTCBridgeService {
     const expectedRGBASize = width * height * 4;     // RGBA format
     const actualSize = frame.data.length;
 
-    // Log format detection once
-    if (!this._formatLogged) {
-      console.log(`[YUV Conversion] Frame format detection:`);
-      console.log(`  Resolution: ${width}x${height}`);
-      console.log(`  Actual data size: ${actualSize} bytes`);
-      console.log(`  Expected I420 size: ${expectedI420Size} bytes`);
-      console.log(`  Expected RGBA size: ${expectedRGBASize} bytes`);
+    // ALWAYS log format detection for first frame (for debugging)
+    if (!this._formatLoggedMap) {
+      this._formatLoggedMap = new Map();
+    }
+
+    const channelKey = `${width}x${height}`;
+    if (!this._formatLoggedMap.has(channelKey)) {
+      logger.info(`[YUV Conversion] Frame format detection for ${channelKey}:`);
+      logger.info(`  Actual data size: ${actualSize} bytes`);
+      logger.info(`  Expected I420 size: ${expectedI420Size} bytes`);
+      logger.info(`  Expected RGBA size: ${expectedRGBASize} bytes`);
 
       if (actualSize === expectedRGBASize) {
-        console.log(`  ⚠️  WARNING: Frame data is RGBA, not I420! Need to convert.`);
+        logger.warn(`  ⚠️  WARNING: Frame data is RGBA, not I420! Need to convert.`);
       } else if (actualSize === expectedI420Size) {
-        console.log(`  ✓ Frame data is I420 format (correct)`);
+        logger.info(`  ✓ Frame data is I420 format (correct)`);
       } else {
-        console.log(`  ⚠️  WARNING: Unknown format! Size doesn't match I420 or RGBA`);
+        logger.warn(`  ⚠️  WARNING: Unknown format! Size doesn't match I420 or RGBA`);
       }
-      this._formatLogged = true;
+      this._formatLoggedMap.set(channelKey, true);
     }
 
     // If RGBA, convert to I420 using wrtc's built-in converter
