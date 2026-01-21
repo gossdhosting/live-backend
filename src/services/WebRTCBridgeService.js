@@ -844,37 +844,37 @@ class WebRTCBridgeService {
       // FFmpeg command to convert raw video/audio to RTMP
       const ffmpegArgs = [
         '-loglevel', 'warning',
-        '-threads', '2',
+        '-threads', '4',  // Increased from 2 for faster encoding
 
         // Video input (raw YUV420 from WebRTC)
         '-f', 'rawvideo',
         '-pixel_format', 'yuv420p',
         '-video_size', `${width}x${height}`,
         '-framerate', '30',
-        '-thread_queue_size', '1024',
+        '-thread_queue_size', '512',  // Reduced from 1024
         '-i', 'pipe:0',
 
         // Audio input (raw PCM from WebRTC) - FIXED: use pipe:3 not pipe:1 (stdout)
         '-f', 's16le',
         '-ar', '48000',
         '-ac', '2',
-        '-thread_queue_size', '1024',
+        '-thread_queue_size', '512',  // Reduced from 1024
         '-i', 'pipe:3',
 
-        // Video encoding
+        // Video encoding - optimized for speed
         '-c:v', 'libx264',
-        '-preset', 'ultrafast',
+        '-preset', 'veryfast',  // Changed from ultrafast (better quality, still fast)
         '-tune', 'zerolatency',
         '-pix_fmt', 'yuv420p',
-        '-b:v', '2500k',  // Reduced for faster encoding
-        '-maxrate', '3000k',  // Reduced for faster encoding
-        '-bufsize', '5000k',  // Reduced buffer size
+        '-b:v', '2000k',  // Reduced from 2500k
+        '-maxrate', '2500k',  // Reduced from 3000k
+        '-bufsize', '4000k',  // Reduced from 5000k
         '-g', '60',
         '-keyint_min', '60',
         '-sc_threshold', '0',
-        // Always add video filter for rotation correction and padding
-        // If camera is physically sideways (most common for mobile), rotate and pad
-        '-vf', 'transpose=1,scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:black',
+        '-x264opts', 'no-scenecut:ref=1',  // Disable scene detection, minimal references for speed
+        // Simple rotation only - removed scale/pad for speed
+        ...(width === 1280 && height === 720 ? ['-vf', 'transpose=1'] : []),
 
         // Audio encoding
         '-c:a', 'aac',
