@@ -298,27 +298,50 @@ export async function adminCancelSubscription(req, res) {
       return res.status(404).json({ error: 'Subscription not found' });
     }
 
-    const stripe = stripeConfig.getStripe();
+    // Check if this is an IAP subscription (not managed by Stripe)
+    const isIAPSubscription = subscriptionId.startsWith('iap_');
 
-    if (cancelAtPeriodEnd) {
-      await stripe.subscriptions.update(subscriptionId, {
-        cancel_at_period_end: true,
-      });
-    } else {
-      await stripe.subscriptions.cancel(subscriptionId);
+    if (!isIAPSubscription) {
+      // Only call Stripe API for real Stripe subscriptions
+      const stripe = stripeConfig.getStripe();
+
+      if (cancelAtPeriodEnd) {
+        await stripe.subscriptions.update(subscriptionId, {
+          cancel_at_period_end: true,
+        });
+      } else {
+        await stripe.subscriptions.cancel(subscriptionId);
+      }
     }
 
+    // Update database for both Stripe and IAP subscriptions
     await StripeSubscription.cancel(subscriptionId, cancelAtPeriodEnd);
 
-    logger.info('Stripe: Admin canceled subscription', {
+    // For IAP subscriptions, also downgrade user to Free plan immediately
+    if (isIAPSubscription && !cancelAtPeriodEnd) {
+      const freePlan = await Plan.getByName('Free');
+      if (freePlan) {
+        await User.update(subscription.user_id, {
+          plan_id: freePlan.id,
+          subscription_status: 'cancelled'
+        });
+      }
+    }
+
+    logger.info('Admin canceled subscription', {
       subscriptionId,
+      isIAP: isIAPSubscription,
       immediate: !cancelAtPeriodEnd,
     });
 
-    res.json({ message: 'Subscription canceled' });
+    res.json({
+      message: 'Subscription canceled',
+      isIAP: isIAPSubscription
+    });
   } catch (error) {
-    logger.error('Stripe: Failed to admin cancel subscription', {
+    logger.error('Failed to admin cancel subscription', {
       error: error.message,
+      stack: error.stack,
     });
     res.status(500).json({ error: 'Failed to cancel subscription' });
   }

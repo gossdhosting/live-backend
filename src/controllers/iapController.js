@@ -854,40 +854,11 @@ export async function syncUserSubscription(req, res) {
 
     if (!activeSub) {
       console.log('[IAP-SYNC] ❌ No active subscription found');
+      console.log('[IAP-SYNC] 📝 Note: User plan_id is:', user.plan_id, '(keeping as is - admin may have set manually)');
 
-      // Check if subscription has expired
-      if (user.subscription_expires_at) {
-        const expiryDate = new Date(user.subscription_expires_at);
-        const now = new Date();
-
-        if (expiryDate < now) {
-          console.log('[IAP-SYNC] ⏰ Subscription expired on', expiryDate.toISOString());
-
-          // Downgrade to Free plan
-          const freePlan = await Plan.getByName('Free');
-          if (freePlan) {
-            console.log('[IAP-SYNC] ⬇️ Downgrading user to Free plan');
-            await User.update(userId, {
-              plan_id: freePlan.id,
-              subscription_status: 'expired'
-            });
-
-            logger.info('User downgraded to Free plan due to expired subscription', { userId });
-
-            return res.json({
-              synced: true,
-              changed: true,
-              old_plan_id: user.plan_id,
-              new_plan_id: freePlan.id,
-              reason: 'subscription_expired',
-              expires_at: user.subscription_expires_at
-            });
-          }
-        }
-      }
-
-      // No active subscription and not expired - keep current plan
-      console.log('[IAP-SYNC] ✅ No changes needed (no active subscription)');
+      // No active subscription found
+      // DO NOT auto-downgrade - admin might have manually set the plan
+      // Let the cron job (check-expired-subscriptions.js) handle expiry downgrades
       return res.json({
         synced: true,
         changed: false,

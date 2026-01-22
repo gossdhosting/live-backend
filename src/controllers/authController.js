@@ -85,39 +85,13 @@ export const getCurrentUser = async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Check if subscription has expired and downgrade to Free if needed
-    try {
-      if (userWithPlan.subscription_expires_at) {
-        // Check if subscription expired
-        const expiryDate = new Date(userWithPlan.subscription_expires_at);
-        const now = new Date();
-
-        if (expiryDate < now && userWithPlan.subscription_status === 'active') {
-          // Subscription expired - downgrade to Free plan
-          const freePlan = await Plan.getByName('Free');
-          if (freePlan) {
-            logger.warn('Expired subscription detected in /auth/me, downgrading to Free', {
-              userId: req.user.id,
-              expiresAt: userWithPlan.subscription_expires_at
-            });
-
-            await User.update(req.user.id, {
-              plan_id: freePlan.id,
-              subscription_status: 'expired'
-            });
-
-            // Re-fetch user data with updated plan
-            userWithPlan = await User.findById(req.user.id);
-          }
-        }
-      }
-    } catch (syncError) {
-      // Log sync error but don't fail the whole request
-      logger.error('Failed to sync user plan in /auth/me', {
-        error: syncError.message,
-        userId: req.user.id
-      });
-    }
+    // NOTE: We do NOT auto-downgrade expired subscriptions here
+    // Reasons:
+    // 1. Admin might have manually set the plan (should not be overridden)
+    // 2. User might have paid via different method (web Stripe vs mobile IAP)
+    // 3. Grace periods or extensions might be in place
+    // Let the cron job (check-expired-subscriptions.js) handle expiry downgrades
+    // That way admins can control when downgrades happen
 
     res.json({
       user: {
