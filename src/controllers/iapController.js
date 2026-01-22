@@ -170,7 +170,18 @@ export async function verifyIAPPurchase(req, res) {
     const userId = req.user.id;
     const { platform, productId, purchaseId, verificationData } = req.body;
 
+    console.log('[IAP-VERIFY] 🔍 Step 1: Request received');
+    console.log('[IAP-VERIFY] User ID:', userId);
+    console.log('[IAP-VERIFY] Platform:', platform);
+    console.log('[IAP-VERIFY] Product ID:', productId);
+    console.log('[IAP-VERIFY] Purchase ID:', purchaseId);
+    console.log('[IAP-VERIFY] Verification Data Length:', verificationData?.length || 0);
+
     if (!platform || !productId || !verificationData) {
+      console.log('[IAP-VERIFY] ❌ Missing required fields');
+      console.log('[IAP-VERIFY] Has platform:', !!platform);
+      console.log('[IAP-VERIFY] Has productId:', !!productId);
+      console.log('[IAP-VERIFY] Has verificationData:', !!verificationData);
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
@@ -179,29 +190,43 @@ export async function verifyIAPPurchase(req, res) {
     let verificationResult;
 
     if (platform === 'android') {
+      console.log('[IAP-VERIFY] 🤖 Step 2: Android verification starting');
+      console.log('[IAP-VERIFY] Package name:', process.env.ANDROID_PACKAGE_NAME);
       verificationResult = await verifyGooglePlayPurchase(
         verificationData,
         productId,
         process.env.ANDROID_PACKAGE_NAME
       );
+      console.log('[IAP-VERIFY] Android verification result:', JSON.stringify(verificationResult, null, 2));
     } else if (platform === 'ios') {
+      console.log('[IAP-VERIFY] 🍎 Step 2: iOS verification starting');
       // Detect StoreKit 2 JWS vs StoreKit 1 receipt
       if (isStoreKit2JWS(verificationData)) {
+        console.log('[IAP-VERIFY] Detected StoreKit 2 JWS transaction');
         logger.info('Detected StoreKit 2 JWS transaction');
         verificationResult = await verifyAppleStoreKit2Purchase(verificationData, purchaseId);
+        console.log('[IAP-VERIFY] StoreKit 2 verification result:', JSON.stringify(verificationResult, null, 2));
       } else {
+        console.log('[IAP-VERIFY] Detected StoreKit 1 receipt');
         logger.info('Detected StoreKit 1 receipt');
         verificationResult = await verifyAppleAppStorePurchase(verificationData);
+        console.log('[IAP-VERIFY] StoreKit 1 verification result:', JSON.stringify(verificationResult, null, 2));
       }
     } else {
+      console.log('[IAP-VERIFY] ❌ Invalid platform:', platform);
       return res.status(400).json({ error: 'Invalid platform' });
     }
 
     if (!verificationResult.valid) {
+      console.log('[IAP-VERIFY] ❌ Step 3: Verification failed');
+      console.log('[IAP-VERIFY] Error:', verificationResult.error);
       logger.warn('IAP verification failed', { userId, platform, error: verificationResult.error });
       return res.json({ verified: false, error: verificationResult.error });
     }
 
+    console.log('[IAP-VERIFY] ✅ Step 3: Verification successful');
+    console.log('[IAP-VERIFY] Expiry time:', verificationResult.expiryTime);
+    console.log('[IAP-VERIFY] Transaction ID:', verificationResult.transactionId || verificationResult.orderId);
     logger.info('IAP purchase verified', { userId, platform, productId });
 
     res.json({
@@ -210,6 +235,9 @@ export async function verifyIAPPurchase(req, res) {
       transactionId: verificationResult.transactionId || verificationResult.orderId,
     });
   } catch (error) {
+    console.log('[IAP-VERIFY] ❌ Exception occurred');
+    console.log('[IAP-VERIFY] Error:', error.message);
+    console.log('[IAP-VERIFY] Stack:', error.stack);
     logger.error('IAP verification error', { error: error.message });
     res.status(500).json({ error: 'Verification failed' });
   }
@@ -273,26 +301,44 @@ export async function activateIAPSubscription(req, res) {
     const userId = req.user.id;
     const { platform, productId, purchaseId, verificationData } = req.body;
 
+    console.log('[IAP-ACTIVATE] 🚀 Step 1: Activation request received');
+    console.log('[IAP-ACTIVATE] User ID:', userId);
+    console.log('[IAP-ACTIVATE] Platform:', platform);
+    console.log('[IAP-ACTIVATE] Product ID:', productId);
+    console.log('[IAP-ACTIVATE] Purchase ID:', purchaseId);
+
     if (!platform || !productId || !verificationData) {
+      console.log('[IAP-ACTIVATE] ❌ Missing required fields');
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
+    console.log('[IAP-ACTIVATE] 📋 Step 2: Finding plan for product ID');
     // Find plan by matching productId against database product ID fields
     const plans = await Plan.getAll();
+    console.log('[IAP-ACTIVATE] Total plans in database:', plans.length);
+
     let matchedPlan = null;
     let billingCycle = null;
 
     for (const plan of plans) {
+      console.log(`[IAP-ACTIVATE] Checking plan: ${plan.name} (ID: ${plan.id})`);
+      console.log(`[IAP-ACTIVATE] - Android Monthly: ${plan.android_product_id_monthly}`);
+      console.log(`[IAP-ACTIVATE] - Android Yearly: ${plan.android_product_id_yearly}`);
+      console.log(`[IAP-ACTIVATE] - iOS Monthly: ${plan.ios_product_id_monthly}`);
+      console.log(`[IAP-ACTIVATE] - iOS Yearly: ${plan.ios_product_id_yearly}`);
+
       // Check Android product IDs
       if (platform === 'android') {
         if (plan.android_product_id_monthly === productId) {
           matchedPlan = plan;
           billingCycle = 'monthly';
+          console.log(`[IAP-ACTIVATE] ✅ Match found! Android monthly plan: ${plan.name}`);
           break;
         }
         if (plan.android_product_id_yearly === productId) {
           matchedPlan = plan;
           billingCycle = 'yearly';
+          console.log(`[IAP-ACTIVATE] ✅ Match found! Android yearly plan: ${plan.name}`);
           break;
         }
       }
@@ -301,24 +347,34 @@ export async function activateIAPSubscription(req, res) {
         if (plan.ios_product_id_monthly === productId) {
           matchedPlan = plan;
           billingCycle = 'monthly';
+          console.log(`[IAP-ACTIVATE] ✅ Match found! iOS monthly plan: ${plan.name}`);
           break;
         }
         if (plan.ios_product_id_yearly === productId) {
           matchedPlan = plan;
           billingCycle = 'yearly';
+          console.log(`[IAP-ACTIVATE] ✅ Match found! iOS yearly plan: ${plan.name}`);
           break;
         }
       }
     }
 
     if (!matchedPlan || !billingCycle) {
+      console.log('[IAP-ACTIVATE] ❌ No matching plan found for product ID:', productId);
+      console.log('[IAP-ACTIVATE] Platform:', platform);
       logger.error('Plan not found for product ID', { productId, platform });
       return res.status(404).json({ error: 'Plan not found for this product' });
     }
 
+    console.log('[IAP-ACTIVATE] ✅ Step 3: Plan matched');
+    console.log('[IAP-ACTIVATE] Plan ID:', matchedPlan.id);
+    console.log('[IAP-ACTIVATE] Plan Name:', matchedPlan.name);
+    console.log('[IAP-ACTIVATE] Billing Cycle:', billingCycle);
+
     const planId = matchedPlan.id;
     const plan = matchedPlan;
 
+    console.log('[IAP-ACTIVATE] 🔐 Step 4: Re-verifying purchase for security');
     // Verify purchase again for security
     let verificationResult;
     if (platform === 'android') {
@@ -332,12 +388,17 @@ export async function activateIAPSubscription(req, res) {
       }
     }
 
+    console.log('[IAP-ACTIVATE] Verification result:', JSON.stringify(verificationResult, null, 2));
+
     if (!verificationResult.valid) {
+      console.log('[IAP-ACTIVATE] ❌ Purchase verification failed');
       return res.status(400).json({ error: 'Purchase verification failed' });
     }
 
     // Check if subscription has expired
     if (verificationResult.isExpired) {
+      console.log('[IAP-ACTIVATE] ❌ Subscription has expired');
+      console.log('[IAP-ACTIVATE] Expiry time:', verificationResult.expiryTime);
       logger.warn('Attempted to activate expired subscription', { userId, productId, purchaseId });
       return res.status(400).json({
         error: 'Subscription has expired',
@@ -345,11 +406,15 @@ export async function activateIAPSubscription(req, res) {
       });
     }
 
+    console.log('[IAP-ACTIVATE] ✅ Step 5: Purchase verified and not expired');
     // Calculate expiry date
     const expiryDate = new Date(verificationResult.expiryTime);
+    console.log('[IAP-ACTIVATE] Expiry date:', expiryDate.toISOString());
 
+    console.log('[IAP-ACTIVATE] 👤 Step 6: Getting user and checking customer record');
     // Get user for email
     const user = await User.getById(userId);
+    console.log('[IAP-ACTIVATE] User email:', user.email);
 
     // Check if user already has a stripe_customers record (from Stripe web or IAP)
     const existingUserCustomer = await db.query(
@@ -363,6 +428,7 @@ export async function activateIAPSubscription(req, res) {
       // User already has a customer record (from Stripe web payments)
       // Use the existing customer ID
       customerIdToUse = existingUserCustomer.rows[0].stripe_customer_id;
+      console.log('[IAP-ACTIVATE] ✅ Using existing customer record:', customerIdToUse);
       logger.info('Using existing customer record for IAP subscription', {
         userId,
         existingCustomerId: customerIdToUse
@@ -370,6 +436,7 @@ export async function activateIAPSubscription(req, res) {
     } else {
       // No existing customer record - create a new IAP customer
       const iapCustomerId = `iap_${platform}_${userId}`;
+      console.log('[IAP-ACTIVATE] ✅ Creating new IAP customer record:', iapCustomerId);
       await db.query(
         `INSERT INTO stripe_customers (user_id, stripe_customer_id, email)
          VALUES ($1, $2, $3)`,
@@ -379,8 +446,10 @@ export async function activateIAPSubscription(req, res) {
       logger.info('Created new IAP customer record', { userId, iapCustomerId });
     }
 
+    console.log('[IAP-ACTIVATE] 💾 Step 7: Creating/updating subscription record');
     // Create or update subscription record
     const existingSubscription = await StripeSubscription.getActiveByUserId(userId);
+    console.log('[IAP-ACTIVATE] Existing subscription:', existingSubscription ? 'Found' : 'Not found');
 
     const subscriptionData = {
       userId,
@@ -395,12 +464,17 @@ export async function activateIAPSubscription(req, res) {
       cancelAtPeriodEnd: false,
     };
 
+    console.log('[IAP-ACTIVATE] Subscription data:', JSON.stringify(subscriptionData, null, 2));
+
     if (existingSubscription) {
+      console.log('[IAP-ACTIVATE] Updating existing subscription');
       await StripeSubscription.update(existingSubscription.stripe_subscription_id, subscriptionData);
     } else {
+      console.log('[IAP-ACTIVATE] Creating new subscription');
       await StripeSubscription.create(subscriptionData);
     }
 
+    console.log('[IAP-ACTIVATE] 📝 Step 8: Updating user record');
     // Update user's subscription status
     await User.update(userId, {
       plan_id: planId,
@@ -410,20 +484,32 @@ export async function activateIAPSubscription(req, res) {
       subscription_expires_at: expiryDate.toISOString(),
     });
 
+    console.log('[IAP-ACTIVATE] ✅ User record updated');
     logger.info('IAP subscription activated', { userId, platform, planId, billingCycle });
 
+    console.log('[IAP-ACTIVATE] 📧 Step 9: Sending activation email');
     // Send activation email
-    await sendSubscriptionEmail(user.email, 'activated', {
-      planName: plan.name,
-      billingCycle,
-    });
+    try {
+      await sendSubscriptionEmail(user.email, 'activated', {
+        planName: plan.name,
+        billingCycle,
+      });
+      console.log('[IAP-ACTIVATE] ✅ Email sent successfully');
+    } catch (emailError) {
+      console.log('[IAP-ACTIVATE] ⚠️ Email sending failed (non-critical):', emailError.message);
+      // Don't fail the whole activation if email fails
+    }
 
+    console.log('[IAP-ACTIVATE] 🎉 Step 10: Activation complete!');
     res.json({
       success: true,
       message: 'Subscription activated',
       expiresAt: expiryDate.toISOString(),
     });
   } catch (error) {
+    console.log('[IAP-ACTIVATE] ❌ EXCEPTION occurred in activation');
+    console.log('[IAP-ACTIVATE] Error message:', error.message);
+    console.log('[IAP-ACTIVATE] Error stack:', error.stack);
     logger.error('Failed to activate IAP subscription', { error: error.message });
     res.status(500).json({ error: 'Failed to activate subscription' });
   }
@@ -451,8 +537,12 @@ export async function getPlatformPricing(req, res) {
   try {
     const { platform } = req.query;
 
+    console.log('[IAP-PRICING] 💰 Request received');
+    console.log('[IAP-PRICING] Platform:', platform);
+
     // Get all plans from database
     const plans = await Plan.getAll();
+    console.log('[IAP-PRICING] Total plans from database:', plans.length);
 
     // Get IAP settings from database
     const androidProductIdSetting = await Settings.get('android_product_id');
@@ -506,11 +596,23 @@ export async function getPlatformPricing(req, res) {
         };
       });
 
+    console.log('[IAP-PRICING] Filtered plans (active, not hidden, paid):', pricedPlans.length);
+    pricedPlans.forEach(plan => {
+      console.log(`[IAP-PRICING] Plan: ${plan.name} (ID: ${plan.id})`);
+      console.log(`[IAP-PRICING] - Monthly product ID: ${plan.product_id_monthly}`);
+      console.log(`[IAP-PRICING] - Yearly product ID: ${plan.product_id_yearly}`);
+    });
+
     // Also return list of all valid product IDs for querying stores
     const allProductIds = pricedPlans.flatMap(plan => [
       plan.product_id_monthly,
       plan.product_id_yearly,
     ]).filter(Boolean);
+
+    console.log('[IAP-PRICING] Total product IDs:', allProductIds.length);
+    console.log('[IAP-PRICING] Product IDs:', allProductIds);
+    console.log('[IAP-PRICING] Android Product ID setting:', androidProductIdSetting?.value);
+    console.log('[IAP-PRICING] iOS Subscription Group ID setting:', iosSubscriptionGroupIdSetting?.value);
 
     res.json({
       plans: pricedPlans,
@@ -521,6 +623,9 @@ export async function getPlatformPricing(req, res) {
       ios_subscription_group_id: iosSubscriptionGroupIdSetting?.value || null,
     });
   } catch (error) {
+    console.log('[IAP-PRICING] ❌ Error occurred');
+    console.log('[IAP-PRICING] Error message:', error.message);
+    console.log('[IAP-PRICING] Error stack:', error.stack);
     logger.error('Failed to get platform pricing', { error: error.message });
     res.status(500).json({ error: 'Failed to get pricing' });
   }
