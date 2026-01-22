@@ -29,9 +29,10 @@ export const rtmpAuth = async (req, res) => {
       return res.status(403).send('Forbidden');
     }
 
-    // Check if channel is configured for RTMP input
-    if (channel.input_type !== 'rtmp') {
-      logger.warn('RTMP auth failed: channel not configured for RTMP input', {
+    // Check if channel is configured for RTMP or webcam input
+    // Webcam streams use WebRTC bridge which pushes to nginx-rtmp internally
+    if (channel.input_type !== 'rtmp' && channel.input_type !== 'webcam') {
+      logger.warn('RTMP auth failed: channel not configured for RTMP or webcam input', {
         streamKey,
         channelId: channel.id,
         inputType: channel.input_type
