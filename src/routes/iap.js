@@ -13,7 +13,8 @@ router.post('/sync-subscription', auth, iapController.syncUserSubscription);
 // Public endpoint for platform-specific pricing
 router.get('/platform-pricing', iapController.getPlatformPricing);
 
-// Webhook endpoint for renewals (should be secured with API key or signature)
+// Webhook endpoints for renewals (should be secured with API key or signature)
 router.post('/iap-renewal-webhook', iapController.handleIAPRenewal);
+router.post('/iap-renewal-failure-webhook', iapController.handleIAPRenewalFailure);
 
 export default router;

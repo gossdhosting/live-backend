@@ -698,6 +698,76 @@ export async function getPlatformPricing(req, res) {
   }
 }
 
+/**
+ * Handle IAP renewal failure
+ * Called when App Store/Google Play reports a subscription renewal failure
+ */
+export async function handleIAPRenewalFailure(req, res) {
+  try {
+    const { userId, platform, productId, reason } = req.body;
+
+    console.log('[IAP-RENEWAL-FAILURE] 📛 Renewal failed for user', userId);
+    console.log('[IAP-RENEWAL-FAILURE] Platform:', platform);
+    console.log('[IAP-RENEWAL-FAILURE] Product ID:', productId);
+    console.log('[IAP-RENEWAL-FAILURE] Reason:', reason);
+
+    if (!userId) {
+      return res.status(400).json({ error: 'Missing userId' });
+    }
+
+    const user = await User.getById(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const subscription = await StripeSubscription.getActiveByUserId(userId);
+    if (!subscription) {
+      console.log('[IAP-RENEWAL-FAILURE] No active subscription found');
+      return res.status(404).json({ error: 'Subscription not found' });
+    }
+
+    // Mark subscription as past_due (grace period)
+    console.log('[IAP-RENEWAL-FAILURE] Marking subscription as past_due');
+    await StripeSubscription.update(subscription.stripe_subscription_id, {
+      status: 'past_due',
+    });
+
+    await User.update(userId, {
+      subscription_status: 'past_due',
+    });
+
+    logger.warn('IAP subscription renewal failed - marked as past_due', {
+      userId,
+      platform,
+      productId,
+      reason,
+      subscriptionId: subscription.stripe_subscription_id
+    });
+
+    // Send email notification to user
+    try {
+      await sendSubscriptionEmail(user.email, 'payment_failed', {
+        name: user.name,
+        planId: subscription.plan_id,
+        reason: reason || 'Payment method declined'
+      });
+      console.log('[IAP-RENEWAL-FAILURE] Email notification sent to user');
+    } catch (emailError) {
+      logger.error('Failed to send renewal failure email', {
+        error: emailError.message,
+        userId
+      });
+    }
+
+    console.log('[IAP-RENEWAL-FAILURE] ✅ Renewal failure processed');
+    res.json({ success: true, message: 'Renewal failure processed' });
+  } catch (error) {
+    console.error('[IAP-RENEWAL-FAILURE] ❌ Error:', error.message);
+    logger.error('Failed to handle IAP renewal failure', { error: error.message });
+    res.status(500).json({ error: 'Failed to process renewal failure' });
+  }
+}
+
 // Handle IAP subscription renewal webhook
 // This should be called by your server-side subscription status checker
 export async function handleIAPRenewal(req, res) {
