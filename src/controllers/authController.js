@@ -78,41 +78,17 @@ export const login = async (req, res) => {
 export const getCurrentUser = async (req, res) => {
   try {
     // Fetch full user data with plan details
-    let userWithPlan = await User.findById(req.user.id);
+    // users.plan_id is the ONLY source of truth for user's current plan
+    const userWithPlan = await User.findById(req.user.id);
 
     if (!userWithPlan) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // SYNC CHECK: Ensure user's plan matches their active subscription
-    // This prevents plan/subscription mismatch issues
+    // Check if subscription has expired and downgrade to Free if needed
     try {
-      const activeSub = await StripeSubscription.getActiveByUserId(req.user.id);
-
-      if (activeSub && activeSub.plan_id !== userWithPlan.plan_id) {
-        // Plan mismatch detected - sync user's plan to match subscription
-        logger.warn('Plan mismatch detected in /auth/me, syncing', {
-          userId: req.user.id,
-          userPlanId: userWithPlan.plan_id,
-          subscriptionPlanId: activeSub.plan_id
-        });
-
-        await User.update(req.user.id, {
-          plan_id: activeSub.plan_id,
-          subscription_type: activeSub.billing_cycle,
-          subscription_status: activeSub.status === 'active' || activeSub.status === 'trialing' ? 'active' : 'cancelled',
-          subscription_expires_at: activeSub.current_period_end.toISOString()
-        });
-
-        // Re-fetch user data with updated plan
-        userWithPlan = await User.findById(req.user.id);
-
-        logger.info('User plan synced successfully in /auth/me', {
-          userId: req.user.id,
-          newPlanId: activeSub.plan_id
-        });
-      } else if (!activeSub && userWithPlan.subscription_expires_at) {
-        // No active subscription - check if current subscription expired
+      if (userWithPlan.subscription_expires_at) {
+        // Check if subscription expired
         const expiryDate = new Date(userWithPlan.subscription_expires_at);
         const now = new Date();
 

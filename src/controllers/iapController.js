@@ -903,56 +903,48 @@ export async function syncUserSubscription(req, res) {
     console.log('[IAP-SYNC] - Billing Cycle:', activeSub.billing_cycle);
     console.log('[IAP-SYNC] - Expires:', activeSub.current_period_end);
 
-    // Check if user's plan matches subscription plan
-    if (activeSub.plan_id !== user.plan_id) {
-      console.log('[IAP-SYNC] ⚠️ Plan mismatch detected!');
-      console.log('[IAP-SYNC] - User plan_id:', user.plan_id);
-      console.log('[IAP-SYNC] - Subscription plan_id:', activeSub.plan_id);
-      console.log('[IAP-SYNC] - Syncing user plan to match subscription...');
+    // NOTE: users.plan_id is the ONLY source of truth
+    // stripe_subscriptions.plan_id is ONLY for payment tracking
+    // We do NOT sync plan_id from subscription to user
 
-      // Update user's plan to match subscription
-      await User.update(userId, {
-        plan_id: activeSub.plan_id,
-        subscription_type: activeSub.billing_cycle,
-        subscription_status: activeSub.status === 'active' || activeSub.status === 'trialing' ? 'active' : 'cancelled',
-        subscription_expires_at: activeSub.current_period_end.toISOString()
-      });
+    console.log('[IAP-SYNC] 📝 Note: Subscription plan_id is:', activeSub.plan_id, '(used for payment tracking only)');
+    console.log('[IAP-SYNC] 📝 User plan_id is:', user.plan_id, '(source of truth for features)');
 
-      console.log('[IAP-SYNC] ✅ User plan synced successfully');
-      logger.info('User plan synced with active subscription', {
-        userId,
-        oldPlanId: user.plan_id,
-        newPlanId: activeSub.plan_id
-      });
+    // Update subscription metadata (expiry date, status, billing cycle) but NOT plan_id
+    let needsUpdate = false;
+    const updates = {};
 
-      return res.json({
-        synced: true,
-        changed: true,
-        old_plan_id: user.plan_id,
-        new_plan_id: activeSub.plan_id,
-        subscription_id: activeSub.stripe_subscription_id,
-        expires_at: activeSub.current_period_end,
-        reason: 'plan_mismatch_corrected'
-      });
-    }
-
-    // Plans already match - just update expiry date if needed
     if (user.subscription_expires_at !== activeSub.current_period_end.toISOString()) {
       console.log('[IAP-SYNC] 📅 Updating subscription expiry date');
-      await User.update(userId, {
-        subscription_expires_at: activeSub.current_period_end.toISOString(),
-        subscription_type: activeSub.billing_cycle,
-        subscription_status: activeSub.status === 'active' || activeSub.status === 'trialing' ? 'active' : 'cancelled'
-      });
+      updates.subscription_expires_at = activeSub.current_period_end.toISOString();
+      needsUpdate = true;
     }
 
-    console.log('[IAP-SYNC] ✅ Sync complete - plans already match');
+    const newStatus = activeSub.status === 'active' || activeSub.status === 'trialing' ? 'active' : 'cancelled';
+    if (user.subscription_status !== newStatus) {
+      console.log('[IAP-SYNC] 📊 Updating subscription status');
+      updates.subscription_status = newStatus;
+      needsUpdate = true;
+    }
+
+    if (user.subscription_type !== activeSub.billing_cycle) {
+      console.log('[IAP-SYNC] 🔄 Updating billing cycle');
+      updates.subscription_type = activeSub.billing_cycle;
+      needsUpdate = true;
+    }
+
+    if (needsUpdate) {
+      await User.update(userId, updates);
+      console.log('[IAP-SYNC] ✅ Subscription metadata updated (plan_id unchanged)');
+    }
+
+    console.log('[IAP-SYNC] ✅ Sync complete');
     res.json({
       synced: true,
-      changed: false,
-      plan_id: activeSub.plan_id,
+      changed: needsUpdate,
+      plan_id: user.plan_id, // Return user's actual plan_id (source of truth)
       expires_at: activeSub.current_period_end,
-      reason: 'already_in_sync'
+      reason: needsUpdate ? 'metadata_updated' : 'already_in_sync'
     });
 
   } catch (error) {
