@@ -474,7 +474,7 @@ class StreamManager {
               throw new Error('No RTMP port allocated for webcam stream');
             }
 
-            resolvedInputUrl = `rtmp://127.0.0.1:${allocatedPort}/live/${channel.stream_key}`;
+            resolvedInputUrl = `rtmp://streaming.rexstream.net:${allocatedPort}/live/${channel.stream_key}`;
             debugLogger.writeLog(`📡 Resolved input URL: ${resolvedInputUrl}`);
             logger.info(`[StreamManager] Starting platform streaming for webcam channel ${channelId}`);
             logger.info(`[StreamManager] Input: ${resolvedInputUrl} (WebRTC bridge → nginx-rtmp)`);
@@ -513,7 +513,7 @@ class StreamManager {
           }
         } else {
           // Custom RTMP uses standard port 1935 (external users push here from OBS/vMix)
-          resolvedInputUrl = `rtmp://127.0.0.1:1935/live/${channel.stream_key}`;
+          resolvedInputUrl = `rtmp://streaming.rexstream.net:1935/live/${channel.stream_key}`;
           logger.info(`Using Custom RTMP input for channel ${channelId}: ${resolvedInputUrl} (external push from OBS/vMix)`);
         }
       }
