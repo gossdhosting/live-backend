@@ -8,6 +8,7 @@ const router = express.Router();
 router.post('/verify-iap', auth, iapController.verifyIAPPurchase);
 router.post('/activate-iap-subscription', auth, iapController.activateIAPSubscription);
 router.post('/check-iap-status', auth, iapController.checkIAPStatus);
+router.post('/sync-subscription', auth, iapController.syncUserSubscription);
 
 // Public endpoint for platform-specific pricing
 router.get('/platform-pricing', iapController.getPlatformPricing);

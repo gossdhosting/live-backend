@@ -9,6 +9,8 @@ import PasswordReset from '../models/PasswordReset.js';
 import EmailService from '../services/EmailService.js';
 import PushoverService from '../services/PushoverService.js';
 import bcrypt from 'bcryptjs';
+import StripeSubscription from '../models/StripeSubscription.js';
+import Plan from '../models/Plan.js';
 
 // Login
 export const login = async (req, res) => {
@@ -76,10 +78,69 @@ export const login = async (req, res) => {
 export const getCurrentUser = async (req, res) => {
   try {
     // Fetch full user data with plan details
-    const userWithPlan = await User.findById(req.user.id);
+    let userWithPlan = await User.findById(req.user.id);
 
     if (!userWithPlan) {
       return res.status(404).json({ error: 'User not found' });
+    }
+
+    // SYNC CHECK: Ensure user's plan matches their active subscription
+    // This prevents plan/subscription mismatch issues
+    try {
+      const activeSub = await StripeSubscription.getActiveByUserId(req.user.id);
+
+      if (activeSub && activeSub.plan_id !== userWithPlan.plan_id) {
+        // Plan mismatch detected - sync user's plan to match subscription
+        logger.warn('Plan mismatch detected in /auth/me, syncing', {
+          userId: req.user.id,
+          userPlanId: userWithPlan.plan_id,
+          subscriptionPlanId: activeSub.plan_id
+        });
+
+        await User.update(req.user.id, {
+          plan_id: activeSub.plan_id,
+          subscription_type: activeSub.billing_cycle,
+          subscription_status: activeSub.status === 'active' || activeSub.status === 'trialing' ? 'active' : 'cancelled',
+          subscription_expires_at: activeSub.current_period_end.toISOString()
+        });
+
+        // Re-fetch user data with updated plan
+        userWithPlan = await User.findById(req.user.id);
+
+        logger.info('User plan synced successfully in /auth/me', {
+          userId: req.user.id,
+          newPlanId: activeSub.plan_id
+        });
+      } else if (!activeSub && userWithPlan.subscription_expires_at) {
+        // No active subscription - check if current subscription expired
+        const expiryDate = new Date(userWithPlan.subscription_expires_at);
+        const now = new Date();
+
+        if (expiryDate < now && userWithPlan.subscription_status === 'active') {
+          // Subscription expired - downgrade to Free plan
+          const freePlan = await Plan.getByName('Free');
+          if (freePlan) {
+            logger.warn('Expired subscription detected in /auth/me, downgrading to Free', {
+              userId: req.user.id,
+              expiresAt: userWithPlan.subscription_expires_at
+            });
+
+            await User.update(req.user.id, {
+              plan_id: freePlan.id,
+              subscription_status: 'expired'
+            });
+
+            // Re-fetch user data with updated plan
+            userWithPlan = await User.findById(req.user.id);
+          }
+        }
+      }
+    } catch (syncError) {
+      // Log sync error but don't fail the whole request
+      logger.error('Failed to sync user plan in /auth/me', {
+        error: syncError.message,
+        userId: req.user.id
+      });
     }
 
     res.json({

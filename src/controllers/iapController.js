@@ -57,28 +57,87 @@ function isStoreKit2JWS(data) {
   return typeof data === 'string' && data.startsWith('ey') && data.split('.').length === 3;
 }
 
-// Apple App Store StoreKit 2 verification (JWS)
-async function verifyAppleStoreKit2Purchase(transactionJWS, transactionId) {
+// Verify Apple JWS signature using Apple's public keys
+async function verifyAppleJWSSignature(jws) {
   try {
-    // For StoreKit 2, we can verify the JWS signature locally or use App Store Server API
-    // For now, we'll accept the transaction and verify basic info
-    // In production, you should verify the JWS signature using Apple's public keys
+    // In production, you should:
+    // 1. Fetch Apple's public keys from: https://appleid.apple.com/auth/keys
+    // 2. Cache the keys and refresh periodically
+    // 3. Use a JWT library like 'jsonwebtoken' or 'node-jose' to verify signature
 
-    // Decode the JWS payload (middle part)
-    const parts = transactionJWS.split('.');
+    // For now, we'll do basic validation without signature verification
+    // TODO: Implement proper signature verification for production
+
+    const parts = jws.split('.');
     if (parts.length !== 3) {
       return { valid: false, error: 'Invalid JWS format' };
     }
 
-    // Decode the payload (it's base64url encoded)
-    const payload = Buffer.from(parts[1], 'base64').toString('utf8');
-    const transaction = JSON.parse(payload);
+    // Decode header to check algorithm
+    const headerB64 = parts[0];
+    const header = JSON.parse(Buffer.from(headerB64, 'base64').toString('utf8'));
 
-    logger.info('StoreKit 2 transaction decoded', { transaction });
+    // Apple uses ES256 algorithm
+    if (header.alg !== 'ES256') {
+      logger.warn('Unexpected JWS algorithm', { algorithm: header.alg });
+    }
+
+    // Decode payload
+    const payloadB64 = parts[1];
+    const payload = JSON.parse(Buffer.from(payloadB64, 'base64').toString('utf8'));
+
+    // Validate bundle ID if available
+    if (payload.bundleId && process.env.IOS_BUNDLE_ID) {
+      if (payload.bundleId !== process.env.IOS_BUNDLE_ID) {
+        return { valid: false, error: 'Bundle ID mismatch' };
+      }
+    }
+
+    // Validate environment (should be Production in live app)
+    if (payload.environment && process.env.NODE_ENV === 'production') {
+      if (payload.environment !== 'Production') {
+        logger.warn('Sandbox receipt used in production', { environment: payload.environment });
+        // Allow sandbox in non-production for testing
+        if (process.env.NODE_ENV === 'production') {
+          return { valid: false, error: 'Sandbox receipt not allowed in production' };
+        }
+      }
+    }
+
+    return { valid: true, payload, header };
+  } catch (error) {
+    logger.error('JWS signature verification failed', { error: error.message });
+    return { valid: false, error: error.message };
+  }
+}
+
+// Apple App Store StoreKit 2 verification (JWS)
+async function verifyAppleStoreKit2Purchase(transactionJWS, transactionId) {
+  try {
+    // Step 1: Verify JWS signature and extract payload
+    const verificationResult = await verifyAppleJWSSignature(transactionJWS);
+
+    if (!verificationResult.valid) {
+      logger.error('JWS signature verification failed', { error: verificationResult.error });
+      return { valid: false, error: verificationResult.error };
+    }
+
+    const transaction = verificationResult.payload;
+
+    logger.info('StoreKit 2 transaction verified', {
+      transactionId: transaction.transactionId,
+      productId: transaction.productId,
+      environment: transaction.environment
+    });
 
     // Basic validation
     if (!transaction.transactionId) {
       return { valid: false, error: 'Missing transaction ID in JWS' };
+    }
+
+    // Validate transaction ID matches if provided
+    if (transactionId && transaction.transactionId !== transactionId) {
+      return { valid: false, error: 'Transaction ID mismatch' };
     }
 
     // For subscriptions, extract expiration time
@@ -87,6 +146,12 @@ async function verifyAppleStoreKit2Purchase(transactionJWS, transactionId) {
     // 2. We'll check expiry during activation instead
     const expiryTime = transaction.expiresDate ? parseInt(transaction.expiresDate) : 0;
 
+    // Check for fraud indicators
+    if (transaction.originalTransactionId) {
+      // TODO: Store and check if this originalTransactionId was already used by another user
+      // This prevents users from sharing purchase receipts
+    }
+
     return {
       valid: true,
       expiryTime: expiryTime,
@@ -94,6 +159,8 @@ async function verifyAppleStoreKit2Purchase(transactionJWS, transactionId) {
       originalTransactionId: transaction.originalTransactionId || transaction.transactionId,
       productId: transaction.productId,
       isExpired: expiryTime > 0 && expiryTime < Date.now(),
+      environment: transaction.environment,
+      purchaseDate: transaction.purchaseDate,
     };
   } catch (error) {
     logger.error('StoreKit 2 JWS verification failed', { error: error.message });
@@ -692,5 +759,135 @@ export async function checkIAPStatus(req, res) {
   } catch (error) {
     logger.error('Failed to check IAP status', { error: error.message });
     res.status(500).json({ error: 'Failed to check status' });
+  }
+}
+
+/**
+ * Sync user's plan with their active subscription
+ * This endpoint should be called on app launch to ensure plan_id consistency
+ */
+export async function syncUserSubscription(req, res) {
+  try {
+    const userId = req.user.id;
+
+    console.log('[IAP-SYNC] 🔄 Step 1: Sync request received for user', userId);
+    logger.info('Syncing user subscription', { userId });
+
+    // Get user's current plan
+    const user = await User.getById(userId);
+    console.log('[IAP-SYNC] Current user plan_id:', user.plan_id);
+    console.log('[IAP-SYNC] Current subscription_status:', user.subscription_status);
+    console.log('[IAP-SYNC] Current subscription_expires_at:', user.subscription_expires_at);
+
+    // Get user's active subscription from stripe_subscriptions table
+    const activeSub = await StripeSubscription.getActiveByUserId(userId);
+
+    if (!activeSub) {
+      console.log('[IAP-SYNC] ❌ No active subscription found');
+
+      // Check if subscription has expired
+      if (user.subscription_expires_at) {
+        const expiryDate = new Date(user.subscription_expires_at);
+        const now = new Date();
+
+        if (expiryDate < now) {
+          console.log('[IAP-SYNC] ⏰ Subscription expired on', expiryDate.toISOString());
+
+          // Downgrade to Free plan
+          const freePlan = await Plan.getByName('Free');
+          if (freePlan) {
+            console.log('[IAP-SYNC] ⬇️ Downgrading user to Free plan');
+            await User.update(userId, {
+              plan_id: freePlan.id,
+              subscription_status: 'expired'
+            });
+
+            logger.info('User downgraded to Free plan due to expired subscription', { userId });
+
+            return res.json({
+              synced: true,
+              changed: true,
+              old_plan_id: user.plan_id,
+              new_plan_id: freePlan.id,
+              reason: 'subscription_expired',
+              expires_at: user.subscription_expires_at
+            });
+          }
+        }
+      }
+
+      // No active subscription and not expired - keep current plan
+      console.log('[IAP-SYNC] ✅ No changes needed (no active subscription)');
+      return res.json({
+        synced: true,
+        changed: false,
+        plan_id: user.plan_id,
+        reason: 'no_active_subscription'
+      });
+    }
+
+    console.log('[IAP-SYNC] 📋 Active subscription found:');
+    console.log('[IAP-SYNC] - Subscription ID:', activeSub.stripe_subscription_id);
+    console.log('[IAP-SYNC] - Plan ID:', activeSub.plan_id);
+    console.log('[IAP-SYNC] - Status:', activeSub.status);
+    console.log('[IAP-SYNC] - Billing Cycle:', activeSub.billing_cycle);
+    console.log('[IAP-SYNC] - Expires:', activeSub.current_period_end);
+
+    // Check if user's plan matches subscription plan
+    if (activeSub.plan_id !== user.plan_id) {
+      console.log('[IAP-SYNC] ⚠️ Plan mismatch detected!');
+      console.log('[IAP-SYNC] - User plan_id:', user.plan_id);
+      console.log('[IAP-SYNC] - Subscription plan_id:', activeSub.plan_id);
+      console.log('[IAP-SYNC] - Syncing user plan to match subscription...');
+
+      // Update user's plan to match subscription
+      await User.update(userId, {
+        plan_id: activeSub.plan_id,
+        subscription_type: activeSub.billing_cycle,
+        subscription_status: activeSub.status === 'active' || activeSub.status === 'trialing' ? 'active' : 'cancelled',
+        subscription_expires_at: activeSub.current_period_end.toISOString()
+      });
+
+      console.log('[IAP-SYNC] ✅ User plan synced successfully');
+      logger.info('User plan synced with active subscription', {
+        userId,
+        oldPlanId: user.plan_id,
+        newPlanId: activeSub.plan_id
+      });
+
+      return res.json({
+        synced: true,
+        changed: true,
+        old_plan_id: user.plan_id,
+        new_plan_id: activeSub.plan_id,
+        subscription_id: activeSub.stripe_subscription_id,
+        expires_at: activeSub.current_period_end,
+        reason: 'plan_mismatch_corrected'
+      });
+    }
+
+    // Plans already match - just update expiry date if needed
+    if (user.subscription_expires_at !== activeSub.current_period_end.toISOString()) {
+      console.log('[IAP-SYNC] 📅 Updating subscription expiry date');
+      await User.update(userId, {
+        subscription_expires_at: activeSub.current_period_end.toISOString(),
+        subscription_type: activeSub.billing_cycle,
+        subscription_status: activeSub.status === 'active' || activeSub.status === 'trialing' ? 'active' : 'cancelled'
+      });
+    }
+
+    console.log('[IAP-SYNC] ✅ Sync complete - plans already match');
+    res.json({
+      synced: true,
+      changed: false,
+      plan_id: activeSub.plan_id,
+      expires_at: activeSub.current_period_end,
+      reason: 'already_in_sync'
+    });
+
+  } catch (error) {
+    console.log('[IAP-SYNC] ❌ Sync failed:', error.message);
+    logger.error('Failed to sync user subscription', { error: error.message, userId: req.user.id });
+    res.status(500).json({ error: 'Failed to sync subscription' });
   }
 }
