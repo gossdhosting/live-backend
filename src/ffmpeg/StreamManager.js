@@ -1267,7 +1267,6 @@ class StreamManager {
         pid: ffmpegProcess.pid,
         status: 'running',
         startTime: Date.now(),
-        outputPath,
         qualityPreset
       });
 
