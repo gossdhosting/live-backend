@@ -492,10 +492,11 @@ class StreamManager {
               throw new Error('No RTMP port allocated for webcam stream');
             }
 
-            resolvedInputUrl = `rtmp://streaming.rexstream.net:${allocatedPort}/live/${channel.stream_key}`;
+            // Use nginx-rtmp on port 1935 - unique stream keys prevent conflicts
+            resolvedInputUrl = `rtmp://127.0.0.1:1935/live/${channel.stream_key}`;
             debugLogger.writeLog(`📡 Resolved input URL: ${resolvedInputUrl}`);
             logger.info(`[StreamManager] Starting platform streaming for webcam channel ${channelId}`);
-            logger.info(`[StreamManager] Input: ${resolvedInputUrl} (WebRTC bridge → nginx-rtmp)`);
+            logger.info(`[StreamManager] Input: ${resolvedInputUrl} (WebRTC bridge → nginx-rtmp on port 1935)`);
             console.log(`[StreamManager] Platform streaming triggered for webcam ${channelId}, pulling from ${resolvedInputUrl}`);
 
             // Continue to platform streaming setup below (don't return early)
