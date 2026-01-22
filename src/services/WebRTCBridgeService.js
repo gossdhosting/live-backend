@@ -40,7 +40,7 @@ class WebRTCBridgeService {
   /**
    * Wait for RTMP stream to be available on external RTMP server before starting platform streaming
    * This prevents the race condition where FFmpeg tries to pull before data is available
-   * @param {string} streamUrl - The RTMP URL to check (e.g., rtmp://panel.rexstream.net/live/STREAMKEY)
+   * @param {string} streamUrl - The RTMP URL to check (e.g., rtmp://streaming.rexstream.net:1936/live/STREAMKEY)
    * @param {number} maxAttempts - Maximum number of polling attempts (default: 20)
    * @returns {Promise<boolean>} - Resolves when stream is available, rejects on timeout
    */
@@ -353,7 +353,7 @@ class WebRTCBridgeService {
                 }
 
                 // Build RTMP URL for polling using allocated port
-                const rtmpUrl = `rtmp://127.0.0.1:${rtmpPort}/live/${streamKey}`;
+                const rtmpUrl = `rtmp://streaming.rexstream.net:${rtmpPort}/live/${streamKey}`;
 
                 // Use smart polling instead of fixed timeout - wait for stream to be available
                 this.waitForRtmpStream(rtmpUrl, 20)
@@ -836,7 +836,7 @@ class WebRTCBridgeService {
 
       // Allocate unique RTMP port for this channel to prevent conflicts
       const rtmpPort = portAllocator.allocate(channelId);
-      const rtmpUrl = `rtmp://127.0.0.1:${rtmpPort}/live/${streamKey}`;
+      const rtmpUrl = `rtmp://streaming.rexstream.net:${rtmpPort}/live/${streamKey}`;
 
       console.log(`[startFFmpegBridge] RTMP URL: ${rtmpUrl} (port ${rtmpPort})`);
       logger.info(`Starting FFmpeg bridge for channel ${channelId}: ${width}x${height} -> ${rtmpUrl}`);
