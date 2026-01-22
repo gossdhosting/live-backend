@@ -352,8 +352,8 @@ class WebRTCBridgeService {
                   return;
                 }
 
-                // Build RTMP URL for polling using allocated port
-                const rtmpUrl = `rtmp://streaming.rexstream.net:${rtmpPort}/live/${streamKey}`;
+                // Build RTMP URL for polling - use nginx-rtmp port 1935, not the allocated dynamic port
+                const rtmpUrl = `rtmp://127.0.0.1:1935/live/${streamKey}`;
 
                 // Use smart polling instead of fixed timeout - wait for stream to be available
                 this.waitForRtmpStream(rtmpUrl, 20)
@@ -834,9 +834,10 @@ class WebRTCBridgeService {
       const width = firstFrame.width;
       const height = firstFrame.height;
 
-      // Allocate unique RTMP port for this channel to prevent conflicts
+      // Allocate unique RTMP port for this channel to prevent conflicts (for future load balancing)
       const rtmpPort = portAllocator.allocate(channelId);
-      const rtmpUrl = `rtmp://streaming.rexstream.net:${rtmpPort}/live/${streamKey}`;
+      // Use nginx-rtmp on port 1935 - unique stream keys prevent conflicts
+      const rtmpUrl = `rtmp://127.0.0.1:1935/live/${streamKey}`;
 
       console.log(`[startFFmpegBridge] RTMP URL: ${rtmpUrl} (port ${rtmpPort})`);
       logger.info(`Starting FFmpeg bridge for channel ${channelId}: ${width}x${height} -> ${rtmpUrl}`);
