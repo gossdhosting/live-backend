@@ -14,6 +14,7 @@ import logger from '../utils/logger.js';
 import debugLogger from '../utils/debugLogger.js';
 import webrtcBridgeService from '../services/WebRTCBridgeService.js';
 import portAllocator from '../services/PortAllocator.js';
+import stateManager from '../services/StateManager.js';
 
 class StreamManager {
   constructor() {
@@ -57,6 +58,9 @@ class StreamManager {
     // Initialize on startup: cleanup orphans and restore auto-restart streams
     this.initializeOnStartup();
 
+    // Cleanup orphaned state in Redis and adopt running streams
+    this.initializeRedisState();
+
     // Start health check interval
     this.startHealthMonitoring();
 
@@ -75,6 +79,20 @@ class StreamManager {
       });
     } catch (error) {
       logger.error('Failed to create directories', { error: error.message });
+    }
+  }
+
+  // Initialize Redis state on startup
+  async initializeRedisState() {
+    try {
+      await new Promise(resolve => setTimeout(resolve, 3000)); // Wait for Redis connection
+      logger.info('Cleaning up orphaned Redis state...');
+      await stateManager.cleanupOrphanedState();
+      logger.info('Adopting orphaned streams from Redis...');
+      await stateManager.adoptOrphanedStreams();
+      logger.info('Redis state initialization complete');
+    } catch (error) {
+      logger.error('Failed to initialize Redis state', { error: error.message });
     }
   }
 
@@ -1243,6 +1261,15 @@ class StreamManager {
         resolution: `${resolution.width}x${resolution.height}`,
       });
 
+      // Save stream state to Redis for recovery
+      await stateManager.saveStreamState(channelId, {
+        pid: ffmpegProcess.pid,
+        status: 'running',
+        startTime: Date.now(),
+        outputPath,
+        qualityPreset
+      });
+
       // Update channel status
       Channel.updateStatus(channelId, 'running', ffmpegProcess.pid, null);
       Channel.addLog(channelId, 'info', 'Stream started successfully');
@@ -1693,6 +1720,12 @@ class StreamManager {
       }, 3000); // Reduced from 5 seconds to 3 seconds
 
       // HLS cleanup timer removed - no HLS files are generated anymore
+
+      // Clean up Redis state
+      await stateManager.deleteStreamState(channelId);
+      await stateManager.deleteFFmpegProcess(channelId);
+      await stateManager.deleteRtmpStatuses(channelId);
+      logger.info(`Cleaned up Redis state for channel ${channelId}`);
 
       Channel.addLog(channelId, 'info', 'Stream stop requested');
 
