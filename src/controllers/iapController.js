@@ -15,15 +15,62 @@ const PLATFORM_MARKUP = {
 
 // Google Play verification
 async function verifyGooglePlayPurchase(purchaseToken, productId, packageName) {
-  // Note: You need to set up Google Play Developer API
-  // This requires service account credentials
+  // Check if Google Play Developer API is configured
+  const serviceAccountKeyFile = process.env.GOOGLE_SERVICE_ACCOUNT_KEY_FILE;
 
+  // Check admin payment settings
+  const paymentSettings = await PaymentSettings.get();
+  const paymentMode = paymentSettings?.mode || 'sandbox';
+
+  console.log('[IAP-GOOGLE] Payment settings mode:', paymentMode);
+  console.log('[IAP-GOOGLE] Service account configured:', !!serviceAccountKeyFile);
+
+  // If no service account is configured, use basic validation
+  // This is less secure but allows testing without full Google Play API setup
+  if (!serviceAccountKeyFile) {
+    console.log('[IAP-GOOGLE] ⚠️ No Google Service Account configured - using basic validation');
+    logger.warn('Google Play verification using basic validation - no service account configured');
+
+    // Basic validation: check that purchase token exists and has reasonable format
+    // Google Play purchase tokens are typically long base64-like strings
+    if (!purchaseToken || purchaseToken.length < 50) {
+      return { valid: false, error: 'Invalid purchase token format' };
+    }
+
+    // In sandbox mode, accept the purchase with basic validation
+    if (paymentMode === 'sandbox') {
+      console.log('[IAP-GOOGLE] ✅ Sandbox mode - accepting with basic validation');
+
+      // For subscriptions, calculate a default expiry (1 month for monthly, 1 year for yearly)
+      const isYearly = productId.includes('year');
+      const expiryMs = isYearly
+        ? Date.now() + (365 * 24 * 60 * 60 * 1000)
+        : Date.now() + (30 * 24 * 60 * 60 * 1000);
+
+      return {
+        valid: true,
+        expiryTime: expiryMs,
+        autoRenewing: true,
+        orderId: `basic_${Date.now()}`,
+        isTestPurchase: true,
+        basicValidation: true,
+      };
+    } else {
+      // In live mode, require proper Google Play API verification
+      return {
+        valid: false,
+        error: 'Google Play API not configured. Set GOOGLE_SERVICE_ACCOUNT_KEY_FILE in environment or switch to sandbox mode.',
+      };
+    }
+  }
+
+  // Full Google Play Developer API verification
   try {
     const { google } = await import('googleapis');
 
     // Load credentials from environment or service account file
     const auth = new google.auth.GoogleAuth({
-      keyFile: process.env.GOOGLE_SERVICE_ACCOUNT_KEY_FILE,
+      keyFile: serviceAccountKeyFile,
       scopes: ['https://www.googleapis.com/auth/androidpublisher'],
     });
 
@@ -38,14 +85,11 @@ async function verifyGooglePlayPurchase(purchaseToken, productId, packageName) {
       token: purchaseToken,
     });
 
-    // Check admin payment settings to determine if test purchases are allowed
     // purchaseType: 0 = test (license tester), 1 = promo, undefined = real purchase
-    const paymentSettings = await PaymentSettings.get();
-    const paymentMode = paymentSettings?.mode || 'sandbox';
     const isTestPurchase = response.data.purchaseType === 0;
 
-    console.log('[IAP-GOOGLE] Payment settings mode:', paymentMode);
     console.log('[IAP-GOOGLE] Purchase type:', response.data.purchaseType, isTestPurchase ? '(test)' : '(real)');
+    console.log('[IAP-GOOGLE] Payment state:', response.data.paymentState);
 
     if (isTestPurchase && paymentMode !== 'sandbox') {
       // Test purchase but payment mode is live - reject
@@ -65,6 +109,26 @@ async function verifyGooglePlayPurchase(purchaseToken, productId, packageName) {
     };
   } catch (error) {
     logger.error('Google Play verification failed', { error: error.message });
+
+    // If API call fails in sandbox mode, fall back to basic validation
+    if (paymentMode === 'sandbox') {
+      console.log('[IAP-GOOGLE] ⚠️ API call failed in sandbox mode - using basic validation fallback');
+
+      const isYearly = productId.includes('year');
+      const expiryMs = isYearly
+        ? Date.now() + (365 * 24 * 60 * 60 * 1000)
+        : Date.now() + (30 * 24 * 60 * 60 * 1000);
+
+      return {
+        valid: true,
+        expiryTime: expiryMs,
+        autoRenewing: true,
+        orderId: `fallback_${Date.now()}`,
+        isTestPurchase: true,
+        basicValidation: true,
+      };
+    }
+
     return { valid: false, error: error.message };
   }
 }
