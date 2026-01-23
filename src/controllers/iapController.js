@@ -2,6 +2,7 @@ import User from '../models/User.js';
 import Plan from '../models/Plan.js';
 import StripeSubscription from '../models/StripeSubscription.js';
 import Settings from '../models/Settings.js';
+import PaymentSettings from '../models/PaymentSettings.js';
 import db from '../models/database.js';
 import logger from '../utils/logger.js';
 import { sendSubscriptionEmail } from '../services/EmailService.js';
@@ -93,14 +94,34 @@ async function verifyAppleJWSSignature(jws) {
       }
     }
 
-    // Validate environment (should be Production in live app)
-    if (payload.environment && process.env.NODE_ENV === 'production') {
-      if (payload.environment !== 'Production') {
-        logger.warn('Sandbox receipt used in production', { environment: payload.environment });
-        // Allow sandbox in non-production for testing
-        if (process.env.NODE_ENV === 'production') {
-          return { valid: false, error: 'Sandbox receipt not allowed in production' };
-        }
+    // Check admin payment settings to determine if sandbox is allowed
+    // This uses the same "Active Mode" setting from Admin Settings > Payment
+    const paymentSettings = await PaymentSettings.get();
+    const paymentMode = paymentSettings?.mode || 'sandbox';
+
+    console.log('[IAP-JWS] Payment settings mode:', paymentMode);
+    console.log('[IAP-JWS] Receipt environment:', payload.environment);
+
+    // Validate environment based on admin payment settings (not NODE_ENV)
+    if (payload.environment) {
+      const isReceiptSandbox = payload.environment !== 'Production';
+      const isPaymentModeSandbox = paymentMode === 'sandbox';
+
+      if (isReceiptSandbox && !isPaymentModeSandbox) {
+        // Sandbox receipt but payment mode is live - reject
+        logger.warn('Sandbox receipt rejected - payment mode is live', {
+          receiptEnvironment: payload.environment,
+          paymentMode: paymentMode
+        });
+        return { valid: false, error: 'Sandbox receipt not allowed when payment mode is live. Change to sandbox mode in Admin Settings > Payment.' };
+      }
+
+      if (!isReceiptSandbox && isPaymentModeSandbox) {
+        // Production receipt but payment mode is sandbox - allow but warn
+        logger.warn('Production receipt used in sandbox mode', {
+          receiptEnvironment: payload.environment,
+          paymentMode: paymentMode
+        });
       }
     }
 
