@@ -38,11 +38,30 @@ async function verifyGooglePlayPurchase(purchaseToken, productId, packageName) {
       token: purchaseToken,
     });
 
+    // Check admin payment settings to determine if test purchases are allowed
+    // purchaseType: 0 = test (license tester), 1 = promo, undefined = real purchase
+    const paymentSettings = await PaymentSettings.get();
+    const paymentMode = paymentSettings?.mode || 'sandbox';
+    const isTestPurchase = response.data.purchaseType === 0;
+
+    console.log('[IAP-GOOGLE] Payment settings mode:', paymentMode);
+    console.log('[IAP-GOOGLE] Purchase type:', response.data.purchaseType, isTestPurchase ? '(test)' : '(real)');
+
+    if (isTestPurchase && paymentMode !== 'sandbox') {
+      // Test purchase but payment mode is live - reject
+      logger.warn('Google Play test purchase rejected - payment mode is live', {
+        purchaseType: response.data.purchaseType,
+        paymentMode: paymentMode
+      });
+      return { valid: false, error: 'Test purchase not allowed when payment mode is live. Change to sandbox mode in Admin Settings > Payment.' };
+    }
+
     return {
       valid: response.data.paymentState === 1, // 1 = Payment received
       expiryTime: parseInt(response.data.expiryTimeMillis),
       autoRenewing: response.data.autoRenewing,
       orderId: response.data.orderId,
+      isTestPurchase: isTestPurchase,
     };
   } catch (error) {
     logger.error('Google Play verification failed', { error: error.message });
