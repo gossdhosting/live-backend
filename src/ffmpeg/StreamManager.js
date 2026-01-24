@@ -238,6 +238,7 @@ class StreamManager {
       });
 
       return {
+        encoder: settingsMap.ffmpeg_encoder || 'libx264',
         preset: settingsMap.ffmpeg_preset || 'veryfast',
         tune: settingsMap.ffmpeg_tune || 'zerolatency',
         profile: settingsMap.ffmpeg_profile || 'main',
@@ -261,6 +262,26 @@ class StreamManager {
         keyframeInterval: '60'
       };
     }
+  }
+
+  // Build encoder-specific arguments (hardware encoders don't support all libx264 parameters)
+  getEncoderSpecificArgs(encoder, encodingSettings, streamIndex = null) {
+    const isHardwareEncoder = encoder !== 'libx264';
+    const suffix = streamIndex !== null ? `:v:${streamIndex}` : '';
+    const args = [];
+
+    // Encoder
+    args.push('-c:v' + suffix, encoder);
+
+    // Preset (supported by all encoders)
+    args.push('-preset' + suffix, encodingSettings.preset);
+
+    // Tune (only supported by libx264, not by hardware encoders)
+    if (!isHardwareEncoder) {
+      args.push('-tune' + suffix, encodingSettings.tune);
+    }
+
+    return args;
   }
 
   // Get platform-specific encoding settings
@@ -1129,11 +1150,9 @@ class StreamManager {
         // MIXED ORIENTATIONS: Dual encoding chains with separate tee muxers
 
         // Landscape encoding chain (using database settings)
+        ffmpegArgs.push('-map', '[out_land]');
+        ffmpegArgs.push(...this.getEncoderSpecificArgs(encodingSettings.encoder, encodingSettings, 0));
         ffmpegArgs.push(
-          '-map', '[out_land]',
-          '-c:v:0', 'libx264',
-          '-preset:v:0', encodingSettings.preset,
-          '-tune:v:0', encodingSettings.tune,
           '-pix_fmt:v:0', 'yuv420p',
           '-flags:v:0', '+global_header',
           '-g:v:0', encodingSettings.keyframeInterval,
@@ -1148,11 +1167,9 @@ class StreamManager {
         );
 
         // Portrait encoding chain (using database settings)
+        ffmpegArgs.push('-map', '[out_port]');
+        ffmpegArgs.push(...this.getEncoderSpecificArgs(encodingSettings.encoder, encodingSettings, 1));
         ffmpegArgs.push(
-          '-map', '[out_port]',
-          '-c:v:1', 'libx264',
-          '-preset:v:1', encodingSettings.preset,
-          '-tune:v:1', encodingSettings.tune,
           '-pix_fmt:v:1', 'yuv420p',
           '-flags:v:1', '+global_header',
           '-g:v:1', encodingSettings.keyframeInterval,
@@ -1208,10 +1225,8 @@ class StreamManager {
 
         if (needsEncoding) {
           // Single encoder for all outputs (using database settings)
+          ffmpegArgs.push(...this.getEncoderSpecificArgs(encodingSettings.encoder, encodingSettings));
           ffmpegArgs.push(
-            '-c:v', 'libx264',
-            '-preset', encodingSettings.preset,
-            '-tune', encodingSettings.tune,
             '-pix_fmt', 'yuv420p',
             '-flags', '+global_header',
             '-g', encodingSettings.keyframeInterval,

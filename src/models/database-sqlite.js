@@ -195,6 +195,11 @@ const initDatabase = () => {
     },
     // Encoding parameter settings
     {
+      key: 'ffmpeg_encoder',
+      value: 'libx264',
+      description: 'FFmpeg video encoder (libx264, h264_nvenc, h264_qsv, h264_videotoolbox)',
+    },
+    {
       key: 'ffmpeg_preset',
       value: 'veryfast',
       description: 'FFmpeg encoding preset (ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow)',
