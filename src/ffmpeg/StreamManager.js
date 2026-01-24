@@ -228,15 +228,82 @@ class StreamManager {
     }, 30000); // Check every 30 seconds
   }
 
+  // Get encoding parameters from database settings
+  async getEncodingSettings() {
+    try {
+      const settings = await Settings.getAll();
+      const settingsMap = {};
+      settings.forEach(s => {
+        settingsMap[s.key] = s.value;
+      });
+
+      return {
+        preset: settingsMap.ffmpeg_preset || 'veryfast',
+        tune: settingsMap.ffmpeg_tune || 'zerolatency',
+        profile: settingsMap.ffmpeg_profile || 'main',
+        level: settingsMap.ffmpeg_level || '4.1',
+        fps: settingsMap.ffmpeg_fps || '30',
+        audioBitrate: `${settingsMap.ffmpeg_audio_bitrate || '128'}k`,
+        audioSampleRate: settingsMap.ffmpeg_audio_sample_rate || '48000',
+        keyframeInterval: settingsMap.ffmpeg_keyframe_interval || '60'
+      };
+    } catch (error) {
+      logger.error('Failed to fetch encoding settings from database, using defaults', { error: error.message });
+      // Fallback to hardcoded defaults if database read fails
+      return {
+        preset: 'veryfast',
+        tune: 'zerolatency',
+        profile: 'main',
+        level: '4.1',
+        fps: '30',
+        audioBitrate: '128k',
+        audioSampleRate: '48000',
+        keyframeInterval: '60'
+      };
+    }
+  }
+
   // Get platform-specific encoding settings
-  // Get resolution from quality preset
-  getResolutionFromPreset(preset) {
-    const resolutions = {
-      '480p': { width: 854, height: 480, bitrate: '2500k' },
-      '720p': { width: 1280, height: 720, bitrate: '4000k' },
-      '1080p': { width: 1920, height: 1080, bitrate: '6000k' },
-    };
-    return resolutions[preset] || resolutions['720p'];
+  // Get resolution from quality preset (now reads from database settings)
+  async getResolutionFromPreset(preset) {
+    try {
+      // Fetch quality settings from database
+      const settings = await Settings.getAll();
+      const settingsMap = {};
+      settings.forEach(s => {
+        settingsMap[s.key] = s.value;
+      });
+
+      // Build resolution object from database settings
+      const resolutions = {
+        '480p': {
+          width: parseInt(settingsMap.quality_480p_width || '854'),
+          height: parseInt(settingsMap.quality_480p_height || '480'),
+          bitrate: `${settingsMap.quality_480p_bitrate || '2500'}k`
+        },
+        '720p': {
+          width: parseInt(settingsMap.quality_720p_width || '1280'),
+          height: parseInt(settingsMap.quality_720p_height || '720'),
+          bitrate: `${settingsMap.quality_720p_bitrate || '4000'}k`
+        },
+        '1080p': {
+          width: parseInt(settingsMap.quality_1080p_width || '1920'),
+          height: parseInt(settingsMap.quality_1080p_height || '1080'),
+          bitrate: `${settingsMap.quality_1080p_bitrate || '6000'}k`
+        }
+      };
+
+      return resolutions[preset] || resolutions['720p'];
+    } catch (error) {
+      logger.error('Failed to fetch quality settings from database, using defaults', { error: error.message });
+      // Fallback to hardcoded defaults if database read fails
+      const resolutions = {
+        '480p': { width: 854, height: 480, bitrate: '2500k' },
+        '720p': { width: 1280, height: 720, bitrate: '4000k' },
+        '1080p': { width: 1920, height: 1080, bitrate: '6000k' },
+      };
+      return resolutions[preset] || resolutions['720p'];
+    }
   }
 
   // Sanitize stream key to prevent path traversal attacks
@@ -784,7 +851,10 @@ class StreamManager {
 
       // Get quality preset resolution
       const qualityPreset = channel.quality_preset || '720p';
-      let resolution = this.getResolutionFromPreset(qualityPreset);
+      let resolution = await this.getResolutionFromPreset(qualityPreset);
+
+      // Get encoding settings from database
+      const encodingSettings = await this.getEncodingSettings();
 
       // Apply video orientation - convert to portrait (9:16) if needed
       if (videoOrientation === '9:16') {
@@ -1058,44 +1128,46 @@ class StreamManager {
       if (hasMixedOrientations) {
         // MIXED ORIENTATIONS: Dual encoding chains with separate tee muxers
 
-        // Landscape encoding chain
+        // Landscape encoding chain (using database settings)
         ffmpegArgs.push(
           '-map', '[out_land]',
           '-c:v:0', 'libx264',
-          '-preset:v:0', 'ultrafast',
-          '-tune:v:0', 'zerolatency',
+          '-preset:v:0', encodingSettings.preset,
+          '-tune:v:0', encodingSettings.tune,
           '-pix_fmt:v:0', 'yuv420p',
           '-flags:v:0', '+global_header',
-          '-g:v:0', '60',
-          '-keyint_min:v:0', '60',
+          '-g:v:0', encodingSettings.keyframeInterval,
+          '-keyint_min:v:0', encodingSettings.keyframeInterval,
           '-sc_threshold:v:0', '0',
           '-b:v:0', landscapeResolution.bitrate,
           '-maxrate:v:0', landscapeResolution.bitrate,
           '-bufsize:v:0', `${parseInt(landscapeResolution.bitrate) * 2}k`,
-          '-profile:v:0', 'main',
-          '-level:v:0', '4.1'
+          '-profile:v:0', encodingSettings.profile,
+          '-level:v:0', encodingSettings.level,
+          '-r:v:0', encodingSettings.fps
         );
 
-        // Portrait encoding chain
+        // Portrait encoding chain (using database settings)
         ffmpegArgs.push(
           '-map', '[out_port]',
           '-c:v:1', 'libx264',
-          '-preset:v:1', 'ultrafast',
-          '-tune:v:1', 'zerolatency',
+          '-preset:v:1', encodingSettings.preset,
+          '-tune:v:1', encodingSettings.tune,
           '-pix_fmt:v:1', 'yuv420p',
           '-flags:v:1', '+global_header',
-          '-g:v:1', '60',
-          '-keyint_min:v:1', '60',
+          '-g:v:1', encodingSettings.keyframeInterval,
+          '-keyint_min:v:1', encodingSettings.keyframeInterval,
           '-sc_threshold:v:1', '0',
           '-b:v:1', portraitResolution.bitrate,
           '-maxrate:v:1', portraitResolution.bitrate,
           '-bufsize:v:1', `${parseInt(portraitResolution.bitrate) * 2}k`,
-          '-profile:v:1', 'main',
-          '-level:v:1', '4.1'
+          '-profile:v:1', encodingSettings.profile,
+          '-level:v:1', encodingSettings.level,
+          '-r:v:1', encodingSettings.fps
         );
 
-        // Audio encoding (shared by both)
-        ffmpegArgs.push('-map', '0:a?', '-c:a', 'aac', '-b:a', '128k', '-ar', '48000');
+        // Audio encoding (shared by both) - using database settings
+        ffmpegArgs.push('-map', '0:a?', '-c:a', 'aac', '-b:a', encodingSettings.audioBitrate, '-ar', encodingSettings.audioSampleRate);
 
         // Build separate tee outputs for landscape and portrait
         const landscapeTeeOutputs = [];
@@ -1135,28 +1207,29 @@ class StreamManager {
         // SINGLE ORIENTATION: Original single-encode behavior
 
         if (needsEncoding) {
-          // Single encoder for all outputs
+          // Single encoder for all outputs (using database settings)
           ffmpegArgs.push(
             '-c:v', 'libx264',
-            '-preset', 'ultrafast',
-            '-tune', 'zerolatency',
+            '-preset', encodingSettings.preset,
+            '-tune', encodingSettings.tune,
             '-pix_fmt', 'yuv420p',
             '-flags', '+global_header',
-            '-g', '60',
-            '-keyint_min', '60',
+            '-g', encodingSettings.keyframeInterval,
+            '-keyint_min', encodingSettings.keyframeInterval,
             '-sc_threshold', '0',
             '-b:v', resolution.bitrate,
             '-maxrate', resolution.bitrate,
             '-bufsize', `${parseInt(resolution.bitrate) * 2}k`,
-            '-profile:v', 'main',
-            '-level', '4.1'
+            '-profile:v', encodingSettings.profile,
+            '-level', encodingSettings.level,
+            '-r', encodingSettings.fps
           );
         } else {
           ffmpegArgs.push('-c:v', 'copy');
         }
 
-        // Audio encoding once (AAC for RTMP compatibility)
-        ffmpegArgs.push('-c:a', 'aac', '-b:a', '128k', '-ar', '48000');
+        // Audio encoding once (AAC for RTMP compatibility) - using database settings
+        ffmpegArgs.push('-c:a', 'aac', '-b:a', encodingSettings.audioBitrate, '-ar', encodingSettings.audioSampleRate);
 
         // Map once - tee muxer will distribute the encoded stream
         if (needsEncoding) {

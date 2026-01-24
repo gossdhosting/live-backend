@@ -8,3 +8,9 @@ logs/
 .DS_Store
 /var/
 ecosystem.config.cjs
+
+# Google Service Account (contains sensitive credentials)
+config/
+*.json
+!package.json
+!package-lock.json

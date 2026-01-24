@@ -141,19 +141,98 @@ const initDatabase = () => {
   // Insert default settings
   const defaultSettings = [
     {
-      key: 'hls_segment_duration',
-      value: process.env.HLS_SEGMENT_DURATION || '4',
-      description: 'HLS segment duration in seconds',
-    },
-    {
-      key: 'hls_list_size',
-      value: process.env.HLS_LIST_SIZE || '6',
-      description: 'Number of segments in playlist',
-    },
-    {
       key: 'max_concurrent_streams',
       value: process.env.MAX_CONCURRENT_STREAMS || '10',
       description: 'Maximum concurrent streams allowed',
+    },
+    // Quality preset settings - 480p
+    {
+      key: 'quality_480p_width',
+      value: '854',
+      description: '480p output width',
+    },
+    {
+      key: 'quality_480p_height',
+      value: '480',
+      description: '480p output height',
+    },
+    {
+      key: 'quality_480p_bitrate',
+      value: '2500',
+      description: '480p video bitrate in kbps',
+    },
+    // Quality preset settings - 720p
+    {
+      key: 'quality_720p_width',
+      value: '1280',
+      description: '720p output width',
+    },
+    {
+      key: 'quality_720p_height',
+      value: '720',
+      description: '720p output height',
+    },
+    {
+      key: 'quality_720p_bitrate',
+      value: '4000',
+      description: '720p video bitrate in kbps',
+    },
+    // Quality preset settings - 1080p
+    {
+      key: 'quality_1080p_width',
+      value: '1920',
+      description: '1080p output width',
+    },
+    {
+      key: 'quality_1080p_height',
+      value: '1080',
+      description: '1080p output height',
+    },
+    {
+      key: 'quality_1080p_bitrate',
+      value: '6000',
+      description: '1080p video bitrate in kbps',
+    },
+    // Encoding parameter settings
+    {
+      key: 'ffmpeg_preset',
+      value: 'veryfast',
+      description: 'FFmpeg encoding preset (ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow)',
+    },
+    {
+      key: 'ffmpeg_tune',
+      value: 'zerolatency',
+      description: 'FFmpeg tune option (film, animation, grain, stillimage, fastdecode, zerolatency)',
+    },
+    {
+      key: 'ffmpeg_profile',
+      value: 'main',
+      description: 'H.264 profile (baseline, main, high)',
+    },
+    {
+      key: 'ffmpeg_level',
+      value: '4.1',
+      description: 'H.264 level (3.0, 3.1, 4.0, 4.1, 4.2, 5.0, 5.1, 5.2)',
+    },
+    {
+      key: 'ffmpeg_fps',
+      value: '30',
+      description: 'Output frame rate (fps)',
+    },
+    {
+      key: 'ffmpeg_audio_bitrate',
+      value: '128',
+      description: 'Audio bitrate in kbps',
+    },
+    {
+      key: 'ffmpeg_audio_sample_rate',
+      value: '48000',
+      description: 'Audio sample rate in Hz',
+    },
+    {
+      key: 'ffmpeg_keyframe_interval',
+      value: '60',
+      description: 'Keyframe interval (GOP size) in frames',
     },
     {
       key: 'auto_restart_enabled',
