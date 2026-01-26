@@ -17,10 +17,15 @@ class S3Service {
   async initialize() {
     try {
       // Get AWS settings from database or environment variables
-      const awsAccessKey = await Settings.get('aws_access_key_id') || process.env.AWS_ACCESS_KEY_ID;
-      const awsSecretKey = await Settings.get('aws_secret_access_key') || process.env.AWS_SECRET_ACCESS_KEY;
-      const awsRegion = await Settings.get('aws_region') || process.env.AWS_REGION || 'us-east-1';
-      const s3Bucket = await Settings.get('s3_bucket_name') || process.env.S3_BUCKET_NAME;
+      const awsAccessKeySetting = await Settings.get('aws_access_key_id');
+      const awsSecretKeySetting = await Settings.get('aws_secret_access_key');
+      const awsRegionSetting = await Settings.get('aws_region');
+      const s3BucketSetting = await Settings.get('s3_bucket_name');
+
+      const awsAccessKey = awsAccessKeySetting?.value || process.env.AWS_ACCESS_KEY_ID;
+      const awsSecretKey = awsSecretKeySetting?.value || process.env.AWS_SECRET_ACCESS_KEY;
+      const awsRegion = awsRegionSetting?.value || process.env.AWS_REGION || 'us-east-1';
+      const s3Bucket = s3BucketSetting?.value || process.env.S3_BUCKET_NAME;
 
       if (!awsAccessKey || !awsSecretKey || !s3Bucket) {
         logger.warn('AWS S3 not configured. Media will be stored locally.');
