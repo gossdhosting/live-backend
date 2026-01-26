@@ -640,9 +640,10 @@ class StreamManager {
 
         // Handle S3 storage vs local storage
         if (mediaFile.storage_type === 's3' && mediaFile.s3_key) {
-          // For S3 files, get a signed URL (FFmpeg can stream from HTTPS)
-          resolvedInputUrl = await MediaFile.getSignedUrl(channel.media_file_id);
-          logger.info(`Using S3 video file for channel ${channelId}: ${mediaFile.original_name} (S3: ${mediaFile.s3_key})`);
+          // For S3 files, use cache to avoid repeated downloads and reduce costs
+          const MediaCacheService = (await import('../services/MediaCacheService.js')).default;
+          resolvedInputUrl = await MediaCacheService.getCachedFile(mediaFile.s3_key, mediaFile.file_size);
+          logger.info(`Using cached S3 video file for channel ${channelId}: ${mediaFile.original_name} (S3: ${mediaFile.s3_key})`);
         } else {
           // For local files, use the file path
           if (!fs.existsSync(mediaFile.file_path)) {

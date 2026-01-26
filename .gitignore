@@ -8,6 +8,7 @@ logs/
 .DS_Store
 /var/
 ecosystem.config.cjs
+cache/
 
 # Google Service Account (contains sensitive credentials)
 config/
