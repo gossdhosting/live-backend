@@ -7,6 +7,7 @@ import {
   getAllSettings,
   updateSettings,
   testPushover,
+  testS3Connection,
 } from '../controllers/settingsController.js';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import Settings from '../models/Settings.js';
@@ -215,5 +216,8 @@ router.post('/test-smtp', requireAdmin, async (req, res) => {
 
 // Test Pushover notification (admin only)
 router.post('/test-pushover', requireAdmin, testPushover);
+
+// Test AWS S3 connection (admin only)
+router.post('/test-s3', requireAdmin, testS3Connection);
 
 export default router;

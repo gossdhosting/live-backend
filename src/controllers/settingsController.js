@@ -2,6 +2,7 @@ import Settings from '../models/Settings.js';
 import logger from '../utils/logger.js';
 import EmailService from '../services/EmailService.js';
 import PushoverService from '../services/PushoverService.js';
+import S3Service from '../services/S3Service.js';
 
 // Get all settings
 export const getAllSettings = async (req, res) => {
@@ -66,6 +67,12 @@ export const updateSettings = async (req, res) => {
       logger.info('Email transporter reset due to SMTP settings change');
     }
 
+    // Reinitialize S3 if AWS settings changed
+    if (settings.aws_access_key_id || settings.aws_secret_access_key || settings.aws_region || settings.s3_bucket_name) {
+      await S3Service.initialize();
+      logger.info('S3Service reinitialized due to AWS settings change');
+    }
+
     logger.info('Settings updated successfully', { settingsCount: Object.keys(settings).length });
     console.log('[Settings] Update successful, returning:', updatedSettings?.length || 0, 'settings');
 
@@ -92,5 +99,46 @@ export const testPushover = async (req, res) => {
   } catch (error) {
     logger.error('Pushover test error', { error: error.message });
     res.status(500).json({ error: error.message || 'Failed to send notification' });
+  }
+};
+
+// Test AWS S3 connection
+export const testS3Connection = async (req, res) => {
+  try {
+    // Temporarily set the credentials from request if provided (for testing before saving)
+    const { aws_access_key_id, aws_secret_access_key, aws_region, s3_bucket_name } = req.body;
+
+    if (aws_access_key_id && aws_secret_access_key && s3_bucket_name) {
+      // Temporarily save to test
+      await Settings.set('aws_access_key_id', aws_access_key_id);
+      await Settings.set('aws_secret_access_key', aws_secret_access_key);
+      await Settings.set('aws_region', aws_region || 'us-east-1');
+      await Settings.set('s3_bucket_name', s3_bucket_name);
+      await S3Service.initialize();
+    }
+
+    const result = await S3Service.testConnection();
+
+    if (result.success) {
+      logger.info('S3 connection test successful', { bucket: result.bucket, region: result.region });
+      res.json({
+        success: true,
+        message: `Successfully connected to S3 bucket: ${result.bucket} in region ${result.region}`,
+        bucket: result.bucket,
+        region: result.region,
+      });
+    } else {
+      logger.error('S3 connection test failed', { error: result.message });
+      res.status(500).json({
+        success: false,
+        error: result.message || 'Failed to connect to S3',
+      });
+    }
+  } catch (error) {
+    logger.error('S3 test error', { error: error.message });
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to test S3 connection',
+    });
   }
 };

@@ -5,7 +5,8 @@ import {
   getAllMedia,
   getMedia,
   uploadMedia,
-  deleteMedia
+  deleteMedia,
+  getMediaUrl
 } from '../controllers/mediaController.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { checkPlanLimit } from '../middleware/permissions.js';
@@ -39,6 +40,9 @@ router.get('/', getAllMedia);
 
 // Get single media file
 router.get('/:id', getMedia);
+
+// Get signed URL for media file (for streaming/download)
+router.get('/:id/url', getMediaUrl);
 
 // Upload media file
 router.post('/upload', upload.single('file'), checkPlanLimit('media'), uploadMedia);

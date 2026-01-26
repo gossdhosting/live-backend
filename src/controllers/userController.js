@@ -311,18 +311,9 @@ async function performAccountDeletion(userId) {
     }
   }
 
-  // 2. Delete user's media files from disk
-  const mediaFiles = await MediaFile.findByUserId(userId);
-  for (const media of mediaFiles) {
-    if (media.file_path && fs.existsSync(media.file_path)) {
-      try {
-        fs.unlinkSync(media.file_path);
-        logger.info('Deleted media file', { mediaId: media.id, path: media.file_path });
-      } catch (err) {
-        logger.warn('Failed to delete media file', { mediaId: media.id, error: err.message });
-      }
-    }
-  }
+  // 2. Delete user's media files from disk and S3
+  const result = await MediaFile.deleteAllByUserId(userId);
+  logger.info('Deleted user media files', { userId, deletedCount: result.deletedCount, success: result.success });
 
   // 3. Delete user's watermark from user settings
   const userSettings = await UserSettings.getAll(userId);
