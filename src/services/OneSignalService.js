@@ -1,8 +1,13 @@
 import https from 'https';
 import logger from '../utils/logger.js';
 
-const ONESIGNAL_APP_ID = '67adb2c4-fadb-42d4-844e-3d672b68a199';
-const ONESIGNAL_REST_API_KEY = 'os_v2_app_m6w3frh23nbnjbcohvtsw2fbtejjt6sromqu7z4oj3ecrd6dyrzwxt37nwonurphhffdw7obkevrd5hra5ah5dnksoatxyog6zj4nay';
+const ONESIGNAL_APP_ID = process.env.ONESIGNAL_APP_ID || '67adb2c4-fadb-42d4-844e-3d672b68a199';
+const ONESIGNAL_REST_API_KEY = process.env.ONESIGNAL_REST_API_KEY;
+
+if (!ONESIGNAL_REST_API_KEY) {
+  logger.error('ONESIGNAL_REST_API_KEY environment variable is required');
+  throw new Error('ONESIGNAL_REST_API_KEY environment variable is required');
+}
 
 class OneSignalService {
   /**
