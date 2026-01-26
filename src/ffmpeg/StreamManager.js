@@ -15,6 +15,7 @@ import debugLogger from '../utils/debugLogger.js';
 import webrtcBridgeService from '../services/WebRTCBridgeService.js';
 import portAllocator from '../services/PortAllocator.js';
 import stateManager from '../services/StateManager.js';
+import OneSignalService from '../services/OneSignalService.js';
 
 class StreamManager {
   constructor() {
@@ -1362,6 +1363,16 @@ class StreamManager {
       Channel.updateStatus(channelId, 'running', ffmpegProcess.pid, null);
       Channel.addLog(channelId, 'info', 'Stream started successfully');
 
+      // Send OneSignal notification
+      try {
+        const playerId = await User.getOneSignalPlayerId(channel.user_id);
+        if (playerId) {
+          await OneSignalService.notifyStreamStarted(playerId, channel.name);
+        }
+      } catch (notifError) {
+        logger.error('Failed to send stream started notification', { error: notifError.message });
+      }
+
       // Auto-update RTMP connection status after 5 seconds as fallback
       // This handles cases where FFmpeg doesn't output connection messages
       // Only mark as connected if: process still running AND no errors detected
@@ -1629,6 +1640,16 @@ class StreamManager {
           Channel.updateStatus(channelId, 'error', null, errorMsg);
           Channel.addLog(channelId, 'error', errorMsg);
 
+          // Send OneSignal error notification
+          try {
+            const playerId = await User.getOneSignalPlayerId(currentChannel.user_id);
+            if (playerId) {
+              await OneSignalService.notifyStreamError(playerId, currentChannel.name, lastError);
+            }
+          } catch (notifError) {
+            logger.error('Failed to send stream error notification', { error: notifError.message });
+          }
+
           // Detect persistent connection errors (RTMP/network issues)
           const isPersistentConnectionError =
             lastError.includes('Input/output error') ||
@@ -1816,6 +1837,18 @@ class StreamManager {
       logger.info(`Cleaned up Redis state for channel ${channelId}`);
 
       Channel.addLog(channelId, 'info', 'Stream stop requested');
+
+      // Send OneSignal notification
+      try {
+        if (channel) {
+          const playerId = await User.getOneSignalPlayerId(channel.user_id);
+          if (playerId) {
+            await OneSignalService.notifyStreamStopped(playerId, channel.name);
+          }
+        }
+      } catch (notifError) {
+        logger.error('Failed to send stream stopped notification', { error: notifError.message });
+      }
 
       return {
         success: true,

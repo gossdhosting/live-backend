@@ -1,5 +1,6 @@
 import User from '../models/User.js';
 import logger from '../utils/logger.js';
+import OneSignalService from '../services/OneSignalService.js';
 
 // Role hierarchy (higher = more permissions)
 const ROLE_HIERARCHY = {
@@ -198,6 +199,20 @@ export const checkPlanLimit = (limitType) => {
         case 'storage':
         case 'media':
           if (!limits.canCreate.media) {
+            // Send OneSignal notification about storage limit
+            try {
+              const playerId = await User.getOneSignalPlayerId(req.user.id);
+              if (playerId) {
+                await OneSignalService.notifyStorageLimitReached(
+                  playerId,
+                  limits.usage.storage_mb,
+                  limits.limits.storage_limit_mb
+                );
+              }
+            } catch (notifError) {
+              logger.error('Failed to send storage limit notification', { error: notifError.message });
+            }
+
             return res.status(403).json({
               error: 'Storage limit reached',
               limit_mb: limits.limits.storage_limit_mb,

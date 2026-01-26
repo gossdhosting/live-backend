@@ -11,6 +11,7 @@ import Plan from './src/models/Plan.js';
 import StripeSubscription from './src/models/StripeSubscription.js';
 import { sendSubscriptionEmail } from './src/services/EmailService.js';
 import logger from './src/utils/logger.js';
+import OneSignalService from './src/services/OneSignalService.js';
 
 async function checkExpiredSubscriptions() {
   try {
@@ -91,6 +92,22 @@ async function checkExpiredSubscriptions() {
             error: emailError.message,
             userId: sub.user_id,
             email: sub.email,
+          });
+        }
+
+        // Send OneSignal push notification
+        try {
+          const plan = await Plan.findById(sub.plan_id);
+          const playerId = await User.getOneSignalPlayerId(sub.user_id);
+          if (playerId && plan) {
+            await OneSignalService.notifySubscriptionExpired(playerId, plan.name);
+            console.log(`[EXPIRY-CHECK] - Push notification sent`);
+          }
+        } catch (pushError) {
+          console.log(`[EXPIRY-CHECK] - Push notification failed: ${pushError.message}`);
+          logger.error('Failed to send expiry push notification', {
+            error: pushError.message,
+            userId: sub.user_id,
           });
         }
 

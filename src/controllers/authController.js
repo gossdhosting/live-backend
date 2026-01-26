@@ -313,9 +313,18 @@ export const socialLogin = async (req, res) => {
         // Create new user from Firebase data
         const freePlan = db.prepare("SELECT id FROM plans WHERE name = 'Free' LIMIT 1").get();
 
+        // Generate name from email or use Firebase UID
+        let userName = firebaseUser.displayName;
+        if (!userName && firebaseUser.email) {
+          userName = firebaseUser.email.split('@')[0];
+        }
+        if (!userName) {
+          userName = `user_${firebaseUid.substring(0, 8)}`;
+        }
+
         user = await User.createSocialUser({
           email: firebaseUser.email,
-          name: firebaseUser.displayName || firebaseUser.email.split('@')[0],
+          name: userName,
           auth_provider: provider || decodedToken.firebase.sign_in_provider,
           firebase_uid: firebaseUid,
           email_verified: firebaseUser.emailVerified,
@@ -487,5 +496,37 @@ export const resetPassword = async (req, res) => {
   } catch (error) {
     logger.error('Reset password error', { error: error.message });
     res.status(500).json({ error: 'Failed to reset password' });
+  }
+};
+
+// Register OneSignal player ID
+export const registerDevice = async (req, res) => {
+  try {
+    const { playerId } = req.body;
+
+    if (!playerId) {
+      return res.status(400).json({ error: 'Player ID required' });
+    }
+
+    await User.setOneSignalPlayerId(req.user.id, playerId);
+    logger.info('OneSignal player ID registered', { userId: req.user.id, playerId });
+
+    res.json({ success: true, message: 'Device registered for notifications' });
+  } catch (error) {
+    logger.error('Register device error', { error: error.message });
+    res.status(500).json({ error: 'Failed to register device' });
+  }
+};
+
+// Unregister OneSignal player ID (called on logout)
+export const unregisterDevice = async (req, res) => {
+  try {
+    await User.clearOneSignalPlayerId(req.user.id);
+    logger.info('OneSignal player ID cleared', { userId: req.user.id });
+
+    res.json({ success: true, message: 'Device unregistered from notifications' });
+  } catch (error) {
+    logger.error('Unregister device error', { error: error.message });
+    res.status(500).json({ error: 'Failed to unregister device' });
   }
 };

@@ -7,6 +7,7 @@ import TwitchService from '../services/TwitchService.js';
 import PlatformConnection from '../models/PlatformConnection.js';
 import User from '../models/User.js';
 import logger from '../utils/logger.js';
+import OneSignalService from '../services/OneSignalService.js';
 
 const router = express.Router();
 
@@ -73,10 +74,32 @@ router.get('/facebook/callback', async (req, res) => {
 
     logger.info('Facebook account connected', { userId, fbUserId: userInfo.id });
 
+    // Send OneSignal notification
+    try {
+      const playerId = await User.getOneSignalPlayerId(userId);
+      if (playerId) {
+        await OneSignalService.notifyPlatformConnected(playerId, 'Facebook');
+      }
+    } catch (notifError) {
+      logger.error('Failed to send platform connected notification', { error: notifError.message });
+    }
+
     res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/platforms?success=facebook_connected`);
   } catch (error) {
     logger.error('Facebook OAuth callback failed', { error: error.message, stack: error.stack, userId: state ? JSON.parse(state).userId : 'unknown' });
     console.error('Facebook OAuth callback error:', error);
+
+    // Send OneSignal error notification
+    try {
+      const { userId } = JSON.parse(state);
+      const playerId = await User.getOneSignalPlayerId(userId);
+      if (playerId) {
+        await OneSignalService.notifyPlatformConnectionFailed(playerId, 'Facebook', error.message);
+      }
+    } catch (notifError) {
+      logger.error('Failed to send platform connection failed notification', { error: notifError.message });
+    }
+
     res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/platforms?error=facebook_auth_failed`);
   }
 });
@@ -160,10 +183,32 @@ router.get('/youtube/callback', async (req, res) => {
     console.log('=== YouTube account connected successfully ===', { userId, channelId: channelInfo.id });
     logger.info('YouTube account connected successfully', { userId, channelId: channelInfo.id });
 
+    // Send OneSignal notification
+    try {
+      const playerId = await User.getOneSignalPlayerId(userId);
+      if (playerId) {
+        await OneSignalService.notifyPlatformConnected(playerId, 'YouTube');
+      }
+    } catch (notifError) {
+      logger.error('Failed to send platform connected notification', { error: notifError.message });
+    }
+
     res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/platforms?success=youtube_connected`);
   } catch (error) {
     console.error('=== YouTube OAuth callback FAILED ===', { error: error.message, stack: error.stack });
     logger.error('YouTube OAuth callback failed', { error: error.message, stack: error.stack });
+
+    // Send OneSignal error notification
+    try {
+      const { userId } = JSON.parse(state);
+      const playerId = await User.getOneSignalPlayerId(userId);
+      if (playerId) {
+        await OneSignalService.notifyPlatformConnectionFailed(playerId, 'YouTube', error.message);
+      }
+    } catch (notifError) {
+      logger.error('Failed to send platform connection failed notification', { error: notifError.message });
+    }
+
     res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/platforms?error=youtube_auth_failed`);
   }
 });
@@ -222,10 +267,32 @@ router.get('/twitch/callback', async (req, res) => {
 
     logger.info('Twitch account connected', { userId, twitchUserId: userInfo.id });
 
+    // Send OneSignal notification
+    try {
+      const playerId = await User.getOneSignalPlayerId(userId);
+      if (playerId) {
+        await OneSignalService.notifyPlatformConnected(playerId, 'Twitch');
+      }
+    } catch (notifError) {
+      logger.error('Failed to send platform connected notification', { error: notifError.message });
+    }
+
     res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/platforms?success=twitch_connected`);
   } catch (error) {
     logger.error('Twitch OAuth callback failed', { error: error.message, stack: error.stack, userId: state ? JSON.parse(state).userId : 'unknown' });
     console.error('Twitch OAuth callback error:', error);
+
+    // Send OneSignal error notification
+    try {
+      const { userId } = JSON.parse(state);
+      const playerId = await User.getOneSignalPlayerId(userId);
+      if (playerId) {
+        await OneSignalService.notifyPlatformConnectionFailed(playerId, 'Twitch', error.message);
+      }
+    } catch (notifError) {
+      logger.error('Failed to send platform connection failed notification', { error: notifError.message });
+    }
+
     res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/platforms?error=twitch_auth_failed`);
   }
 });

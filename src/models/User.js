@@ -347,6 +347,23 @@ class User {
     await stmt.run(...values);
     return await this.findById(id);
   }
+
+  // OneSignal player ID management
+  static async setOneSignalPlayerId(userId, playerId) {
+    const stmt = db.prepare('UPDATE users SET onesignal_player_id = ? WHERE id = ?');
+    return await stmt.run(playerId, userId);
+  }
+
+  static async clearOneSignalPlayerId(userId) {
+    const stmt = db.prepare('UPDATE users SET onesignal_player_id = NULL WHERE id = ?');
+    return await stmt.run(userId);
+  }
+
+  static async getOneSignalPlayerId(userId) {
+    const stmt = db.prepare('SELECT onesignal_player_id FROM users WHERE id = ?');
+    const user = await stmt.get(userId);
+    return user?.onesignal_player_id;
+  }
 }
 
 export default User;

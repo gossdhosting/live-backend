@@ -6,6 +6,7 @@ import PaymentSettings from '../models/PaymentSettings.js';
 import db from '../models/database.js';
 import logger from '../utils/logger.js';
 import { sendSubscriptionEmail } from '../services/EmailService.js';
+import OneSignalService from '../services/OneSignalService.js';
 
 // Platform commission rates
 const PLATFORM_MARKUP = {
@@ -897,6 +898,17 @@ export async function handleIAPRenewal(req, res) {
     });
 
     logger.info('IAP subscription renewed', { userId, platform, expiryTime });
+
+    // Send OneSignal push notification
+    try {
+      const plan = await Plan.findById(subscription.plan_id);
+      const playerId = await User.getOneSignalPlayerId(userId);
+      if (playerId && plan) {
+        await OneSignalService.notifySubscriptionRenewed(playerId, plan.name);
+      }
+    } catch (pushError) {
+      logger.error('Failed to send renewal push notification', { error: pushError.message });
+    }
 
     res.json({ success: true, message: 'Subscription renewed' });
   } catch (error) {

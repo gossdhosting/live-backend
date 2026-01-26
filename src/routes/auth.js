@@ -7,7 +7,9 @@ import {
   changePassword,
   adminLoginAsUser,
   forgotPassword,
-  resetPassword
+  resetPassword,
+  registerDevice,
+  unregisterDevice
 } from '../controllers/authController.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { requireAdmin } from '../middleware/permissions.js';
@@ -25,6 +27,8 @@ router.post('/reset-password', loginLimiter, resetPassword);
 router.get('/me', authenticateToken, getCurrentUser);
 router.put('/profile', authenticateToken, updateProfile);
 router.post('/change-password', authenticateToken, changePassword);
+router.post('/register-device', authenticateToken, registerDevice);
+router.post('/unregister-device', authenticateToken, unregisterDevice);
 
 // Admin only routes
 router.post('/admin-login-as/:userId', authenticateToken, requireAdmin, adminLoginAsUser);

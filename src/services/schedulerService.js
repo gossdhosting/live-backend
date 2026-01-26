@@ -3,12 +3,14 @@ import Channel from '../models/Channel.js';
 import User from '../models/User.js';
 import streamManager from '../ffmpeg/StreamManager.js';
 import logger from '../utils/logger.js';
+import OneSignalService from './OneSignalService.js';
 
 class SchedulerService {
   constructor() {
     this.checkInterval = null;
     this.isRunning = false;
     this.CHECK_FREQUENCY = 30000; // Check every 30 seconds
+    this.notifiedSchedules = new Set(); // Track which schedules have been notified
   }
 
   // Start the scheduler service
@@ -64,6 +66,67 @@ class SchedulerService {
       }
     } catch (error) {
       logger.error('Error checking scheduled streams', { error: error.message, stack: error.stack });
+    }
+
+    // Check for upcoming streams that need notification
+    try {
+      await this.checkUpcomingStreams();
+    } catch (error) {
+      logger.error('Error checking upcoming streams', { error: error.message });
+    }
+  }
+
+  // Check for upcoming scheduled streams and send notifications
+  async checkUpcomingStreams() {
+    try {
+      const db = (await import('../models/database.js')).default;
+      const now = new Date();
+      const fifteenMinutesLater = new Date(now.getTime() + 15 * 60 * 1000);
+
+      // Get pending scheduled streams starting in the next 15 minutes
+      const stmt = db.prepare(`
+        SELECT ss.*, c.name as channel_name
+        FROM scheduled_streams ss
+        JOIN channels c ON ss.channel_id = c.id
+        WHERE ss.status = 'pending'
+        AND datetime(ss.scheduled_at) > datetime('now')
+        AND datetime(ss.scheduled_at) <= datetime('now', '+15 minutes')
+      `);
+
+      const upcomingStreams = await stmt.all();
+
+      for (const schedule of upcomingStreams) {
+        // Skip if already notified
+        if (this.notifiedSchedules.has(schedule.id)) {
+          continue;
+        }
+
+        const scheduledTime = new Date(schedule.scheduled_at);
+        const minutesUntilStart = Math.round((scheduledTime - now) / (1000 * 60));
+
+        // Only notify for 5 and 15 minute marks
+        if (minutesUntilStart === 5 || minutesUntilStart === 15) {
+          try {
+            const playerId = await User.getOneSignalPlayerId(schedule.user_id);
+            if (playerId) {
+              await OneSignalService.notifyScheduledStreamStarting(
+                playerId,
+                schedule.channel_name,
+                minutesUntilStart
+              );
+              this.notifiedSchedules.add(schedule.id);
+              logger.info(`Sent notification for scheduled stream`, {
+                scheduleId: schedule.id,
+                minutesUntilStart
+              });
+            }
+          } catch (notifError) {
+            logger.error('Failed to send scheduled stream notification', { error: notifError.message });
+          }
+        }
+      }
+    } catch (error) {
+      logger.error('Error in checkUpcomingStreams', { error: error.message });
     }
   }
 
