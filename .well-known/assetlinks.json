@@ -1,15 +1,11 @@
 [
   {
-    "relation": [
-      "delegate_permission/common.handle_all_urls",
-      "delegate_permission/common.get_login_creds"
-    ],
+    "relation": ["delegate_permission/common.handle_all_urls"],
     "target": {
       "namespace": "android_app",
       "package_name": "com.rexstream.app",
       "sha256_cert_fingerprints": [
-        "3A:39:06:21:67:79:DD:99:FA:B6:1F:33:E9:35:7F:8A:9F:48:9E:E5:66:58:04:9B:57:53:C1:76:52:46:CF:06",
-        "62:DD:61:94:2C:2C:0B:80:20:5C:AC:4A:3B:DD:61:AA:A1:61:0A:E6:EF:2C:83:89:06:58:2A:4D:FA:C2:17:37"
+        "PLACEHOLDER_SHA256_FINGERPRINT_REPLACE_THIS"
       ]
     }
   }

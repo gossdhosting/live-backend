@@ -3,17 +3,17 @@
     "apps": [],
     "details": [
       {
-        "appID": "TEAM_ID.com.rexstream.app",
+        "appID": "2AYN3GL56H.com.rexstream.app",
         "paths": [
-          "/app/oauth-callback",
-          "/app/oauth-callback/*"
+          "/api/app/oauth-callback",
+          "/api/app/*"
         ]
       }
     ]
   },
   "webcredentials": {
     "apps": [
-      "TEAM_ID.com.rexstream.app"
+      "2AYN3GL56H.com.rexstream.app"
     ]
   }
 }
