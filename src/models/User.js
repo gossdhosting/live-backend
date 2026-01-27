@@ -40,7 +40,8 @@ class User {
         p.max_stream_duration,
         p.storage_limit_mb,
         p.custom_watermark,
-        p.youtube_restreaming as plan_youtube_restreaming
+        p.youtube_restreaming as plan_youtube_restreaming,
+        p.cloud_storage_enabled
       FROM users u
       LEFT JOIN plans p ON u.plan_id = p.id
       WHERE u.id = ?
@@ -252,6 +253,7 @@ class User {
         p.custom_watermark,
         p.max_platform_connections,
         p.youtube_restreaming as plan_youtube_restreaming,
+        p.cloud_storage_enabled,
         p.schedule_enabled,
         p.is_active as plan_is_active
       FROM users u
