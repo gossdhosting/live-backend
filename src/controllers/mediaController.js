@@ -66,8 +66,9 @@ export const uploadMedia = async (req, res) => {
     const file = req.file;
     tempFilePath = file.path;
 
-    // Check if S3 is configured
+    // Check if S3 is configured AND user's plan allows cloud storage
     const s3Available = await S3Service.isAvailable();
+    const userPlanAllowsCloudStorage = req.user.cloud_storage_enabled === true || req.user.cloud_storage_enabled === 1;
 
     let mediaFileData = {
       original_name: file.originalname,
@@ -76,7 +77,7 @@ export const uploadMedia = async (req, res) => {
       user_id: req.user.id
     };
 
-    if (s3Available) {
+    if (s3Available && userPlanAllowsCloudStorage) {
       // Upload to S3
       logger.info('Uploading media to S3', { userId: req.user.id, filename: file.originalname });
 
