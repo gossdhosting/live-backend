@@ -29,18 +29,6 @@ const templates = [
     rtmp_url: 'rtmp://a.rtmp.youtube.com/live2/',
     stream_key: 'your-youtube-stream-key',
   },
-  {
-    name: 'Instagram Live',
-    platform: 'custom',
-    rtmp_url: 'rtmps://edgetee-upload-hyd1-1.xx.fbcdn.net:443/rtmp/',
-    stream_key: 'your-instagram-stream-key',
-  },
-  {
-    name: 'Custom RTMP Server',
-    platform: 'custom',
-    rtmp_url: 'rtmp://your-server/live',
-    stream_key: 'your-stream-key',
-  },
 ];
 
 try {
