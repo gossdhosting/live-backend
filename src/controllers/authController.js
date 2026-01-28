@@ -11,11 +11,19 @@ import PushoverService from '../services/PushoverService.js';
 import bcrypt from 'bcryptjs';
 import StripeSubscription from '../models/StripeSubscription.js';
 import Plan from '../models/Plan.js';
+import RecaptchaService from '../services/RecaptchaService.js';
 
 // Login
 export const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, recaptchaToken } = req.body;
+
+    // Verify reCAPTCHA
+    const recaptchaResult = await RecaptchaService.verify(recaptchaToken, 'LOGIN', 0.5);
+    if (!recaptchaResult.success) {
+      logger.warn('Login blocked by reCAPTCHA', { email, error: recaptchaResult.error });
+      return res.status(403).json({ error: recaptchaResult.error || 'Security verification failed. Please try again.' });
+    }
 
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password required' });

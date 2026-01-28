@@ -12,11 +12,19 @@ import logger from '../utils/logger.js';
 import { isValidEmail } from '../utils/validation.js';
 import EmailService from '../services/EmailService.js';
 import PushoverService from '../services/PushoverService.js';
+import RecaptchaService from '../services/RecaptchaService.js';
 
 // Register new user (public endpoint)
 export const register = async (req, res) => {
   try {
-    const { email, password, name, plan_id, subscription_type, youtube_restreaming } = req.body;
+    const { email, password, name, plan_id, subscription_type, youtube_restreaming, recaptchaToken } = req.body;
+
+    // Verify reCAPTCHA
+    const recaptchaResult = await RecaptchaService.verify(recaptchaToken, 'REGISTER', 0.5);
+    if (!recaptchaResult.success) {
+      logger.warn('Registration blocked by reCAPTCHA', { email, error: recaptchaResult.error });
+      return res.status(403).json({ error: recaptchaResult.error || 'Security verification failed. Please try again.' });
+    }
 
     // Validation
     if (!email || !password || !name) {
