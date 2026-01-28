@@ -359,15 +359,15 @@ router.post('/twitch/setup-stream', authenticateToken, async (req, res) => {
       });
     }
 
-    const accessToken = await TwitchService.refreshTokenIfNeeded(connection);
-
-    // Setup stream
-    const stream = await TwitchService.setupStream(
-      accessToken,
-      connection.platform_user_id,
-      title,
-      categoryId
-    );
+    // Setup stream with automatic token refresh on 401
+    const stream = await TwitchService.callWithRetry(connection, async (accessToken) => {
+      return await TwitchService.setupStream(
+        accessToken,
+        connection.platform_user_id,
+        title,
+        categoryId
+      );
+    });
 
     // Save platform stream (single source of truth)
     const platformStream = await PlatformStream.create({

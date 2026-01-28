@@ -279,14 +279,30 @@ class TwitchService {
     }
   }
 
-  // Refresh token if needed
+  // Refresh token if needed (proactive check based on expiry time)
   static async refreshTokenIfNeeded(connection) {
     if (!PlatformConnection.isTokenExpired(connection)) {
       return connection.access_token;
     }
 
+    logger.info('Twitch: Token appears expired, attempting refresh', {
+      connectionId: connection.id,
+      expiresAt: connection.token_expires_at
+    });
+
+    return await this.doRefreshToken(connection);
+  }
+
+  // Force refresh the token (used when we get a 401 from Twitch API)
+  static async forceRefreshToken(connection) {
+    logger.info('Twitch: Force refreshing token due to 401 response', { connectionId: connection.id });
+    return await this.doRefreshToken(connection);
+  }
+
+  // Internal method to perform the actual token refresh
+  static async doRefreshToken(connection) {
     if (!connection.refresh_token) {
-      throw new Error('No refresh token available. Please reconnect your account.');
+      throw new Error('No refresh token available. Please reconnect your Twitch account.');
     }
 
     // Check if refresh is already in progress for this connection
@@ -296,7 +312,7 @@ class TwitchService {
       logger.info('Twitch: Waiting for in-progress token refresh', { connectionId: connection.id });
       await this.tokenRefreshLocks.get(lockKey);
       // Re-fetch the connection to get the updated token
-      const updatedConnection = PlatformConnection.getById(connection.id);
+      const updatedConnection = await PlatformConnection.getById(connection.id);
       return updatedConnection.access_token;
     }
 
@@ -317,12 +333,57 @@ class TwitchService {
         token_expires_at: expiresAt.toISOString(),
       });
 
-      logger.info('Twitch: Token refreshed successfully', { connectionId: connection.id });
+      logger.info('Twitch: Token refreshed successfully', {
+        connectionId: connection.id,
+        newExpiresAt: expiresAt.toISOString()
+      });
       return newTokens.access_token;
+    } catch (error) {
+      logger.error('Twitch: Token refresh failed', {
+        connectionId: connection.id,
+        error: error.message,
+        response: error.response?.data
+      });
+
+      // If refresh token is invalid, mark the connection as needing re-auth
+      if (error.response?.status === 400 || error.response?.status === 401) {
+        // Mark token as expired so UI shows "reconnect required"
+        await PlatformConnection.update(connection.id, {
+          token_expires_at: new Date(0).toISOString(), // Set to epoch to mark as expired
+        });
+        throw new Error('Twitch token expired. Please reconnect your Twitch account.');
+      }
+      throw error;
     } finally {
       // Release the lock
       this.tokenRefreshLocks.delete(lockKey);
       resolveLock();
+    }
+  }
+
+  // Helper to make Twitch API calls with automatic token refresh on 401
+  static async callWithRetry(connection, apiCall) {
+    let accessToken = await this.refreshTokenIfNeeded(connection);
+
+    try {
+      return await apiCall(accessToken);
+    } catch (error) {
+      // If we get a 401, try refreshing the token and retry once
+      if (error.response?.status === 401) {
+        logger.info('Twitch: Got 401, attempting token refresh and retry', { connectionId: connection.id });
+
+        try {
+          accessToken = await this.forceRefreshToken(connection);
+          return await apiCall(accessToken);
+        } catch (refreshError) {
+          logger.error('Twitch: Retry after refresh also failed', {
+            connectionId: connection.id,
+            error: refreshError.message
+          });
+          throw refreshError;
+        }
+      }
+      throw error;
     }
   }
 
