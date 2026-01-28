@@ -206,12 +206,47 @@ async function verifyAppleJWSSignature(jws) {
 
         // Verify the signature
         const signatureInput = `${parts[0]}.${parts[1]}`;
-        const signature = Buffer.from(parts[2], 'base64url');
+        const signatureB64url = parts[2];
+
+        // ES256 signatures in JWS are in raw R||S format (64 bytes for P-256)
+        // Node.js crypto expects DER-encoded signature
+        // We need to convert the raw signature to DER format
+        const rawSignature = Buffer.from(signatureB64url, 'base64url');
+
+        // Convert raw R||S signature to DER format for ECDSA
+        // Raw format: R (32 bytes) || S (32 bytes)
+        // DER format: SEQUENCE { INTEGER R, INTEGER S }
+        let derSignature;
+        if (rawSignature.length === 64) {
+          // P-256 raw signature (32 + 32 bytes)
+          const r = rawSignature.slice(0, 32);
+          const s = rawSignature.slice(32, 64);
+
+          // Helper to encode integer with proper padding
+          const encodeInteger = (buf) => {
+            // Remove leading zeros but ensure positive (add 0x00 if high bit set)
+            let i = 0;
+            while (i < buf.length - 1 && buf[i] === 0) i++;
+            buf = buf.slice(i);
+            if (buf[0] & 0x80) {
+              buf = Buffer.concat([Buffer.from([0x00]), buf]);
+            }
+            return Buffer.concat([Buffer.from([0x02, buf.length]), buf]);
+          };
+
+          const rDer = encodeInteger(r);
+          const sDer = encodeInteger(s);
+          const inner = Buffer.concat([rDer, sDer]);
+          derSignature = Buffer.concat([Buffer.from([0x30, inner.length]), inner]);
+        } else {
+          // Already in DER format or unknown format - try as-is
+          derSignature = rawSignature;
+        }
 
         const verifier = crypto.createVerify('SHA256');
         verifier.update(signatureInput);
 
-        const isValid = verifier.verify(publicKey, signature);
+        const isValid = verifier.verify(publicKey, derSignature);
 
         if (!isValid) {
           logger.error('JWS signature verification failed - invalid signature');
