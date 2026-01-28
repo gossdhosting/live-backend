@@ -1,5 +1,11 @@
 import admin from 'firebase-admin';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import logger from '../utils/logger.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 class FirebaseService {
   static initialized = false;
@@ -8,35 +14,45 @@ class FirebaseService {
     if (this.initialized) return;
 
     try {
-      // Check if Firebase credentials are configured
-      if (!process.env.FIREBASE_PROJECT_ID) {
+      // Try to load service account from file first (more reliable than env var)
+      const serviceAccountPath = path.resolve(__dirname, '../../firebase-service-account.json');
+      let serviceAccount = null;
+
+      if (fs.existsSync(serviceAccountPath)) {
+        try {
+          const fileContent = fs.readFileSync(serviceAccountPath, 'utf8');
+          serviceAccount = JSON.parse(fileContent);
+          logger.info('Firebase service account loaded from file', { path: serviceAccountPath });
+        } catch (error) {
+          logger.error('Failed to read firebase-service-account.json', { error: error.message });
+        }
+      }
+
+      // Fallback to environment variable if file not found
+      if (!serviceAccount && process.env.FIREBASE_SERVICE_ACCOUNT) {
+        try {
+          serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+          logger.info('Firebase service account loaded from environment variable');
+        } catch (error) {
+          logger.error('Failed to parse FIREBASE_SERVICE_ACCOUNT JSON', { error: error.message });
+        }
+      }
+
+      // Check if we have a valid service account
+      if (!serviceAccount || !serviceAccount.project_id || !serviceAccount.private_key || !serviceAccount.client_email) {
         logger.warn('Firebase not configured - social login will not be available');
-        return;
-      }
-
-      // Parse service account from environment variable
-      let serviceAccount;
-      try {
-        serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
-      } catch (error) {
-        logger.error('Failed to parse FIREBASE_SERVICE_ACCOUNT JSON', { error: error.message });
-        return;
-      }
-
-      // Validate service account has required fields
-      if (!serviceAccount.project_id || !serviceAccount.private_key || !serviceAccount.client_email) {
-        logger.error('Invalid Firebase service account - missing required fields');
+        logger.warn('Expected firebase-service-account.json at: ' + serviceAccountPath);
         return;
       }
 
       admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
-        projectId: process.env.FIREBASE_PROJECT_ID
+        projectId: serviceAccount.project_id
       });
 
       this.initialized = true;
       logger.info('Firebase Admin SDK initialized successfully', {
-        projectId: process.env.FIREBASE_PROJECT_ID
+        projectId: serviceAccount.project_id
       });
     } catch (error) {
       logger.error('Firebase Admin SDK initialization failed', {
