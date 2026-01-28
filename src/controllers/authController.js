@@ -284,23 +284,39 @@ export const socialLogin = async (req, res) => {
     const decodedToken = await FirebaseService.verifyIdToken(idToken);
     const firebaseUid = decodedToken.uid;
 
-    // Get Firebase user details
-    const firebaseUser = await FirebaseService.getFirebaseUser(firebaseUid);
+    // Extract user data from decoded token (no additional API call needed)
+    // Handle missing email (common with Apple Sign In when user has only phone number)
+    let firebaseEmail = decodedToken.email;
+    const firebaseEmailVerified = decodedToken.email_verified || false;
+    const firebaseName = decodedToken.name;
+    const firebasePicture = decodedToken.picture;
+    const firebaseProvider = provider || decodedToken.firebase?.sign_in_provider || 'unknown';
+
+    // If no email provided (e.g., Apple Sign In with phone-only account), generate a placeholder
+    // This allows users without email to still use the app
+    if (!firebaseEmail) {
+      firebaseEmail = `${firebaseUid}@noemail.rexstream.app`;
+      logger.info('Social login: No email provided, using placeholder email', {
+        firebaseUid,
+        provider: firebaseProvider,
+        placeholderEmail: firebaseEmail
+      });
+    }
 
     // Check if user exists in database by Firebase UID
     let user = await User.findByFirebaseUid(firebaseUid);
 
     if (!user) {
       // Check if user exists by email (to link existing account)
-      const existingUser = await User.findByEmail(firebaseUser.email);
+      const existingUser = await User.findByEmail(firebaseEmail);
 
       if (existingUser) {
         // Link existing account with Firebase UID
         user = await User.updateSocialAuth(existingUser.id, {
           firebase_uid: firebaseUid,
-          auth_provider: provider || decodedToken.firebase.sign_in_provider,
-          profile_picture: firebaseUser.photoURL,
-          email_verified: firebaseUser.emailVerified
+          auth_provider: firebaseProvider,
+          profile_picture: firebasePicture,
+          email_verified: firebaseEmailVerified
         });
 
         logger.info('Linked existing user with social account', {
@@ -314,21 +330,21 @@ export const socialLogin = async (req, res) => {
         const freePlan = db.prepare("SELECT id FROM plans WHERE name = 'Free' LIMIT 1").get();
 
         // Generate name from email or use Firebase UID
-        let userName = firebaseUser.displayName;
-        if (!userName && firebaseUser.email) {
-          userName = firebaseUser.email.split('@')[0];
+        let userName = firebaseName;
+        if (!userName && firebaseEmail) {
+          userName = firebaseEmail.split('@')[0];
         }
         if (!userName) {
           userName = `user_${firebaseUid.substring(0, 8)}`;
         }
 
         user = await User.createSocialUser({
-          email: firebaseUser.email,
+          email: firebaseEmail,
           name: userName,
-          auth_provider: provider || decodedToken.firebase.sign_in_provider,
+          auth_provider: firebaseProvider,
           firebase_uid: firebaseUid,
-          email_verified: firebaseUser.emailVerified,
-          profile_picture: firebaseUser.photoURL,
+          email_verified: firebaseEmailVerified,
+          profile_picture: firebasePicture,
           plan_id: freePlan?.id || 1
         });
 
@@ -340,10 +356,15 @@ export const socialLogin = async (req, res) => {
         });
 
         // Send welcome email and notifications (don't wait)
+        // Skip sending emails to placeholder addresses (users without real email)
         const userWithPlan = await User.findById(user.id);
-        EmailService.sendRegistrationEmail(user.email, user.name).catch(err =>
-          logger.error('Failed to send registration email', { error: err.message })
-        );
+        const isPlaceholderEmail = user.email?.endsWith('@noemail.rexstream.app');
+
+        if (!isPlaceholderEmail) {
+          EmailService.sendRegistrationEmail(user.email, user.name).catch(err =>
+            logger.error('Failed to send registration email', { error: err.message })
+          );
+        }
         EmailService.notifyAdminNewSignup(userWithPlan).catch(err =>
           logger.error('Failed to send admin email notification', { error: err.message })
         );
@@ -357,9 +378,9 @@ export const socialLogin = async (req, res) => {
       await User.updateLastLogin(user.id, ipAddress);
 
       // Update profile picture if changed
-      if (firebaseUser.photoURL && firebaseUser.photoURL !== user.profile_picture) {
+      if (firebasePicture && firebasePicture !== user.profile_picture) {
         await User.updateSocialAuth(user.id, {
-          profile_picture: firebaseUser.photoURL
+          profile_picture: firebasePicture
         });
       }
 
@@ -397,7 +418,28 @@ export const socialLogin = async (req, res) => {
     });
   } catch (error) {
     logger.error('Social login error', { error: error.message, stack: error.stack });
-    res.status(500).json({ error: error.message || 'Social login failed' });
+
+    // Convert Firebase/technical errors to user-friendly messages
+    let userMessage = 'Login failed. Please try again.';
+
+    if (error.message) {
+      const msg = error.message.toLowerCase();
+
+      // Firebase auth errors
+      if (msg.includes('account-exists-with-different-credential') || msg.includes('email-already-in-use')) {
+        userMessage = 'An account with this email already exists. Please sign in with your original method or use a different email.';
+      } else if (msg.includes('invalid') || msg.includes('expired') || msg.includes('token')) {
+        userMessage = 'Your login session has expired. Please try signing in again.';
+      } else if (msg.includes('network') || msg.includes('connection')) {
+        userMessage = 'Network error. Please check your connection and try again.';
+      } else if (msg.includes('permission') || msg.includes('unauthorized')) {
+        userMessage = 'Authorization error. Please contact support if this persists.';
+      } else if (msg.includes('not configured')) {
+        userMessage = error.message; // Keep original message for configuration errors
+      }
+    }
+
+    res.status(500).json({ error: userMessage });
   }
 };
 
