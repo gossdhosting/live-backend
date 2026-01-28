@@ -64,7 +64,8 @@ router.post('/default-watermark', requireAdmin, upload.single('watermark'), asyn
     }
 
     // Delete old default watermark if exists
-    const oldRelativePath = Settings.get('default_watermark_path')?.value;
+    const oldSetting = await Settings.get('default_watermark_path');
+    const oldRelativePath = oldSetting?.value;
     if (oldRelativePath) {
       // Convert relative path to absolute for deletion
       const oldAbsolutePath = oldRelativePath.startsWith('/')
@@ -82,7 +83,7 @@ router.post('/default-watermark', requireAdmin, upload.single('watermark'), asyn
 
     // Save relative path for frontend to use (e.g., "uploads/system/default-watermark.png")
     const relativePath = path.relative(process.cwd(), req.file.path).replace(/\\/g, '/');
-    Settings.set('default_watermark_path', relativePath);
+    await Settings.set('default_watermark_path', relativePath);
 
     logger.info('Default watermark uploaded', { path: relativePath, absolutePath: req.file.path });
     res.json({
@@ -102,7 +103,8 @@ router.post('/default-watermark', requireAdmin, upload.single('watermark'), asyn
 // Delete default watermark (admin only)
 router.delete('/default-watermark', requireAdmin, async (req, res) => {
   try {
-    const watermarkPath = Settings.get('default_watermark_path')?.value;
+    const watermarkSetting = await Settings.get('default_watermark_path');
+    const watermarkPath = watermarkSetting?.value;
 
     if (watermarkPath) {
       // Convert relative path to absolute for deletion
@@ -115,7 +117,7 @@ router.delete('/default-watermark', requireAdmin, async (req, res) => {
       }
     }
 
-    Settings.set('default_watermark_path', '');
+    await Settings.set('default_watermark_path', '');
 
     logger.info('Default watermark deleted');
     res.json({ message: 'Default watermark deleted successfully' });

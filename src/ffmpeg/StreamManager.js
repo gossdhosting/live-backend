@@ -827,9 +827,11 @@ class StreamManager {
       // PostgreSQL returns boolean as true/false, SQLite as 1/0
       const hasCustomWatermark = userPlan && (userPlan.custom_watermark === true || userPlan.custom_watermark === 1);
 
-      // Get default watermark settings
-      const defaultWatermarkEnabled = Settings.get('default_watermark_enabled')?.value === '1';
-      const defaultWatermarkPath = Settings.get('default_watermark_path')?.value;
+      // Get default watermark settings (async)
+      const defaultWatermarkEnabledSetting = await Settings.get('default_watermark_enabled');
+      const defaultWatermarkPathSetting = await Settings.get('default_watermark_path');
+      const defaultWatermarkEnabled = defaultWatermarkEnabledSetting?.value === '1';
+      const defaultWatermarkPath = defaultWatermarkPathSetting?.value;
 
       // Get user-level watermark settings (async calls)
       const userWatermarkPathSetting = await UserSettings.get(channel.user_id, 'watermark_path');
@@ -868,9 +870,12 @@ class StreamManager {
       } else if (!hasCustomWatermark && defaultWatermarkEnabled && defaultWatermarkPath && fs.existsSync(defaultWatermarkPath)) {
         // Use default watermark ONLY if user doesn't have custom watermark permission
         watermarkPath = defaultWatermarkPath;
-        watermarkPosition = Settings.get('default_watermark_position')?.value || 'bottom-right';
-        watermarkOpacity = parseFloat(Settings.get('default_watermark_opacity')?.value) || 0.7;
-        watermarkScale = parseFloat(Settings.get('default_watermark_scale')?.value) || 0.15;
+        const defaultPositionSetting = await Settings.get('default_watermark_position');
+        const defaultOpacitySetting = await Settings.get('default_watermark_opacity');
+        const defaultScaleSetting = await Settings.get('default_watermark_scale');
+        watermarkPosition = defaultPositionSetting?.value || 'bottom-right';
+        watermarkOpacity = parseFloat(defaultOpacitySetting?.value) || 0.7;
+        watermarkScale = parseFloat(defaultScaleSetting?.value) || 0.15;
         logger.info(`Using default watermark for channel ${channelId} (no custom watermark permission)`, { path: watermarkPath });
       } else if (hasCustomWatermark) {
         // User has custom watermark permission but hasn't enabled it - no watermark at all
@@ -899,7 +904,7 @@ class StreamManager {
       }
 
       // Get threading setting from database
-      const threadingSetting = Settings.get('ffmpeg_threading');
+      const threadingSetting = await Settings.get('ffmpeg_threading');
       let threads;
 
       if (threadingSetting?.value) {
