@@ -18,38 +18,45 @@ const PLATFORM_MARKUP = {
 async function verifyGooglePlayPurchase(purchaseToken, productId, packageName) {
   // Check if Google Play Developer API is configured
   const serviceAccountKeyFile = process.env.GOOGLE_SERVICE_ACCOUNT_KEY_FILE;
+  const isDevelopment = process.env.NODE_ENV === 'development';
 
   console.log('[IAP-GOOGLE] Service account configured:', !!serviceAccountKeyFile);
+  console.log('[IAP-GOOGLE] Environment:', process.env.NODE_ENV);
 
-  // If no service account is configured, use basic validation
-  // This allows testing without full Google Play API setup
+  // If no service account is configured
   if (!serviceAccountKeyFile) {
-    console.log('[IAP-GOOGLE] ⚠️ No Google Service Account configured - using basic validation');
-    logger.warn('Google Play verification using basic validation - no service account configured');
+    // SECURITY: Only allow basic validation in development mode
+    if (isDevelopment) {
+      console.log('[IAP-GOOGLE] ⚠️ DEV MODE: No Google Service Account - using basic validation');
+      logger.warn('Google Play verification using basic validation - DEV MODE ONLY');
 
-    // Basic validation: check that purchase token exists and has reasonable format
-    // Google Play purchase tokens are typically long base64-like strings
-    if (!purchaseToken || purchaseToken.length < 50) {
-      return { valid: false, error: 'Invalid purchase token format' };
+      // Basic validation: check that purchase token exists and has reasonable format
+      if (!purchaseToken || purchaseToken.length < 50) {
+        return { valid: false, error: 'Invalid purchase token format' };
+      }
+
+      const isYearly = productId.includes('year');
+      const expiryMs = isYearly
+        ? Date.now() + (365 * 24 * 60 * 60 * 1000)
+        : Date.now() + (30 * 24 * 60 * 60 * 1000);
+
+      return {
+        valid: true,
+        expiryTime: expiryMs,
+        autoRenewing: true,
+        orderId: `dev_${Date.now()}`,
+        isTestPurchase: true,
+        basicValidation: true,
+      };
+    } else {
+      // PRODUCTION: Reject if Google API not configured
+      console.log('[IAP-GOOGLE] ❌ PRODUCTION: Google Service Account required');
+      logger.error('Google Play verification failed - service account not configured in production');
+      return {
+        valid: false,
+        error: 'Google Play API not configured. Contact support.',
+      };
     }
-
-    // Accept the purchase with basic validation (for testing without Google API)
-    console.log('[IAP-GOOGLE] ✅ Accepting with basic validation (no service account)');
-
-    // For subscriptions, calculate a default expiry (1 month for monthly, 1 year for yearly)
-    const isYearly = productId.includes('year');
-    const expiryMs = isYearly
-      ? Date.now() + (365 * 24 * 60 * 60 * 1000)
-      : Date.now() + (30 * 24 * 60 * 60 * 1000);
-
-    return {
-      valid: true,
-      expiryTime: expiryMs,
-      autoRenewing: true,
-      orderId: `basic_${Date.now()}`,
-      isTestPurchase: true,
-      basicValidation: true,
-    };
   }
 
   // Full Google Play Developer API verification
@@ -103,22 +110,28 @@ async function verifyGooglePlayPurchase(purchaseToken, productId, packageName) {
   } catch (error) {
     logger.error('Google Play verification failed', { error: error.message });
 
-    // If API call fails, fall back to basic validation
-    console.log('[IAP-GOOGLE] ⚠️ API call failed - using basic validation fallback');
+    // SECURITY: Only allow fallback in development mode
+    if (isDevelopment) {
+      console.log('[IAP-GOOGLE] ⚠️ DEV MODE: API call failed - using fallback');
 
-    const isYearly = productId.includes('year');
-    const expiryMs = isYearly
-      ? Date.now() + (365 * 24 * 60 * 60 * 1000)
-      : Date.now() + (30 * 24 * 60 * 60 * 1000);
+      const isYearly = productId.includes('year');
+      const expiryMs = isYearly
+        ? Date.now() + (365 * 24 * 60 * 60 * 1000)
+        : Date.now() + (30 * 24 * 60 * 60 * 1000);
 
-    return {
-      valid: true,
-      expiryTime: expiryMs,
-      autoRenewing: true,
-      orderId: `fallback_${Date.now()}`,
-      isTestPurchase: true,
-      basicValidation: true,
-    };
+      return {
+        valid: true,
+        expiryTime: expiryMs,
+        autoRenewing: true,
+        orderId: `dev_fallback_${Date.now()}`,
+        isTestPurchase: true,
+        basicValidation: true,
+      };
+    }
+
+    // PRODUCTION: Return the actual error
+    console.log('[IAP-GOOGLE] ❌ PRODUCTION: Verification failed');
+    return { valid: false, error: `Google Play verification failed: ${error.message}` };
   }
 }
 
@@ -130,36 +143,141 @@ function isStoreKit2JWS(data) {
   return typeof data === 'string' && data.startsWith('ey') && data.split('.').length === 3;
 }
 
+// Cache for Apple's public keys (refreshed every 24 hours)
+let applePublicKeysCache = null;
+let applePublicKeysCacheTime = 0;
+const APPLE_KEYS_CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+
+// Fetch Apple's public keys for JWS verification
+async function getApplePublicKeys() {
+  const now = Date.now();
+
+  // Return cached keys if still valid
+  if (applePublicKeysCache && (now - applePublicKeysCacheTime) < APPLE_KEYS_CACHE_DURATION) {
+    return applePublicKeysCache;
+  }
+
+  try {
+    const https = await import('https');
+
+    const response = await new Promise((resolve, reject) => {
+      https.get('https://appleid.apple.com/auth/keys', (res) => {
+        let data = '';
+        res.on('data', (chunk) => data += chunk);
+        res.on('end', () => {
+          try {
+            resolve(JSON.parse(data));
+          } catch (e) {
+            reject(new Error('Failed to parse Apple public keys'));
+          }
+        });
+      }).on('error', reject);
+    });
+
+    if (response && response.keys) {
+      applePublicKeysCache = response.keys;
+      applePublicKeysCacheTime = now;
+      console.log('[IAP-APPLE] ✅ Fetched Apple public keys:', response.keys.length, 'keys');
+      return response.keys;
+    }
+
+    throw new Error('Invalid response from Apple keys endpoint');
+  } catch (error) {
+    logger.error('Failed to fetch Apple public keys', { error: error.message });
+    // Return cached keys if available, even if expired
+    if (applePublicKeysCache) {
+      logger.warn('Using expired Apple public keys cache');
+      return applePublicKeysCache;
+    }
+    throw error;
+  }
+}
+
+// Convert JWK to PEM format for signature verification
+function jwkToPem(jwk) {
+  const crypto = require('crypto');
+
+  // Create a KeyObject from JWK
+  const keyObject = crypto.createPublicKey({
+    key: jwk,
+    format: 'jwk'
+  });
+
+  // Export as PEM
+  return keyObject.export({
+    type: 'spki',
+    format: 'pem'
+  });
+}
+
 // Verify Apple JWS signature using Apple's public keys
 async function verifyAppleJWSSignature(jws) {
+  const isDevelopment = process.env.NODE_ENV === 'development';
+
   try {
-    // In production, you should:
-    // 1. Fetch Apple's public keys from: https://appleid.apple.com/auth/keys
-    // 2. Cache the keys and refresh periodically
-    // 3. Use a JWT library like 'jsonwebtoken' or 'node-jose' to verify signature
-
-    // For now, we'll do basic validation without signature verification
-    // TODO: Implement proper signature verification for production
-
     const parts = jws.split('.');
     if (parts.length !== 3) {
       return { valid: false, error: 'Invalid JWS format' };
     }
 
-    // Decode header to check algorithm
+    // Decode header to get key ID (kid)
     const headerB64 = parts[0];
     const header = JSON.parse(Buffer.from(headerB64, 'base64').toString('utf8'));
+
+    console.log('[IAP-JWS] Algorithm:', header.alg);
+    console.log('[IAP-JWS] Key ID:', header.kid);
 
     // Apple uses ES256 algorithm
     if (header.alg !== 'ES256') {
       logger.warn('Unexpected JWS algorithm', { algorithm: header.alg });
     }
 
-    // Decode payload
+    // Decode payload first (we'll verify signature after)
     const payloadB64 = parts[1];
     const payload = JSON.parse(Buffer.from(payloadB64, 'base64').toString('utf8'));
 
-    // Validate bundle ID if available
+    // SECURITY: Verify signature using Apple's public keys
+    try {
+      const jwt = await import('jsonwebtoken');
+      const appleKeys = await getApplePublicKeys();
+
+      // Find the key matching the kid in the header
+      const signingKey = appleKeys.find(key => key.kid === header.kid);
+
+      if (!signingKey) {
+        logger.error('Apple signing key not found', { kid: header.kid });
+
+        // In development, allow without signature verification but warn
+        if (isDevelopment) {
+          console.log('[IAP-JWS] ⚠️ DEV MODE: Signing key not found, proceeding without verification');
+        } else {
+          return { valid: false, error: 'Apple signing key not found' };
+        }
+      } else {
+        // Convert JWK to PEM and verify
+        const pem = jwkToPem(signingKey);
+
+        // Verify the JWT signature
+        jwt.default.verify(jws, pem, {
+          algorithms: ['ES256'],
+          complete: true
+        });
+
+        console.log('[IAP-JWS] ✅ Signature verified successfully');
+      }
+    } catch (verifyError) {
+      logger.error('JWS signature verification failed', { error: verifyError.message });
+
+      // SECURITY: Only allow unverified in development
+      if (isDevelopment) {
+        console.log('[IAP-JWS] ⚠️ DEV MODE: Signature verification failed, proceeding anyway');
+        console.log('[IAP-JWS] Error:', verifyError.message);
+      } else {
+        return { valid: false, error: `Signature verification failed: ${verifyError.message}` };
+      }
+    }
+
+    // Validate bundle ID if configured
     if (payload.bundleId && process.env.IOS_BUNDLE_ID) {
       if (payload.bundleId !== process.env.IOS_BUNDLE_ID) {
         return { valid: false, error: 'Bundle ID mismatch' };
@@ -167,8 +285,6 @@ async function verifyAppleJWSSignature(jws) {
     }
 
     // Auto-detect sandbox vs production from the receipt itself
-    // No need to check payment_mode - we accept both sandbox and production receipts
-    // The receipt environment is determined by the App Store, not our settings
     const isReceiptSandbox = payload.environment && payload.environment !== 'Production';
 
     console.log('[IAP-JWS] Receipt environment:', payload.environment);
@@ -189,7 +305,7 @@ async function verifyAppleJWSSignature(jws) {
 
     return { valid: true, payload, header };
   } catch (error) {
-    logger.error('JWS signature verification failed', { error: error.message });
+    logger.error('JWS verification failed', { error: error.message });
     return { valid: false, error: error.message };
   }
 }
