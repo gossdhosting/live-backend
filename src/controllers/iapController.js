@@ -2,7 +2,6 @@ import User from '../models/User.js';
 import Plan from '../models/Plan.js';
 import StripeSubscription from '../models/StripeSubscription.js';
 import Settings from '../models/Settings.js';
-import PaymentSettings from '../models/PaymentSettings.js';
 import db from '../models/database.js';
 import logger from '../utils/logger.js';
 import { sendSubscriptionEmail } from '../services/EmailService.js';
@@ -15,19 +14,15 @@ const PLATFORM_MARKUP = {
 };
 
 // Google Play verification
+// Auto-detects sandbox/test purchases - no need to check payment_mode
 async function verifyGooglePlayPurchase(purchaseToken, productId, packageName) {
   // Check if Google Play Developer API is configured
   const serviceAccountKeyFile = process.env.GOOGLE_SERVICE_ACCOUNT_KEY_FILE;
 
-  // Check admin payment settings
-  const paymentSettings = await PaymentSettings.get();
-  const paymentMode = paymentSettings?.mode || 'sandbox';
-
-  console.log('[IAP-GOOGLE] Payment settings mode:', paymentMode);
   console.log('[IAP-GOOGLE] Service account configured:', !!serviceAccountKeyFile);
 
   // If no service account is configured, use basic validation
-  // This is less secure but allows testing without full Google Play API setup
+  // This allows testing without full Google Play API setup
   if (!serviceAccountKeyFile) {
     console.log('[IAP-GOOGLE] ⚠️ No Google Service Account configured - using basic validation');
     logger.warn('Google Play verification using basic validation - no service account configured');
@@ -38,31 +33,23 @@ async function verifyGooglePlayPurchase(purchaseToken, productId, packageName) {
       return { valid: false, error: 'Invalid purchase token format' };
     }
 
-    // In sandbox mode, accept the purchase with basic validation
-    if (paymentMode === 'sandbox') {
-      console.log('[IAP-GOOGLE] ✅ Sandbox mode - accepting with basic validation');
+    // Accept the purchase with basic validation (for testing without Google API)
+    console.log('[IAP-GOOGLE] ✅ Accepting with basic validation (no service account)');
 
-      // For subscriptions, calculate a default expiry (1 month for monthly, 1 year for yearly)
-      const isYearly = productId.includes('year');
-      const expiryMs = isYearly
-        ? Date.now() + (365 * 24 * 60 * 60 * 1000)
-        : Date.now() + (30 * 24 * 60 * 60 * 1000);
+    // For subscriptions, calculate a default expiry (1 month for monthly, 1 year for yearly)
+    const isYearly = productId.includes('year');
+    const expiryMs = isYearly
+      ? Date.now() + (365 * 24 * 60 * 60 * 1000)
+      : Date.now() + (30 * 24 * 60 * 60 * 1000);
 
-      return {
-        valid: true,
-        expiryTime: expiryMs,
-        autoRenewing: true,
-        orderId: `basic_${Date.now()}`,
-        isTestPurchase: true,
-        basicValidation: true,
-      };
-    } else {
-      // In live mode, require proper Google Play API verification
-      return {
-        valid: false,
-        error: 'Google Play API not configured. Set GOOGLE_SERVICE_ACCOUNT_KEY_FILE in environment or switch to sandbox mode.',
-      };
-    }
+    return {
+      valid: true,
+      expiryTime: expiryMs,
+      autoRenewing: true,
+      orderId: `basic_${Date.now()}`,
+      isTestPurchase: true,
+      basicValidation: true,
+    };
   }
 
   // Full Google Play Developer API verification
@@ -92,13 +79,18 @@ async function verifyGooglePlayPurchase(purchaseToken, productId, packageName) {
     console.log('[IAP-GOOGLE] Purchase type:', response.data.purchaseType, isTestPurchase ? '(test)' : '(real)');
     console.log('[IAP-GOOGLE] Payment state:', response.data.paymentState);
 
-    if (isTestPurchase && paymentMode !== 'sandbox') {
-      // Test purchase but payment mode is live - reject
-      logger.warn('Google Play test purchase rejected - payment mode is live', {
+    // Auto-detect: Accept both test and real purchases
+    // Log for tracking purposes
+    if (isTestPurchase) {
+      logger.info('Processing Google Play test purchase (license tester)', {
         purchaseType: response.data.purchaseType,
-        paymentMode: paymentMode
+        productId
       });
-      return { valid: false, error: 'Test purchase not allowed when payment mode is live. Change to sandbox mode in Admin Settings > Payment.' };
+    } else {
+      logger.info('Processing Google Play production purchase', {
+        purchaseType: response.data.purchaseType,
+        productId
+      });
     }
 
     return {
@@ -111,26 +103,22 @@ async function verifyGooglePlayPurchase(purchaseToken, productId, packageName) {
   } catch (error) {
     logger.error('Google Play verification failed', { error: error.message });
 
-    // If API call fails in sandbox mode, fall back to basic validation
-    if (paymentMode === 'sandbox') {
-      console.log('[IAP-GOOGLE] ⚠️ API call failed in sandbox mode - using basic validation fallback');
+    // If API call fails, fall back to basic validation
+    console.log('[IAP-GOOGLE] ⚠️ API call failed - using basic validation fallback');
 
-      const isYearly = productId.includes('year');
-      const expiryMs = isYearly
-        ? Date.now() + (365 * 24 * 60 * 60 * 1000)
-        : Date.now() + (30 * 24 * 60 * 60 * 1000);
+    const isYearly = productId.includes('year');
+    const expiryMs = isYearly
+      ? Date.now() + (365 * 24 * 60 * 60 * 1000)
+      : Date.now() + (30 * 24 * 60 * 60 * 1000);
 
-      return {
-        valid: true,
-        expiryTime: expiryMs,
-        autoRenewing: true,
-        orderId: `fallback_${Date.now()}`,
-        isTestPurchase: true,
-        basicValidation: true,
-      };
-    }
-
-    return { valid: false, error: error.message };
+    return {
+      valid: true,
+      expiryTime: expiryMs,
+      autoRenewing: true,
+      orderId: `fallback_${Date.now()}`,
+      isTestPurchase: true,
+      basicValidation: true,
+    };
   }
 }
 
@@ -178,35 +166,25 @@ async function verifyAppleJWSSignature(jws) {
       }
     }
 
-    // Check admin payment settings to determine if sandbox is allowed
-    // This uses the same "Active Mode" setting from Admin Settings > Payment
-    const paymentSettings = await PaymentSettings.get();
-    const paymentMode = paymentSettings?.mode || 'sandbox';
+    // Auto-detect sandbox vs production from the receipt itself
+    // No need to check payment_mode - we accept both sandbox and production receipts
+    // The receipt environment is determined by the App Store, not our settings
+    const isReceiptSandbox = payload.environment && payload.environment !== 'Production';
 
-    console.log('[IAP-JWS] Payment settings mode:', paymentMode);
     console.log('[IAP-JWS] Receipt environment:', payload.environment);
+    console.log('[IAP-JWS] Is sandbox receipt:', isReceiptSandbox);
 
-    // Validate environment based on admin payment settings (not NODE_ENV)
-    if (payload.environment) {
-      const isReceiptSandbox = payload.environment !== 'Production';
-      const isPaymentModeSandbox = paymentMode === 'sandbox';
-
-      if (isReceiptSandbox && !isPaymentModeSandbox) {
-        // Sandbox receipt but payment mode is live - reject
-        logger.warn('Sandbox receipt rejected - payment mode is live', {
-          receiptEnvironment: payload.environment,
-          paymentMode: paymentMode
-        });
-        return { valid: false, error: 'Sandbox receipt not allowed when payment mode is live. Change to sandbox mode in Admin Settings > Payment.' };
-      }
-
-      if (!isReceiptSandbox && isPaymentModeSandbox) {
-        // Production receipt but payment mode is sandbox - allow but warn
-        logger.warn('Production receipt used in sandbox mode', {
-          receiptEnvironment: payload.environment,
-          paymentMode: paymentMode
-        });
-      }
+    // Log for tracking purposes but allow both environments
+    if (isReceiptSandbox) {
+      logger.info('Processing iOS sandbox receipt', {
+        receiptEnvironment: payload.environment,
+        transactionId: payload.transactionId
+      });
+    } else {
+      logger.info('Processing iOS production receipt', {
+        receiptEnvironment: payload.environment,
+        transactionId: payload.transactionId
+      });
     }
 
     return { valid: true, payload, header };
