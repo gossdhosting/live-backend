@@ -30,6 +30,7 @@ import scheduledStreamRoutes from './src/routes/scheduledStreams.js';
 import faqRoutes from './src/routes/faq.js';
 import webrtcRoutes from './src/routes/webrtc.js';
 import cacheRoutes from './src/routes/cache.js';
+import statusRoutes from './src/routes/status.js';
 
 // Middleware
 import { apiLimiter } from './src/middleware/rateLimiter.js';
@@ -91,6 +92,7 @@ app.use('/api/scheduled-streams', scheduledStreamRoutes);
 app.use('/api/faqs', faqRoutes);
 app.use('/api/webrtc', webrtcRoutes);
 app.use('/api/cache', cacheRoutes);
+app.use('/api/status', statusRoutes);
 
 // Public API (for Flutter app)
 app.use('/api/public', publicRoutes);
