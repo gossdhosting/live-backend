@@ -15,18 +15,49 @@ router.get('/connections', authenticateToken, async (req, res) => {
   try {
     const connections = await PlatformConnection.getByUserId(req.user.id);
 
-    // Remove sensitive tokens from response
-    const safeConnections = connections.map(conn => ({
-      id: conn.id,
-      platform: conn.platform,
-      platform_user_name: conn.platform_user_name,
-      platform_user_email: conn.platform_user_email,
-      platform_page_name: conn.platform_page_name,
-      platform_channel_name: conn.platform_channel_name,
-      platform_page_id: conn.platform_page_id,
-      available_pages: conn.available_pages,
-      created_at: conn.created_at,
-      is_expired: PlatformConnection.isTokenExpired(conn),
+    // Proactively refresh expired tokens
+    const safeConnections = await Promise.all(connections.map(async (conn) => {
+      let isExpired = PlatformConnection.isTokenExpired(conn);
+
+      // If token is expired and we have a refresh token, try to refresh it
+      if (isExpired && conn.refresh_token) {
+        try {
+          if (conn.platform === 'youtube') {
+            await YouTubeService.refreshTokenIfNeeded(conn);
+            isExpired = false;
+            logger.info('YouTube token refreshed proactively', { connectionId: conn.id, userId: req.user.id });
+          } else if (conn.platform === 'twitch') {
+            await TwitchService.refreshTokenIfNeeded(conn);
+            isExpired = false;
+            logger.info('Twitch token refreshed proactively', { connectionId: conn.id, userId: req.user.id });
+          } else if (conn.platform === 'facebook') {
+            await FacebookService.refreshTokenIfNeeded(conn);
+            isExpired = false;
+            logger.info('Facebook token refreshed proactively', { connectionId: conn.id, userId: req.user.id });
+          }
+        } catch (refreshError) {
+          logger.warn('Failed to refresh token proactively', {
+            platform: conn.platform,
+            connectionId: conn.id,
+            error: refreshError.message
+          });
+          // Token refresh failed, still mark as expired
+          isExpired = true;
+        }
+      }
+
+      return {
+        id: conn.id,
+        platform: conn.platform,
+        platform_user_name: conn.platform_user_name,
+        platform_user_email: conn.platform_user_email,
+        platform_page_name: conn.platform_page_name,
+        platform_channel_name: conn.platform_channel_name,
+        platform_page_id: conn.platform_page_id,
+        available_pages: conn.available_pages,
+        created_at: conn.created_at,
+        is_expired: isExpired,
+      };
     }));
 
     res.json({ connections: safeConnections });
