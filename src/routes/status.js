@@ -66,16 +66,15 @@ router.get('/', async (req, res) => {
       });
     });
 
-    // Check RTMP service (port 1935)
+    // Check if backend is running (which includes RTMP and WebRTC)
+    const backendOnline = pm2Status.services.some(s =>
+      s.name === 'streaming-backend' && s.status === 'online'
+    );
+
+    // RTMP and WebRTC are integrated into the backend, so their status follows the backend status
     const rtmpHost = process.env.RTMP_SERVER || '127.0.0.1';
     const rtmpPort = parseInt(process.env.RTMP_PORT || '1935');
-    const rtmpStatus = await checkPort(rtmpHost, rtmpPort);
-
-    // Check WebRTC ports (TURN server typically uses 3478, 5349)
-    const webrtcTurnPort = 3478;
-    const webrtcTurnTlsPort = 5349;
-    const webrtcTurnStatus = await checkPort('127.0.0.1', webrtcTurnPort);
-    const webrtcTurnTlsStatus = await checkPort('127.0.0.1', webrtcTurnTlsPort);
+    const rtmpPortRange = `${process.env.RTMP_DYNAMIC_PORT_MIN || '1936'}-${process.env.RTMP_DYNAMIC_PORT_MAX || '2000'}`;
 
     // Compile response
     res.json({
@@ -84,30 +83,28 @@ router.get('/', async (req, res) => {
       pm2: pm2Status,
       rtmp: {
         enabled: true,
+        integrated: true,
         host: rtmpHost,
         port: rtmpPort,
-        status: rtmpStatus ? 'online' : 'offline',
-        description: rtmpStatus
-          ? `RTMP server is running on ${rtmpHost}:${rtmpPort}`
-          : `RTMP server is not responding on ${rtmpHost}:${rtmpPort}`
+        dynamicPorts: rtmpPortRange,
+        status: backendOnline ? 'online' : 'offline',
+        description: backendOnline
+          ? `RTMP streaming service integrated in backend (port ${rtmpPort}, dynamic ports ${rtmpPortRange})`
+          : 'RTMP service offline (backend not running)'
       },
       webrtc: {
         enabled: true,
-        turn: {
-          port: webrtcTurnPort,
-          status: webrtcTurnStatus ? 'online' : 'offline',
-          description: webrtcTurnStatus
-            ? `TURN server is running on port ${webrtcTurnPort}`
-            : `TURN server is not responding on port ${webrtcTurnPort}`
-        },
-        turnTls: {
-          port: webrtcTurnTlsPort,
-          status: webrtcTurnTlsStatus ? 'online' : 'offline',
-          description: webrtcTurnTlsStatus
-            ? `TURN TLS server is running on port ${webrtcTurnTlsPort}`
-            : `TURN TLS server is not responding on port ${webrtcTurnTlsPort}`
-        },
-        description: 'WebRTC streaming service for browser-based broadcasts'
+        integrated: true,
+        status: backendOnline ? 'online' : 'offline',
+        description: backendOnline
+          ? 'WebRTC streaming service integrated in backend (browser-based broadcasts)'
+          : 'WebRTC service offline (backend not running)',
+        features: [
+          'Browser to RTMP streaming',
+          'Real-time video/audio encoding',
+          'Multi-platform broadcasting',
+          'Integrated with FFmpeg pipelines'
+        ]
       }
     });
   } catch (error) {
