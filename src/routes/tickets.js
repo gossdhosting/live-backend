@@ -2,10 +2,35 @@ import express from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import jwt from 'jsonwebtoken';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import * as ticketController from '../controllers/ticketController.js';
 
 const router = express.Router();
+
+// Middleware to authenticate token from header OR query parameter
+const authenticateTokenFlexible = (req, res, next) => {
+  // Try to get token from header first
+  const authHeader = req.headers['authorization'];
+  let token = authHeader && authHeader.split(' ')[1];
+
+  // If not in header, try query parameter
+  if (!token && req.query.token) {
+    token = req.query.token;
+  }
+
+  if (!token) {
+    return res.status(401).json({ error: 'Access token required' });
+  }
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+    if (err) {
+      return res.status(403).json({ error: 'Invalid or expired token' });
+    }
+    req.user = user;
+    next();
+  });
+};
 
 // Create uploads directory if it doesn't exist
 const uploadsDir = 'uploads/tickets';
@@ -52,7 +77,7 @@ router.get('/stats', authenticateToken, ticketController.getTicketStats);
 router.get('/:id', authenticateToken, ticketController.getTicket);
 router.post('/:id/reply', authenticateToken, upload.array('attachments', 5), ticketController.addReply);
 router.post('/:id/close', authenticateToken, ticketController.closeTicket);
-router.get('/attachments/:id/download', authenticateToken, ticketController.downloadAttachment);
+router.get('/attachments/:id/download', authenticateTokenFlexible, ticketController.downloadAttachment);
 
 // Admin routes
 router.put('/:id/status', authenticateToken, requireAdmin, ticketController.updateTicketStatus);

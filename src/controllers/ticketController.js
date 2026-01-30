@@ -347,8 +347,24 @@ export const downloadAttachment = async (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    // Send file
-    res.download(attachment.file_path, attachment.original_name);
+    // Check if file is an image to display inline
+    const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'];
+    const ext = path.extname(attachment.original_name).toLowerCase().slice(1);
+    const isImage = imageExtensions.includes(ext);
+
+    // Set appropriate content type
+    if (attachment.mime_type) {
+      res.setHeader('Content-Type', attachment.mime_type);
+    }
+
+    // For images, set content-disposition to inline so they display in browser
+    if (isImage) {
+      res.setHeader('Content-Disposition', `inline; filename="${attachment.original_name}"`);
+      res.sendFile(path.resolve(attachment.file_path));
+    } else {
+      // For other files, force download
+      res.download(attachment.file_path, attachment.original_name);
+    }
   } catch (error) {
     logger.error('Error downloading attachment', { error: error.message });
     res.status(500).json({ error: 'Failed to download attachment' });
