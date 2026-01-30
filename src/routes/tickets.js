@@ -9,7 +9,7 @@ import * as ticketController from '../controllers/ticketController.js';
 const router = express.Router();
 
 // Middleware to authenticate token from header OR query parameter
-const authenticateTokenFlexible = (req, res, next) => {
+const authenticateTokenFlexible = async (req, res, next) => {
   // Try to get token from header first
   const authHeader = req.headers['authorization'];
   let token = authHeader && authHeader.split(' ')[1];
@@ -23,13 +23,22 @@ const authenticateTokenFlexible = (req, res, next) => {
     return res.status(401).json({ error: 'Access token required' });
   }
 
-  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
-    if (err) {
-      return res.status(403).json({ error: 'Invalid or expired token' });
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    // Get user from database to match standard auth middleware behavior
+    const { default: User } = await import('../models/User.js');
+    const user = await User.findById(decoded.userId);
+
+    if (!user) {
+      return res.status(403).json({ error: 'User not found' });
     }
+
     req.user = user;
     next();
-  });
+  } catch (err) {
+    return res.status(403).json({ error: 'Invalid or expired token' });
+  }
 };
 
 // Create uploads directory if it doesn't exist
