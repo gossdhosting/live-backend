@@ -4,6 +4,8 @@ import TicketAttachment from '../models/TicketAttachment.js';
 import User from '../models/User.js';
 import logger from '../utils/logger.js';
 import EmailService from '../services/EmailService.js';
+import OneSignalService from '../services/OneSignalService.js';
+import db from '../models/database.js';
 import path from 'path';
 import fs from 'fs/promises';
 
@@ -61,6 +63,26 @@ export const createTicket = async (req, res) => {
       await EmailService.sendTicketCreatedAdminNotification(fullTicket, user);
     } catch (emailError) {
       logger.error('Failed to send ticket creation emails', { error: emailError.message });
+    }
+
+    // Send OneSignal push notifications to admins
+    try {
+      const user = await User.findById(user_id);
+      // Get all admin users with OneSignal player IDs
+      const adminStmt = db.prepare('SELECT onesignal_player_id FROM users WHERE role = ? AND onesignal_player_id IS NOT NULL');
+      const admins = await adminStmt.all('admin');
+      const adminPlayerIds = admins.map(a => a.onesignal_player_id).filter(Boolean);
+
+      if (adminPlayerIds.length > 0) {
+        await OneSignalService.notifyNewTicket(
+          adminPlayerIds,
+          fullTicket.ticket_number,
+          fullTicket.subject,
+          user.name || user.email
+        );
+      }
+    } catch (pushError) {
+      logger.error('Failed to send ticket creation push notifications', { error: pushError.message });
     }
 
     logger.info('Support ticket created', { ticketId: ticket.id, userId: user_id });
@@ -180,6 +202,48 @@ export const addReply = async (req, res) => {
       }
     }
 
+    // Send OneSignal push notifications (not for internal notes)
+    if (!is_internal_note) {
+      try {
+        const user = await User.findById(user_id);
+        const isAdminReply = req.user.role === 'admin';
+        const playerIds = [];
+
+        if (isAdminReply) {
+          // Admin replied - notify ticket owner
+          const ticketOwner = await User.findById(ticket.user_id);
+          if (ticketOwner && ticketOwner.onesignal_player_id) {
+            playerIds.push(ticketOwner.onesignal_player_id);
+          }
+        } else {
+          // User replied - notify assigned admin or all admins
+          if (ticket.assigned_to) {
+            const assignedAdmin = await User.findById(ticket.assigned_to);
+            if (assignedAdmin && assignedAdmin.onesignal_player_id) {
+              playerIds.push(assignedAdmin.onesignal_player_id);
+            }
+          } else {
+            // Notify all admins
+            const adminStmt = db.prepare('SELECT onesignal_player_id FROM users WHERE role = ? AND onesignal_player_id IS NOT NULL');
+            const admins = await adminStmt.all('admin');
+            playerIds.push(...admins.map(a => a.onesignal_player_id).filter(Boolean));
+          }
+        }
+
+        if (playerIds.length > 0) {
+          await OneSignalService.notifyTicketReply(
+            playerIds,
+            fullTicket.ticket_number,
+            fullTicket.subject,
+            user.name || user.email,
+            isAdminReply
+          );
+        }
+      } catch (pushError) {
+        logger.error('Failed to send reply push notification', { error: pushError.message });
+      }
+    }
+
     logger.info('Reply added to ticket', { ticketId: id, userId: user_id });
     res.status(201).json({ ticket: fullTicket });
   } catch (error) {
@@ -214,6 +278,21 @@ export const updateTicketStatus = async (req, res) => {
       logger.error('Failed to send status change email', { error: emailError.message });
     }
 
+    // Send OneSignal push notification to ticket owner
+    try {
+      const user = await User.findById(ticket.user_id);
+      if (user && user.onesignal_player_id) {
+        await OneSignalService.notifyTicketStatusChange(
+          [user.onesignal_player_id],
+          ticket.ticket_number,
+          ticket.subject,
+          status
+        );
+      }
+    } catch (pushError) {
+      logger.error('Failed to send status change push notification', { error: pushError.message });
+    }
+
     logger.info('Ticket status updated', { ticketId: id, oldStatus, newStatus: status });
     res.json({ ticket });
   } catch (error) {
@@ -239,6 +318,20 @@ export const assignTicket = async (req, res) => {
     }
 
     const ticket = await SupportTicket.assignTo(id, admin_id);
+
+    // Send OneSignal push notification to assigned admin
+    try {
+      if (admin.onesignal_player_id) {
+        await OneSignalService.notifyTicketAssigned(
+          [admin.onesignal_player_id],
+          ticket.ticket_number,
+          ticket.subject,
+          ticket.category
+        );
+      }
+    } catch (pushError) {
+      logger.error('Failed to send ticket assignment push notification', { error: pushError.message });
+    }
 
     logger.info('Ticket assigned', { ticketId: id, assignedTo: admin_id });
     res.json({ ticket });

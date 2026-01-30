@@ -24,6 +24,7 @@
     "@aws-sdk/client-s3": "^3.975.0",
     "@aws-sdk/s3-request-presigner": "^3.975.0",
     "@koush/wrtc": "^0.5.3",
+    "@onesignal/node-onesignal": "^5.3.1-beta1",
     "@twurple/api": "^8.0.2",
     "@twurple/auth": "^8.0.2",
     "axios": "^1.13.2",

@@ -202,6 +202,87 @@ class OneSignalService {
       { type: 'storage_limit_reached', usedStorage, totalStorage }
     );
   }
+
+  /**
+   * Notify admins about new support ticket
+   */
+  static async notifyNewTicket(playerIds, ticketNumber, subject, userName) {
+    return await this.sendNotification(
+      playerIds,
+      '🎫 New Support Ticket',
+      `${userName} created ticket #${ticketNumber}: ${subject}`,
+      {
+        type: 'new_ticket',
+        ticket_number: ticketNumber,
+        subject: subject,
+        user_name: userName
+      }
+    );
+  }
+
+  /**
+   * Notify user about ticket reply
+   */
+  static async notifyTicketReply(playerIds, ticketNumber, subject, replierName, isFromAdmin) {
+    const title = isFromAdmin ? '💬 Support Replied to Your Ticket' : '💬 New Reply on Your Ticket';
+    const message = isFromAdmin
+      ? `Support replied to ticket #${ticketNumber}: ${subject}`
+      : `${replierName} replied to ticket #${ticketNumber}: ${subject}`;
+
+    return await this.sendNotification(
+      playerIds,
+      title,
+      message,
+      {
+        type: 'ticket_reply',
+        ticket_number: ticketNumber,
+        subject: subject,
+        replier_name: replierName
+      }
+    );
+  }
+
+  /**
+   * Notify user about ticket status change
+   */
+  static async notifyTicketStatusChange(playerIds, ticketNumber, subject, newStatus) {
+    const statusLabels = {
+      open: 'Open',
+      in_progress: 'In Progress',
+      waiting_customer: 'Waiting for Your Response',
+      resolved: 'Resolved',
+      closed: 'Closed'
+    };
+
+    return await this.sendNotification(
+      playerIds,
+      '🔄 Ticket Status Updated',
+      `Your ticket #${ticketNumber} status changed to ${statusLabels[newStatus] || newStatus}`,
+      {
+        type: 'ticket_status_changed',
+        ticket_number: ticketNumber,
+        subject: subject,
+        new_status: newStatus
+      }
+    );
+  }
+
+  /**
+   * Notify admin about ticket assignment
+   */
+  static async notifyTicketAssigned(playerIds, ticketNumber, subject, category) {
+    return await this.sendNotification(
+      playerIds,
+      '📌 Ticket Assigned to You',
+      `You've been assigned ticket #${ticketNumber}: ${subject}`,
+      {
+        type: 'ticket_assigned',
+        ticket_number: ticketNumber,
+        subject: subject,
+        category: category
+      }
+    );
+  }
 }
 
 export default OneSignalService;
