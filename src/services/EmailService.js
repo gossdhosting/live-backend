@@ -161,7 +161,7 @@ class EmailService {
 
       const smtp_from_email = settings.smtp_from_email || 'noreply@localhost';
       const smtp_from_name = settings.smtp_from_name || 'RexStream';
-      const htmlContent = this.applyTemplate(content);
+      const htmlContent = await this.applyTemplate(content);
 
       await transporter.sendMail({
         from: `"${smtp_from_name}" <${smtp_from_email}>`,
