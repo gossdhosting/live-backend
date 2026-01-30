@@ -66,7 +66,8 @@ export const createTicket = async (req, res) => {
     logger.info('Support ticket created', { ticketId: ticket.id, userId: user_id });
     res.status(201).json({ ticket: fullTicket });
   } catch (error) {
-    logger.error('Error creating support ticket', { error: error.message });
+    console.error('Error creating support ticket:', error);
+    logger.error('Error creating support ticket', { error: error.message, stack: error.stack });
     res.status(500).json({ error: 'Failed to create support ticket' });
   }
 };
