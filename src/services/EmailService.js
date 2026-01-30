@@ -390,7 +390,9 @@ class EmailService {
     try {
       const settings = await this.getSettingsMap();
       const adminEmail = settings.admin_notification_email;
+      console.log('📧 Sending admin notification for ticket:', ticket.ticket_number, 'to:', adminEmail);
       if (!adminEmail) {
+        console.log('⚠️ Admin notification email not configured');
         logger.warn('Admin notification email not configured');
         return { success: false, message: 'Admin email not configured' };
       }
@@ -410,8 +412,11 @@ class EmailService {
         <p><a href="${frontendUrl}/tickets" style="background-color: #3498db; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block;">View Ticket</a></p>
       `;
 
-      return await this.sendAdminNotification(`New Support Ticket: ${ticket.ticket_number}`, content);
+      const result = await this.sendAdminNotification(`New Support Ticket: ${ticket.ticket_number}`, content);
+      console.log('📧 Admin notification result:', result);
+      return result;
     } catch (error) {
+      console.error('❌ Failed to send admin ticket notification:', error);
       logger.error('Failed to send admin ticket notification', { error: error.message });
       return { success: false, message: error.message };
     }
