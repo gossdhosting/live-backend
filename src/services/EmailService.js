@@ -333,6 +333,256 @@ class EmailService {
       return { success: false, message: error.message };
     }
   }
+
+  // Send ticket created confirmation to user
+  static async sendTicketCreatedEmail(user, ticket) {
+    try {
+      const transporter = await this.getTransporter();
+      if (!transporter) {
+        logger.warn('Cannot send ticket created email: SMTP not configured');
+        return { success: false, message: 'SMTP not configured' };
+      }
+
+      const settings = await this.getSettingsMap();
+      const smtp_from_email = settings.smtp_from_email || 'noreply@localhost';
+      const smtp_from_name = settings.smtp_from_name || 'RexStream Support';
+      const frontendUrl = process.env.FRONTEND_URL || 'https://panel.rexstream.net';
+
+      const template = settings.email_template_ticket_created || `
+        <h2>Support Ticket Created</h2>
+        <p>Hi ${user.name || user.email},</p>
+        <p>Your support ticket has been created successfully.</p>
+        <p><strong>Ticket Number:</strong> ${ticket.ticket_number}</p>
+        <p><strong>Subject:</strong> ${ticket.subject}</p>
+        <p><strong>Category:</strong> ${ticket.category}</p>
+        <p><strong>Status:</strong> ${ticket.status}</p>
+        <p>We'll get back to you as soon as possible.</p>
+        <p><a href="${frontendUrl}/help" style="background-color: #3498db; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block;">View Ticket</a></p>
+        <p>Best regards,<br>The RexStream Support Team</p>
+      `;
+
+      const htmlContent = await this.applyTemplate(
+        template.replace(/\${user\.name}/g, user.name || user.email)
+          .replace(/\${ticket\.ticket_number}/g, ticket.ticket_number)
+          .replace(/\${ticket\.subject}/g, ticket.subject)
+          .replace(/\${ticket\.category}/g, ticket.category)
+          .replace(/\${ticket\.status}/g, ticket.status)
+          .replace(/\${frontendUrl}/g, frontendUrl)
+      );
+
+      await transporter.sendMail({
+        from: `"${smtp_from_name}" <${smtp_from_email}>`,
+        to: user.email,
+        subject: `Ticket Created: ${ticket.ticket_number}`,
+        html: htmlContent,
+      });
+
+      logger.info('Ticket created email sent', { email: user.email, ticketId: ticket.id });
+      return { success: true };
+    } catch (error) {
+      logger.error('Failed to send ticket created email', { error: error.message });
+      return { success: false, message: error.message };
+    }
+  }
+
+  // Send new ticket notification to admin
+  static async sendTicketCreatedAdminNotification(ticket, user) {
+    try {
+      const settings = await this.getSettingsMap();
+      const adminEmail = settings.admin_notification_email;
+      if (!adminEmail) {
+        logger.warn('Admin notification email not configured');
+        return { success: false, message: 'Admin email not configured' };
+      }
+
+      const frontendUrl = process.env.FRONTEND_URL || 'https://panel.rexstream.net';
+      const content = `
+        <h2>New Support Ticket</h2>
+        <p>A new support ticket has been created:</p>
+        <ul>
+          <li><strong>Ticket Number:</strong> ${ticket.ticket_number}</li>
+          <li><strong>User:</strong> ${user.name || user.email} (${user.email})</li>
+          <li><strong>Subject:</strong> ${ticket.subject}</li>
+          <li><strong>Category:</strong> ${ticket.category}</li>
+          <li><strong>Priority:</strong> ${ticket.priority}</li>
+          <li><strong>Created:</strong> ${new Date(ticket.created_at).toLocaleString()}</li>
+        </ul>
+        <p><a href="${frontendUrl}/tickets" style="background-color: #3498db; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block;">View Ticket</a></p>
+      `;
+
+      return await this.sendAdminNotification(`New Support Ticket: ${ticket.ticket_number}`, content);
+    } catch (error) {
+      logger.error('Failed to send admin ticket notification', { error: error.message });
+      return { success: false, message: error.message };
+    }
+  }
+
+  // Send ticket reply notification
+  static async sendTicketReplyEmail(ticket, user, message, isAdminReply) {
+    try {
+      const transporter = await this.getTransporter();
+      if (!transporter) {
+        logger.warn('Cannot send ticket reply email: SMTP not configured');
+        return { success: false, message: 'SMTP not configured' };
+      }
+
+      const settings = await this.getSettingsMap();
+      const smtp_from_email = settings.smtp_from_email || 'noreply@localhost';
+      const smtp_from_name = settings.smtp_from_name || 'RexStream Support';
+      const frontendUrl = process.env.FRONTEND_URL || 'https://panel.rexstream.net';
+
+      // Send to user if admin replied, send to admin if user replied
+      let recipientEmail;
+      let recipientName;
+
+      if (isAdminReply) {
+        recipientEmail = ticket.user_email;
+        recipientName = ticket.user_name || ticket.user_email;
+      } else {
+        const adminEmail = settings.admin_notification_email;
+        if (!adminEmail) return { success: false, message: 'Admin email not configured' };
+        recipientEmail = adminEmail;
+        recipientName = 'Admin';
+      }
+
+      const replyBy = isAdminReply ? 'Support Team' : (user.name || user.email);
+      const messagePreview = message.length > 200 ? message.substring(0, 200) + '...' : message;
+
+      const template = settings.email_template_ticket_reply || `
+        <h2>New Reply on Ticket ${ticket.ticket_number}</h2>
+        <p>Hi ${recipientName},</p>
+        <p><strong>${replyBy}</strong> has replied to your ticket:</p>
+        <div style="background-color: #f5f5f5; padding: 15px; border-left: 4px solid #3498db; margin: 15px 0;">
+          ${messagePreview}
+        </div>
+        <p><a href="${frontendUrl}/${isAdminReply ? 'help' : 'tickets'}" style="background-color: #3498db; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block;">View Full Conversation</a></p>
+        <p>Best regards,<br>The RexStream Support Team</p>
+      `;
+
+      const htmlContent = await this.applyTemplate(
+        template.replace(/\${ticket\.ticket_number}/g, ticket.ticket_number)
+          .replace(/\${recipientName}/g, recipientName)
+          .replace(/\${replyBy}/g, replyBy)
+          .replace(/\${messagePreview}/g, messagePreview)
+          .replace(/\${frontendUrl}/g, frontendUrl)
+          .replace(/\${isAdminReply \? 'help' : 'tickets'}/g, isAdminReply ? 'help' : 'tickets')
+      );
+
+      await transporter.sendMail({
+        from: `"${smtp_from_name}" <${smtp_from_email}>`,
+        to: recipientEmail,
+        subject: `New Reply: ${ticket.ticket_number} - ${ticket.subject}`,
+        html: htmlContent,
+      });
+
+      logger.info('Ticket reply email sent', { email: recipientEmail, ticketId: ticket.id });
+      return { success: true };
+    } catch (error) {
+      logger.error('Failed to send ticket reply email', { error: error.message });
+      return { success: false, message: error.message };
+    }
+  }
+
+  // Send ticket status changed notification
+  static async sendTicketStatusChangedEmail(ticket, user, oldStatus, newStatus) {
+    try {
+      const transporter = await this.getTransporter();
+      if (!transporter) {
+        logger.warn('Cannot send status change email: SMTP not configured');
+        return { success: false, message: 'SMTP not configured' };
+      }
+
+      const settings = await this.getSettingsMap();
+      const smtp_from_email = settings.smtp_from_email || 'noreply@localhost';
+      const smtp_from_name = settings.smtp_from_name || 'RexStream Support';
+      const frontendUrl = process.env.FRONTEND_URL || 'https://panel.rexstream.net';
+
+      const template = settings.email_template_ticket_status_changed || `
+        <h2>Ticket Status Updated</h2>
+        <p>Hi ${user.name || user.email},</p>
+        <p>The status of your ticket has been updated:</p>
+        <ul>
+          <li><strong>Ticket:</strong> ${ticket.ticket_number}</li>
+          <li><strong>Subject:</strong> ${ticket.subject}</li>
+          <li><strong>Previous Status:</strong> ${oldStatus}</li>
+          <li><strong>New Status:</strong> ${newStatus}</li>
+        </ul>
+        <p><a href="${frontendUrl}/help" style="background-color: #3498db; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block;">View Ticket</a></p>
+        <p>Best regards,<br>The RexStream Support Team</p>
+      `;
+
+      const htmlContent = await this.applyTemplate(
+        template.replace(/\${user\.name}/g, user.name || user.email)
+          .replace(/\${ticket\.ticket_number}/g, ticket.ticket_number)
+          .replace(/\${ticket\.subject}/g, ticket.subject)
+          .replace(/\${oldStatus}/g, oldStatus)
+          .replace(/\${newStatus}/g, newStatus)
+          .replace(/\${frontendUrl}/g, frontendUrl)
+      );
+
+      await transporter.sendMail({
+        from: `"${smtp_from_name}" <${smtp_from_email}>`,
+        to: user.email,
+        subject: `Ticket Status Updated: ${ticket.ticket_number}`,
+        html: htmlContent,
+      });
+
+      logger.info('Ticket status change email sent', { email: user.email, ticketId: ticket.id });
+      return { success: true };
+    } catch (error) {
+      logger.error('Failed to send status change email', { error: error.message });
+      return { success: false, message: error.message };
+    }
+  }
+
+  // Send ticket closed notification
+  static async sendTicketClosedEmail(ticket, user) {
+    try {
+      const transporter = await this.getTransporter();
+      if (!transporter) {
+        logger.warn('Cannot send ticket closed email: SMTP not configured');
+        return { success: false, message: 'SMTP not configured' };
+      }
+
+      const settings = await this.getSettingsMap();
+      const smtp_from_email = settings.smtp_from_email || 'noreply@localhost';
+      const smtp_from_name = settings.smtp_from_name || 'RexStream Support';
+
+      const template = settings.email_template_ticket_closed || `
+        <h2>Ticket Closed</h2>
+        <p>Hi ${user.name || user.email},</p>
+        <p>Your support ticket has been closed:</p>
+        <ul>
+          <li><strong>Ticket:</strong> ${ticket.ticket_number}</li>
+          <li><strong>Subject:</strong> ${ticket.subject}</li>
+          <li><strong>Category:</strong> ${ticket.category}</li>
+        </ul>
+        <p>If you have any further questions or need additional assistance, please don't hesitate to create a new ticket.</p>
+        <p>Thank you for using RexStream!</p>
+        <p>Best regards,<br>The RexStream Support Team</p>
+      `;
+
+      const htmlContent = await this.applyTemplate(
+        template.replace(/\${user\.name}/g, user.name || user.email)
+          .replace(/\${ticket\.ticket_number}/g, ticket.ticket_number)
+          .replace(/\${ticket\.subject}/g, ticket.subject)
+          .replace(/\${ticket\.category}/g, ticket.category)
+      );
+
+      await transporter.sendMail({
+        from: `"${smtp_from_name}" <${smtp_from_email}>`,
+        to: user.email,
+        subject: `Ticket Closed: ${ticket.ticket_number}`,
+        html: htmlContent,
+      });
+
+      logger.info('Ticket closed email sent', { email: user.email, ticketId: ticket.id });
+      return { success: true };
+    } catch (error) {
+      logger.error('Failed to send ticket closed email', { error: error.message });
+      return { success: false, message: error.message };
+    }
+  }
 }
 
 export default EmailService;
