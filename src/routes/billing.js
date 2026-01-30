@@ -22,6 +22,7 @@ router.get('/invoice/:invoiceId/pdf', auth, billingController.generatePdfInvoice
 router.get('/admin/subscriptions', auth, adminOnly, billingController.getAllSubscriptions);
 router.get('/admin/invoices', auth, adminOnly, billingController.getAllInvoices);
 router.post('/admin/subscription/:subscriptionId/cancel', auth, adminOnly, billingController.adminCancelSubscription);
+router.delete('/admin/subscription/:subscriptionId', auth, adminOnly, billingController.adminDeleteSubscription);
 router.get('/admin/settings', auth, adminOnly, billingController.getPaymentSettings);
 router.put('/admin/settings', auth, adminOnly, billingController.updatePaymentSettings);
 router.post('/admin/sync-prices', auth, adminOnly, billingController.syncStripePrices);

@@ -258,7 +258,11 @@ export async function getAllSubscriptions(req, res) {
     const subscriptions = await StripeSubscription.getAll(limit, offset);
     const stats = await StripeSubscription.getStats();
 
-    res.json({ subscriptions, stats });
+    // Get current payment mode (sandbox/live)
+    const paymentSettings = await PaymentSettings.get();
+    const mode = paymentSettings?.mode || 'sandbox';
+
+    res.json({ subscriptions, stats, mode });
   } catch (error) {
     logger.error('Stripe: Failed to get all subscriptions', {
       error: error.message,
@@ -344,6 +348,47 @@ export async function adminCancelSubscription(req, res) {
       stack: error.stack,
     });
     res.status(500).json({ error: 'Failed to cancel subscription' });
+  }
+}
+
+// ADMIN: Delete subscription from database
+export async function adminDeleteSubscription(req, res) {
+  try {
+    const { subscriptionId } = req.params;
+
+    const subscription = await StripeSubscription.getByStripeId(subscriptionId);
+    if (!subscription) {
+      return res.status(404).json({ error: 'Subscription not found' });
+    }
+
+    // Delete from database
+    await StripeSubscription.delete(subscriptionId);
+
+    // If user still has this subscription assigned, downgrade to Free plan
+    const user = await User.getById(subscription.user_id);
+    if (user && user.stripe_subscription_id === subscriptionId) {
+      const freePlan = await Plan.getByName('Free');
+      if (freePlan) {
+        await User.update(subscription.user_id, {
+          plan_id: freePlan.id,
+          subscription_status: 'cancelled',
+          stripe_subscription_id: null
+        });
+      }
+    }
+
+    logger.info('Admin deleted subscription from database', {
+      subscriptionId,
+      userId: subscription.user_id,
+    });
+
+    res.json({ message: 'Subscription deleted successfully' });
+  } catch (error) {
+    logger.error('Failed to delete subscription', {
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({ error: 'Failed to delete subscription' });
   }
 }
 
