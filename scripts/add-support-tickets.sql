@@ -2,7 +2,7 @@
 CREATE TABLE IF NOT EXISTS support_tickets (
   id SERIAL PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  ticket_number VARCHAR(20) UNIQUE NOT NULL, -- Format: TICKET-YYYYMMDD-XXXXX
+  ticket_number VARCHAR(30) UNIQUE NOT NULL, -- Format: TICKET-YYYYMMDD-XXXXX (21 chars)
   subject VARCHAR(255) NOT NULL,
   category VARCHAR(50) NOT NULL CHECK (category IN ('technical', 'billing', 'general')),
   channel_id INTEGER REFERENCES channels(id) ON DELETE SET NULL, -- Optional
