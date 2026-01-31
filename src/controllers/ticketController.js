@@ -148,7 +148,9 @@ export const getTicket = async (req, res) => {
 export const addReply = async (req, res) => {
   try {
     const { id } = req.params;
-    const { message, is_internal_note = false } = req.body;
+    const { message } = req.body;
+    // Parse is_internal_note correctly from multipart form data (it comes as string)
+    const is_internal_note = req.body.is_internal_note === 'true' || req.body.is_internal_note === true;
     const user_id = req.user.id;
 
     if (!message) {
