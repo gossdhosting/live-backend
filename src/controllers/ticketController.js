@@ -127,6 +127,12 @@ export const getTicket = async (req, res) => {
 
     // Check permissions: user can only view their own tickets, admin can view all
     if (req.user.role !== 'admin' && ticket.user_id !== req.user.id) {
+      logger.warn('Access denied to ticket', {
+        ticketId: id,
+        ticketUserId: ticket.user_id,
+        requestUserId: req.user.id,
+        userRole: req.user.role
+      });
       return res.status(403).json({ error: 'Access denied' });
     }
 
