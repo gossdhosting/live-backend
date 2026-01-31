@@ -28,7 +28,7 @@ async function checkPort(host, port) {
   });
 }
 
-// GET /api/status - Returns comprehensive system status
+// GET /api/status - Returns public system status (hides sensitive info)
 router.get('/', async (req, res) => {
   try {
     // Check PM2 services
@@ -47,18 +47,11 @@ router.get('/', async (req, res) => {
             return resolve({ error: 'Failed to get PM2 process list', services: [] });
           }
 
+          // Only expose minimal, non-sensitive information
           const services = list.map(proc => ({
             name: proc.name,
             status: proc.pm2_env?.status || 'unknown',
-            uptime: proc.pm2_env?.pm_uptime ? Date.now() - proc.pm2_env.pm_uptime : null,
-            uptimeFormatted: proc.pm2_env?.pm_uptime ? formatUptime(Date.now() - proc.pm2_env.pm_uptime) : null,
-            restarts: proc.pm2_env?.restart_time || 0,
-            memory: proc.monit?.memory || 0,
-            memoryFormatted: formatBytes(proc.monit?.memory || 0),
-            cpu: proc.monit?.cpu || 0,
-            pid: proc.pid,
-            instances: proc.pm2_env?.instances || 1,
-            mode: proc.pm2_env?.exec_mode || 'unknown'
+            uptimeFormatted: proc.pm2_env?.pm_uptime ? formatUptime(Date.now() - proc.pm2_env.pm_uptime) : null
           }));
 
           resolve({ services });
@@ -71,40 +64,19 @@ router.get('/', async (req, res) => {
       s.name === 'streaming-backend' && s.status === 'online'
     );
 
-    // RTMP and WebRTC are integrated into the backend, so their status follows the backend status
-    const rtmpHost = process.env.RTMP_SERVER || '127.0.0.1';
-    const rtmpPort = parseInt(process.env.RTMP_PORT || '1935');
-    const rtmpPortRange = `${process.env.RTMP_DYNAMIC_PORT_MIN || '1936'}-${process.env.RTMP_DYNAMIC_PORT_MAX || '2000'}`;
-
-    // Compile response
+    // Compile response with minimal public information
     res.json({
       timestamp: new Date().toISOString(),
       status: 'ok',
-      pm2: pm2Status,
-      rtmp: {
-        enabled: true,
-        integrated: true,
-        host: rtmpHost,
-        port: rtmpPort,
-        dynamicPorts: rtmpPortRange,
-        status: backendOnline ? 'online' : 'offline',
-        description: backendOnline
-          ? `RTMP streaming service integrated in backend (port ${rtmpPort}, dynamic ports ${rtmpPortRange})`
-          : 'RTMP service offline (backend not running)'
+      services: {
+        backend: backendOnline ? 'online' : 'offline',
+        rtmp: backendOnline ? 'online' : 'offline',
+        webrtc: backendOnline ? 'online' : 'offline'
       },
-      webrtc: {
-        enabled: true,
-        integrated: true,
-        status: backendOnline ? 'online' : 'offline',
-        description: backendOnline
-          ? 'WebRTC streaming service integrated in backend (browser-based broadcasts)'
-          : 'WebRTC service offline (backend not running)',
-        features: [
-          'Browser to RTMP streaming',
-          'Real-time video/audio encoding',
-          'Multi-platform broadcasting',
-          'Integrated with FFmpeg pipelines'
-        ]
+      features: {
+        rtmp: 'RTMP streaming service available',
+        webrtc: 'WebRTC browser-based broadcasting available',
+        multiPlatform: 'Multi-platform streaming support'
       }
     });
   } catch (error) {
@@ -112,7 +84,7 @@ router.get('/', async (req, res) => {
     res.status(500).json({
       timestamp: new Date().toISOString(),
       status: 'error',
-      error: error.message
+      message: 'Service temporarily unavailable'
     });
   }
 });
