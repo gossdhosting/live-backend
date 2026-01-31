@@ -206,13 +206,14 @@ class OneSignalService {
   /**
    * Notify admins about new support ticket
    */
-  static async notifyNewTicket(playerIds, ticketNumber, subject, userName) {
+  static async notifyNewTicket(playerIds, ticketId, ticketNumber, subject, userName) {
     return await this.sendNotification(
       playerIds,
       '🎫 New Support Ticket',
       `${userName} created ticket #${ticketNumber}: ${subject}`,
       {
         type: 'new_ticket',
+        ticket_id: ticketId.toString(),
         ticket_number: ticketNumber,
         subject: subject,
         user_name: userName
@@ -223,7 +224,7 @@ class OneSignalService {
   /**
    * Notify user about ticket reply
    */
-  static async notifyTicketReply(playerIds, ticketNumber, subject, replierName, isFromAdmin) {
+  static async notifyTicketReply(playerIds, ticketId, ticketNumber, subject, replierName, isFromAdmin) {
     const title = isFromAdmin ? '💬 Support Replied to Your Ticket' : '💬 New Reply on Your Ticket';
     const message = isFromAdmin
       ? `Support replied to ticket #${ticketNumber}: ${subject}`
@@ -235,6 +236,7 @@ class OneSignalService {
       message,
       {
         type: 'ticket_reply',
+        ticket_id: ticketId.toString(),
         ticket_number: ticketNumber,
         subject: subject,
         replier_name: replierName
@@ -245,7 +247,7 @@ class OneSignalService {
   /**
    * Notify user about ticket status change
    */
-  static async notifyTicketStatusChange(playerIds, ticketNumber, subject, newStatus) {
+  static async notifyTicketStatusChange(playerIds, ticketId, ticketNumber, subject, newStatus) {
     const statusLabels = {
       open: 'Open',
       in_progress: 'In Progress',
@@ -260,6 +262,7 @@ class OneSignalService {
       `Your ticket #${ticketNumber} status changed to ${statusLabels[newStatus] || newStatus}`,
       {
         type: 'ticket_status_changed',
+        ticket_id: ticketId.toString(),
         ticket_number: ticketNumber,
         subject: subject,
         new_status: newStatus
@@ -270,13 +273,14 @@ class OneSignalService {
   /**
    * Notify admin about ticket assignment
    */
-  static async notifyTicketAssigned(playerIds, ticketNumber, subject, category) {
+  static async notifyTicketAssigned(playerIds, ticketId, ticketNumber, subject, category) {
     return await this.sendNotification(
       playerIds,
       '📌 Ticket Assigned to You',
       `You've been assigned ticket #${ticketNumber}: ${subject}`,
       {
         type: 'ticket_assigned',
+        ticket_id: ticketId.toString(),
         ticket_number: ticketNumber,
         subject: subject,
         category: category

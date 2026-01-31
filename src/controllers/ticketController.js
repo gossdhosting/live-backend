@@ -76,6 +76,7 @@ export const createTicket = async (req, res) => {
       if (adminPlayerIds.length > 0) {
         await OneSignalService.notifyNewTicket(
           adminPlayerIds,
+          fullTicket.id,
           fullTicket.ticket_number,
           fullTicket.subject,
           user.name || user.email
@@ -239,6 +240,7 @@ export const addReply = async (req, res) => {
         if (playerIds.length > 0) {
           await OneSignalService.notifyTicketReply(
             playerIds,
+            fullTicket.id,
             fullTicket.ticket_number,
             fullTicket.subject,
             user.name || user.email,
@@ -290,6 +292,7 @@ export const updateTicketStatus = async (req, res) => {
       if (user && user.onesignal_player_id) {
         await OneSignalService.notifyTicketStatusChange(
           [user.onesignal_player_id],
+          ticket.id,
           ticket.ticket_number,
           ticket.subject,
           status
@@ -330,6 +333,7 @@ export const assignTicket = async (req, res) => {
       if (admin.onesignal_player_id) {
         await OneSignalService.notifyTicketAssigned(
           [admin.onesignal_player_id],
+          ticket.id,
           ticket.ticket_number,
           ticket.subject,
           ticket.category
