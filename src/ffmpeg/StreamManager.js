@@ -530,18 +530,14 @@ class StreamManager {
           throw new Error('Selected media file not found');
         }
 
-        // Check if it's an S3 URL or local file
-        const isS3File = mediaFile.file_path && (
-          mediaFile.file_path.startsWith('http://') ||
-          mediaFile.file_path.startsWith('https://') ||
-          mediaFile.file_path.includes('s3.') ||
-          mediaFile.file_path.includes('.amazonaws.com')
-        );
-
-        if (isS3File) {
-          // For S3 files, use the URL directly
-          resolvedInputUrl = mediaFile.file_path;
-          logger.info(`Using S3 video file for channel ${channelId}: ${mediaFile.original_name} (${mediaFile.file_path})`);
+        // Check storage type - S3 files need fresh signed URLs
+        if (mediaFile.storage_type === 's3' && mediaFile.s3_key) {
+          // Generate fresh signed URL for S3 files (they expire)
+          resolvedInputUrl = await MediaFile.getSignedUrl(channel.media_file_id);
+          if (!resolvedInputUrl) {
+            throw new Error('Failed to generate signed URL for S3 media file');
+          }
+          logger.info(`Using S3 video file for channel ${channelId}: ${mediaFile.original_name} (generated fresh signed URL)`);
         } else {
           // For local files, check if file exists
           if (!fs.existsSync(mediaFile.file_path)) {
