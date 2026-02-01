@@ -848,7 +848,7 @@ class WebRTCBridgeService {
         '-threads', '4',
 
         // GLOBAL FLAGS - CRITICAL for low latency
-        '-fflags', '+nobuffer',  // Prevent input buffering
+        '-fflags', '+genpts+nobuffer',  // Generate PTS and prevent input buffering
         '-flags', 'low_delay',   // Low delay mode
 
         // Video input (raw YUV420 from WebRTC)
@@ -857,6 +857,7 @@ class WebRTCBridgeService {
         '-video_size', `${width}x${height}`,
         '-framerate', '30',
         '-thread_queue_size', '512',
+        '-use_wallclock_as_timestamps', '1',  // Don't wait for input sync
         '-i', 'pipe:0',
 
         // Audio input (raw PCM from WebRTC)
@@ -864,6 +865,7 @@ class WebRTCBridgeService {
         '-ar', '48000',
         '-ac', '2',
         '-thread_queue_size', '512',
+        '-use_wallclock_as_timestamps', '1',  // Don't wait for input sync
         '-i', 'pipe:3',
 
         // Video encoding - TUNED FOR SPEED
@@ -886,6 +888,10 @@ class WebRTCBridgeService {
         '-b:a', '128k',
         '-ar', '48000',
         '-ac', '2',
+
+        // Audio/Video sync - prevent blocking
+        '-async', '1',  // Stretch/squeeze audio to match video
+        '-vsync', 'cfr',  // Constant frame rate
 
         // Output format
         '-f', 'flv',
