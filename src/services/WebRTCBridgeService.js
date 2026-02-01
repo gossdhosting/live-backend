@@ -860,6 +860,17 @@ class WebRTCBridgeService {
       const width = firstFrame.width;
       const height = firstFrame.height;
 
+      // CRITICAL: x264 encoder requires dimensions to be multiples of 16 (macroblock size)
+      // If dimensions aren't aligned, pad them
+      const paddedWidth = Math.ceil(width / 16) * 16;
+      const paddedHeight = Math.ceil(height / 16) * 16;
+      const needsPadding = (width !== paddedWidth || height !== paddedHeight);
+
+      if (needsPadding) {
+        console.log(`[startFFmpegBridge] Dimensions not 16-aligned. Padding ${width}x${height} to ${paddedWidth}x${paddedHeight}`);
+        logger.info(`Padding video dimensions from ${width}x${height} to ${paddedWidth}x${paddedHeight} for x264 compatibility`);
+      }
+
       // Allocate unique RTMP port for this channel to prevent conflicts (for future load balancing)
       const rtmpPort = portAllocator.allocate(channelId);
       // Use nginx-rtmp on port 1935 - unique stream keys prevent conflicts
@@ -871,6 +882,19 @@ class WebRTCBridgeService {
       const hasAudio = this.hasAudioTrack.get(channelId) || false;
       console.log(`[startFFmpegBridge] Audio track present: ${hasAudio}`);
       logger.info(`Starting FFmpeg bridge for channel ${channelId}: ${width}x${height} -> ${rtmpUrl} (audio: ${hasAudio})`);
+
+      // Build video filter for padding and rotation
+      let videoFilter = '';
+
+      // Add padding if needed (x264 requires 16-aligned dimensions)
+      if (needsPadding) {
+        videoFilter = `pad=${paddedWidth}:${paddedHeight}:(ow-iw)/2:(oh-ih)/2:black`;
+      }
+
+      // Add rotation for webcam (1280x720 portrait mode)
+      if (width === 1280 && height === 720) {
+        videoFilter = videoFilter ? `${videoFilter},transpose=1` : 'transpose=1';
+      }
 
       // OPTIMIZED FFmpeg command for Ultra-Low Latency
       const ffmpegArgs = [
@@ -918,9 +942,9 @@ class WebRTCBridgeService {
         '-x264opts', 'no-scenecut:ref=1:bframes=0'  // Disable B-frames for lower latency
       );
 
-      // Simple rotation only for webcam
-      if (width === 1280 && height === 720) {
-        ffmpegArgs.push('-vf', 'transpose=1');
+      // Apply video filter if needed (padding and/or rotation)
+      if (videoFilter) {
+        ffmpegArgs.push('-vf', videoFilter);
       }
 
       // Stream mapping and audio encoding
