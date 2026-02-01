@@ -454,13 +454,15 @@ class StreamManager {
       const isVideoFile = channel.input_type === 'video';
       const isRtmpInput = channel.input_type === 'rtmp';
       const isWebcamInput = channel.input_type === 'webcam';
+      const isScreenInput = channel.input_type === 'screen';
 
-      // If input type is RTMP or Webcam, use nginx-rtmp as input source
-      if (isRtmpInput || isWebcamInput) {
-        debugLogger.writeLog(`🚀 StreamManager.startStream() Input type check: isWebcam=${isWebcamInput}, isRtmp=${isRtmpInput}`);
-        if (isWebcamInput) {
-          debugLogger.writeLog(`🚀 StreamManager.startStream() Webcam input detected. status=${channel.status}`);
-          // Check if webcam is already connected (status = waiting_for_input or running)
+      // If input type is RTMP, Webcam, or Screen, use nginx-rtmp as input source
+      if (isRtmpInput || isWebcamInput || isScreenInput) {
+        debugLogger.writeLog(`🚀 StreamManager.startStream() Input type check: isWebcam=${isWebcamInput}, isScreen=${isScreenInput}, isRtmp=${isRtmpInput}`);
+        if (isWebcamInput || isScreenInput) {
+          const inputTypeName = isWebcamInput ? 'Webcam' : 'Screen share';
+          debugLogger.writeLog(`🚀 StreamManager.startStream() ${inputTypeName} input detected. status=${channel.status}`);
+          // Check if webcam/screen is already connected (status = waiting_for_input or running)
           // If it's already waiting or running, this is the platform streaming trigger, NOT the initial setup
           if (channel.status === 'waiting_for_input' || channel.status === 'running') {
             debugLogger.writeLog(`✅ StreamManager.startStream() PLATFORM STREAMING PATH: status=${channel.status}`);
@@ -470,23 +472,25 @@ class StreamManager {
             debugLogger.writeLog(`🔌 Port allocated: ${allocatedPort} for channel ${channelId}`);
             if (!allocatedPort) {
               debugLogger.writeLog(`❌ No port allocated for channel ${channelId}`);
-              logger.error(`[StreamManager] No RTMP port allocated for webcam channel ${channelId}`);
-              throw new Error('No RTMP port allocated for webcam stream');
+              logger.error(`[StreamManager] No RTMP port allocated for ${inputTypeName} channel ${channelId}`);
+              throw new Error(`No RTMP port allocated for ${inputTypeName} stream`);
             }
 
             resolvedInputUrl = `rtmp://127.0.0.1:1935/live/${channel.stream_key}`;
             debugLogger.writeLog(`📡 Resolved input URL: ${resolvedInputUrl}`);
-            logger.info(`[StreamManager] Starting platform streaming for webcam channel ${channelId}`);
+            logger.info(`[StreamManager] Starting platform streaming for ${inputTypeName} channel ${channelId}`);
             logger.info(`[StreamManager] Input: ${resolvedInputUrl} (WebRTC bridge → nginx-rtmp)`);
-            console.log(`[StreamManager] Platform streaming triggered for webcam ${channelId}, pulling from ${resolvedInputUrl}`);
+            console.log(`[StreamManager] Platform streaming triggered for ${inputTypeName} ${channelId}, pulling from ${resolvedInputUrl}`);
 
             // Continue to platform streaming setup below (don't return early)
           } else {
+            const inputTypeName = isWebcamInput ? 'camera' : 'screen share';
+            const waitMessage = isWebcamInput ? 'Waiting for camera connection...' : 'Waiting for screen share connection...';
             debugLogger.writeLog(`⏸️ StreamManager.startStream() INITIAL SETUP PATH: status=${channel.status}, returning early`);
-            // Initial "Go Live" click - webcam not connected yet
+            // Initial "Go Live" click - webcam/screen not connected yet
             // Just update status and return early
-            await Channel.updateStatus(channelId, 'waiting_for_input', null, 'Waiting for camera connection...');
-            logger.info(`[StreamManager] Webcam stream initiated for channel ${channelId}. Waiting for WebRTC connection...`);
+            await Channel.updateStatus(channelId, 'waiting_for_input', null, waitMessage);
+            logger.info(`[StreamManager] ${inputTypeName} stream initiated for channel ${channelId}. Waiting for WebRTC connection...`);
             console.log(`[StreamManager] Channel ${channelId} set to waiting_for_input`);
 
             // FIX: Add a 60-second watchdog to prevent infinite stuck in waiting_for_input
@@ -495,7 +499,7 @@ class StreamManager {
               try {
                 const freshChannel = await Channel.findById(channelId);
                 if (freshChannel && freshChannel.status === 'waiting_for_input') {
-                  logger.warn(`[StreamManager] Webcam connection timeout for channel ${channelId}. No camera connected within 60 seconds.`);
+                  logger.warn(`[StreamManager] ${inputTypeName} connection timeout for channel ${channelId}. No connection within 60 seconds.`);
                   console.log(`[StreamManager Watchdog] Channel ${channelId} stuck in waiting_for_input. Reverting to stopped.`);
                   await this.stopStream(channelId); // Cleans up and sets status to 'stopped'
                 }
@@ -506,7 +510,7 @@ class StreamManager {
 
             return {
               success: true,
-              message: 'Webcam stream waiting for camera connection. Platform streaming will start automatically.',
+              message: `${inputTypeName} stream waiting for connection. Platform streaming will start automatically.`,
               channelId,
               status: 'waiting_for_input'
             };
@@ -1646,9 +1650,9 @@ class StreamManager {
       // Clear reconnect attempts
       this.reconnectAttempts.delete(channelId);
 
-      // Stop WebRTC bridge if this is a webcam input
+      // Stop WebRTC bridge if this is a webcam or screen share input
       const channel = await Channel.findById(channelId);
-      if (channel && channel.input_type === 'webcam') {
+      if (channel && (channel.input_type === 'webcam' || channel.input_type === 'screen')) {
         try {
           await webrtcBridgeService.stopBridge(channelId);
           logger.info(`WebRTC bridge stopped for channel ${channelId}`);

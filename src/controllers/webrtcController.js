@@ -51,9 +51,9 @@ export const startWebRTC = async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized: You do not own this channel' });
     }
 
-    if (channel.input_type !== 'webcam') {
+    if (channel.input_type !== 'webcam' && channel.input_type !== 'screen') {
       console.log('[WebRTC Start] Invalid input type:', channel.input_type);
-      return res.status(400).json({ error: 'Channel input type must be webcam' });
+      return res.status(400).json({ error: 'Channel input type must be webcam or screen' });
     }
 
     // Check if channel is already streaming

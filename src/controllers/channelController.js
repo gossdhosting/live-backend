@@ -146,8 +146,12 @@ export const createChannel = async (req, res) => {
       // Webcam input type doesn't require input_url or media_file_id
       // Stream will come from WebRTC bridge to nginx-rtmp server via stream key
       logger.info('Creating webcam input channel', { name, userId: req.user.id });
+    } else if (finalInputType === 'screen') {
+      // Screen share input type doesn't require input_url or media_file_id
+      // Stream will come from WebRTC bridge to nginx-rtmp server via stream key
+      logger.info('Creating screen share input channel', { name, userId: req.user.id });
     } else {
-      return res.status(400).json({ error: 'Invalid input type. Must be "youtube", "video", "rtmp", or "webcam"' });
+      return res.status(400).json({ error: 'Invalid input type. Must be "youtube", "video", "rtmp", "webcam", or "screen"' });
     }
 
     // Validate quality preset against plan limits (unless admin)
@@ -249,8 +253,8 @@ export const updateChannel = async (req, res) => {
     }
 
     // Validate input_type if provided
-    if (input_type && !['youtube', 'video', 'rtmp'].includes(input_type)) {
-      return res.status(400).json({ error: 'Invalid input type. Must be "youtube", "video", or "rtmp"' });
+    if (input_type && !['youtube', 'video', 'rtmp', 'webcam', 'screen'].includes(input_type)) {
+      return res.status(400).json({ error: 'Invalid input type. Must be "youtube", "video", "rtmp", "webcam", or "screen"' });
     }
 
     const updateData = {};
