@@ -26,6 +26,7 @@ class WebRTCBridgeService {
     this.platformStreamingStarted = new Map(); // channelId -> boolean (tracks if platform streaming already started)
     this.platformStreamingTimers = new Map(); // channelId -> setTimeout reference (for cleanup)
     this.channelInputTypes = new Map(); // channelId -> input_type ('webcam' or 'screen')
+    this.hasAudioTrack = new Map(); // channelId -> boolean (tracks if audio track received)
 
     // Share Map references with debug logger for state inspection
     debugLogger.constructor.setServiceMaps(
@@ -185,6 +186,12 @@ class WebRTCBridgeService {
         const track = event.track;
         logger.info(`WebRTC track received for channel ${channelId}: ${track.kind}`);
         console.log(`[WebRTC Bridge] Track received - Kind: ${track.kind}, ID: ${track.id}, Label: ${track.label}`);
+
+        // Track if audio is present (important for screen share which may not have audio)
+        if (track.kind === 'audio') {
+          this.hasAudioTrack.set(channelId, true);
+          console.log(`[WebRTC Bridge] Audio track detected for channel ${channelId}`);
+        }
 
         // Check transceiver direction for debugging
         const transceiver = peerConnection.getTransceivers().find(t => t.receiver && t.receiver.track === track);
@@ -859,7 +866,11 @@ class WebRTCBridgeService {
       const rtmpUrl = `rtmp://127.0.0.1:1935/live/${streamKey}`;
 
       console.log(`[startFFmpegBridge] RTMP URL: ${rtmpUrl} (port ${rtmpPort})`);
-      logger.info(`Starting FFmpeg bridge for channel ${channelId}: ${width}x${height} -> ${rtmpUrl}`);
+
+      // Check if audio track is present (important for screen share)
+      const hasAudio = this.hasAudioTrack.get(channelId) || false;
+      console.log(`[startFFmpegBridge] Audio track present: ${hasAudio}`);
+      logger.info(`Starting FFmpeg bridge for channel ${channelId}: ${width}x${height} -> ${rtmpUrl} (audio: ${hasAudio})`);
 
       // OPTIMIZED FFmpeg command for Ultra-Low Latency
       const ffmpegArgs = [
@@ -877,13 +888,21 @@ class WebRTCBridgeService {
         '-framerate', '30',
         '-thread_queue_size', '512',
         '-i', 'pipe:0',
+      ];
 
-        // Audio input (raw PCM from WebRTC)
-        '-f', 's16le',
-        '-ar', '48000',
-        '-ac', '2',
-        '-thread_queue_size', '512',
-        '-i', 'pipe:3',
+      // Only add audio input if audio track is present
+      if (hasAudio) {
+        ffmpegArgs.push(
+          // Audio input (raw PCM from WebRTC)
+          '-f', 's16le',
+          '-ar', '48000',
+          '-ac', '2',
+          '-thread_queue_size', '512',
+          '-i', 'pipe:3'
+        );
+      }
+
+      ffmpegArgs.push(
 
         // Video encoding - TUNED FOR SPEED
         '-c:v', 'libx264',
@@ -896,31 +915,51 @@ class WebRTCBridgeService {
         '-g', '30',              // 1 keyframe/sec helps player sync faster
         '-keyint_min', '30',
         '-sc_threshold', '0',
-        '-x264opts', 'no-scenecut:ref=1:bframes=0',  // Disable B-frames for lower latency
-        // Simple rotation only
-        ...(width === 1280 && height === 720 ? ['-vf', 'transpose=1'] : []),
+        '-x264opts', 'no-scenecut:ref=1:bframes=0'  // Disable B-frames for lower latency
+      );
 
-        // Audio encoding
-        '-c:a', 'aac',
-        '-b:a', '128k',
-        '-ar', '48000',
-        '-ac', '2',
+      // Simple rotation only for webcam
+      if (width === 1280 && height === 720) {
+        ffmpegArgs.push('-vf', 'transpose=1');
+      }
 
-        // Output format
+      // Audio encoding (only if audio track present)
+      if (hasAudio) {
+        ffmpegArgs.push(
+          '-c:a', 'aac',
+          '-b:a', '128k',
+          '-ar', '48000',
+          '-ac', '2'
+        );
+      } else {
+        // No audio - video only
+        ffmpegArgs.push('-an');
+      }
+
+      // Output format
+      ffmpegArgs.push(
         '-f', 'flv',
         '-flvflags', 'no_duration_filesize',  // Don't wait for duration calculation
         rtmpUrl
-      ];
+      );
 
       // CRITICAL FIX: Removed 'nice' wrapper
       // 'nice -n 10' lowers priority, causing FFmpeg to lag behind Node.js
       // Run ffmpeg directly to ensure it gets sufficient CPU time
+      const stdioConfig = hasAudio
+        ? ['pipe', 'pipe', 'pipe', 'pipe'] // stdin, stdout, stderr, pipe:3 (audio)
+        : ['pipe', 'pipe', 'pipe']; // stdin, stdout, stderr (no audio pipe)
+
       const ffmpegProcess = spawn('ffmpeg', ffmpegArgs, {
-        stdio: ['pipe', 'pipe', 'pipe', 'pipe'] // stdin, stdout, stderr, pipe:3 (audio)
+        stdio: stdioConfig
       });
 
-      // Create separate audio stdin
-      ffmpegProcess.audioStdin = ffmpegProcess.stdio[3];
+      // Create separate audio stdin only if audio track present
+      if (hasAudio) {
+        ffmpegProcess.audioStdin = ffmpegProcess.stdio[3];
+      } else {
+        ffmpegProcess.audioStdin = null;
+      }
 
       // Handle FFmpeg stdin errors (CRITICAL: prevents EPIPE/ECONNRESET crashes)
       if (ffmpegProcess.stdin) {
@@ -1065,6 +1104,7 @@ class WebRTCBridgeService {
       this.firstFrameReceived.delete(channelId);
       this.platformStreamingStarted.delete(channelId);
       this.channelInputTypes.delete(channelId);
+      this.hasAudioTrack.delete(channelId);
 
       // Release allocated RTMP port
       const releasedPort = portAllocator.release(channelId);
