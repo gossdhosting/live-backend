@@ -113,9 +113,9 @@ class WebRTCBridgeService {
         throw new Error('Channel not found');
       }
 
-      if (channel.input_type !== 'webcam' && channel.input_type !== 'screen') {
-        debugLogger.writeLog(`ERROR: Channel ${channelId} input_type is ${channel.input_type}, not webcam or screen`);
-        throw new Error('Channel input type must be webcam or screen');
+      if (channel.input_type !== 'webcam') {
+        debugLogger.writeLog(`ERROR: Channel ${channelId} input_type is ${channel.input_type}, not webcam`);
+        throw new Error('Channel input type must be webcam');
       }
 
       // Check if connection already exists - FORCE STOP IT
@@ -224,8 +224,7 @@ class WebRTCBridgeService {
         status: 'initializing',
         startTime: null,
         errors: 0,
-        streamKey,
-        inputType: channel.input_type // Store input type for resolution validation
+        streamKey
       });
 
       logger.info(`WebRTC peer connection created for channel ${channelId}`);
@@ -319,33 +318,12 @@ class WebRTCBridgeService {
               console.log(`[WebRTC Bridge] FIRST FRAME! ${frameResolution} (frameCount: ${frameCount}, process running: ${isProcessRunning})`);
               logger.info(`First video frame received for channel ${channelId}: ${frameResolution} (trigger condition: frameCount=${frameCount}, processRunning=${isProcessRunning})`);
 
-              // CRITICAL: Only accept 1280x720 frames for WEBCAM - drop anything else to prevent 640x360 green tint bug
-              // For SCREEN sharing, accept any resolution
-              const streamState = this.streamStates.get(channelId);
-              let inputType = streamState?.inputType;
-
-              // Fallback: If inputType not in streamState (old connection), fetch from DB
-              if (!inputType) {
-                try {
-                  const channel = await Channel.findById(channelId);
-                  inputType = channel?.input_type || 'webcam';
-                  console.log(`[WebRTC Bridge] Fetched input_type from DB for channel ${channelId}: ${inputType}`);
-                } catch (err) {
-                  logger.warn(`Failed to fetch channel input_type for ${channelId}, defaulting to webcam`);
-                  inputType = 'webcam';
-                }
-              }
-
-              if (inputType === 'webcam' && (frame.width !== 1280 || frame.height !== 720)) {
+              // CRITICAL: Only accept 1280x720 frames - drop anything else to prevent 640x360 green tint bug
+              if (frame.width !== 1280 || frame.height !== 720) {
                 logger.warn(`⚠️ DROPPING FIRST FRAME: Wrong resolution ${frameResolution}, waiting for 1280x720`);
                 console.log(`[WebRTC Bridge] ❌ DROPPING FIRST FRAME: Got ${frameResolution}, need 1280x720`);
                 frameCount = 0; // Reset so next frame is treated as first
                 return; // Skip this frame completely
-              }
-
-              if (inputType === 'screen') {
-                console.log(`[WebRTC Bridge] ✅ Screen share resolution accepted: ${frameResolution}`);
-                logger.info(`Screen share resolution accepted for channel ${channelId}: ${frameResolution}`);
               }
 
               currentResolution = frameResolution;
@@ -514,7 +492,7 @@ class WebRTCBridgeService {
           this.videoSinks.set(channelId, newVideoSink);
 
           // Attach handler immediately this time
-          newVideoSink.onframe = async ({ frame }) => {
+          newVideoSink.onframe = ({ frame }) => {
             try {
               frameCount++;
               const frameResolution = `${frame.width}x${frame.height}`;
@@ -549,33 +527,12 @@ class WebRTCBridgeService {
                 console.log(`[WebRTC Bridge] FIRST FRAME (recreated sink)! ${frameResolution} (frameCount: ${frameCount}, process running: ${isProcessRunning2})`);
                 logger.info(`First video frame received for channel ${channelId} (recreated sink): ${frameResolution} (trigger condition: frameCount=${frameCount}, processRunning=${isProcessRunning2})`);
 
-                // CRITICAL: Only accept 1280x720 frames for WEBCAM - drop anything else to prevent 640x360 green tint bug
-                // For SCREEN sharing, accept any resolution
-                const streamState2 = this.streamStates.get(channelId);
-                let inputType2 = streamState2?.inputType;
-
-                // Fallback: If inputType not in streamState (old connection), fetch from DB
-                if (!inputType2) {
-                  try {
-                    const channel = await Channel.findById(channelId);
-                    inputType2 = channel?.input_type || 'webcam';
-                    console.log(`[WebRTC Bridge] Fetched input_type from DB for channel ${channelId} (recreated sink): ${inputType2}`);
-                  } catch (err) {
-                    logger.warn(`Failed to fetch channel input_type for ${channelId} (recreated sink), defaulting to webcam`);
-                    inputType2 = 'webcam';
-                  }
-                }
-
-                if (inputType2 === 'webcam' && (frame.width !== 1280 || frame.height !== 720)) {
+                // CRITICAL: Only accept 1280x720 frames - drop anything else to prevent 640x360 green tint bug
+                if (frame.width !== 1280 || frame.height !== 720) {
                   logger.warn(`⚠️ DROPPING FIRST FRAME (recreated sink): Wrong resolution ${frameResolution}, waiting for 1280x720`);
                   console.log(`[WebRTC Bridge] ❌ DROPPING FIRST FRAME (recreated sink): Got ${frameResolution}, need 1280x720`);
                   frameCount = 0; // Reset so next frame is treated as first
                   return; // Skip this frame completely
-                }
-
-                if (inputType2 === 'screen') {
-                  console.log(`[WebRTC Bridge] ✅ Screen share resolution accepted (recreated sink): ${frameResolution}`);
-                  logger.info(`Screen share resolution accepted for channel ${channelId} (recreated sink): ${frameResolution}`);
                 }
 
                 currentResolution = frameResolution;
