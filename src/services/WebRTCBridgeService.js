@@ -923,17 +923,24 @@ class WebRTCBridgeService {
         ffmpegArgs.push('-vf', 'transpose=1');
       }
 
-      // Audio encoding (only if audio track present)
+      // Stream mapping and audio encoding
       if (hasAudio) {
         ffmpegArgs.push(
+          // Map both video and audio
+          '-map', '0:v',
+          '-map', '1:a',
+          // Audio encoding
           '-c:a', 'aac',
           '-b:a', '128k',
           '-ar', '48000',
           '-ac', '2'
         );
       } else {
-        // No audio - video only
-        ffmpegArgs.push('-an');
+        // No audio - map video only
+        ffmpegArgs.push(
+          '-map', '0:v',
+          '-an'
+        );
       }
 
       // Output format
