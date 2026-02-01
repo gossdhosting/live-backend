@@ -322,7 +322,19 @@ class WebRTCBridgeService {
               // CRITICAL: Only accept 1280x720 frames for WEBCAM - drop anything else to prevent 640x360 green tint bug
               // For SCREEN sharing, accept any resolution
               const streamState = this.streamStates.get(channelId);
-              const inputType = streamState?.inputType || 'webcam';
+              let inputType = streamState?.inputType;
+
+              // Fallback: If inputType not in streamState (old connection), fetch from DB
+              if (!inputType) {
+                try {
+                  const channel = await Channel.findById(channelId);
+                  inputType = channel?.input_type || 'webcam';
+                  console.log(`[WebRTC Bridge] Fetched input_type from DB for channel ${channelId}: ${inputType}`);
+                } catch (err) {
+                  logger.warn(`Failed to fetch channel input_type for ${channelId}, defaulting to webcam`);
+                  inputType = 'webcam';
+                }
+              }
 
               if (inputType === 'webcam' && (frame.width !== 1280 || frame.height !== 720)) {
                 logger.warn(`⚠️ DROPPING FIRST FRAME: Wrong resolution ${frameResolution}, waiting for 1280x720`);
@@ -540,7 +552,19 @@ class WebRTCBridgeService {
                 // CRITICAL: Only accept 1280x720 frames for WEBCAM - drop anything else to prevent 640x360 green tint bug
                 // For SCREEN sharing, accept any resolution
                 const streamState2 = this.streamStates.get(channelId);
-                const inputType2 = streamState2?.inputType || 'webcam';
+                let inputType2 = streamState2?.inputType;
+
+                // Fallback: If inputType not in streamState (old connection), fetch from DB
+                if (!inputType2) {
+                  try {
+                    const channel = await Channel.findById(channelId);
+                    inputType2 = channel?.input_type || 'webcam';
+                    console.log(`[WebRTC Bridge] Fetched input_type from DB for channel ${channelId} (recreated sink): ${inputType2}`);
+                  } catch (err) {
+                    logger.warn(`Failed to fetch channel input_type for ${channelId} (recreated sink), defaulting to webcam`);
+                    inputType2 = 'webcam';
+                  }
+                }
 
                 if (inputType2 === 'webcam' && (frame.width !== 1280 || frame.height !== 720)) {
                   logger.warn(`⚠️ DROPPING FIRST FRAME (recreated sink): Wrong resolution ${frameResolution}, waiting for 1280x720`);
