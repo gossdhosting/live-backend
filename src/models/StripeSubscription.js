@@ -163,6 +163,17 @@ class StripeSubscription {
     const query = 'DELETE FROM stripe_subscriptions WHERE stripe_subscription_id = $1';
     await db.query(query, [stripeSubscriptionId]);
   }
+
+  static async updatePaymentMethod(stripeSubscriptionId, paymentMethod) {
+    const query = `
+      UPDATE stripe_subscriptions
+      SET default_payment_method = $1, updated_at = CURRENT_TIMESTAMP
+      WHERE stripe_subscription_id = $2
+      RETURNING *
+    `;
+    const result = await db.query(query, [JSON.stringify(paymentMethod), stripeSubscriptionId]);
+    return result.rows[0];
+  }
 }
 
 export default StripeSubscription;

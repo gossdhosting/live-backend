@@ -180,7 +180,46 @@ export async function getSubscription(req, res) {
       return res.json({ subscription: null });
     }
 
-    res.json({ subscription });
+    // Fetch payment method from Stripe if subscription exists
+    let paymentMethod = subscription.default_payment_method;
+
+    // If payment method not in DB or needs refresh, fetch from Stripe
+    if (!paymentMethod && subscription.stripe_subscription_id) {
+      try {
+        const stripe = stripeConfig.getStripe();
+        const stripeSubscription = await stripe.subscriptions.retrieve(subscription.stripe_subscription_id);
+
+        if (stripeSubscription.default_payment_method) {
+          // Fetch the full payment method details
+          const pm = await stripe.paymentMethods.retrieve(stripeSubscription.default_payment_method);
+          paymentMethod = {
+            id: pm.id,
+            type: pm.type,
+            card: pm.card ? {
+              brand: pm.card.brand,
+              last4: pm.card.last4,
+              exp_month: pm.card.exp_month,
+              exp_year: pm.card.exp_year
+            } : null
+          };
+
+          // Update DB with payment method for future requests
+          await StripeSubscription.updatePaymentMethod(subscription.stripe_subscription_id, paymentMethod);
+        }
+      } catch (stripeError) {
+        logger.warn('Failed to fetch payment method from Stripe', {
+          error: stripeError.message,
+          subscriptionId: subscription.stripe_subscription_id
+        });
+      }
+    }
+
+    res.json({
+      subscription: {
+        ...subscription,
+        default_payment_method: paymentMethod
+      }
+    });
   } catch (error) {
     logger.error('Stripe: Failed to get subscription', {
       error: error.message,
