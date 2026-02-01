@@ -514,7 +514,7 @@ class WebRTCBridgeService {
           this.videoSinks.set(channelId, newVideoSink);
 
           // Attach handler immediately this time
-          newVideoSink.onframe = ({ frame }) => {
+          newVideoSink.onframe = async ({ frame }) => {
             try {
               frameCount++;
               const frameResolution = `${frame.width}x${frame.height}`;
