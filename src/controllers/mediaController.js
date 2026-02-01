@@ -225,7 +225,11 @@ export const getMediaUrl = async (req, res) => {
     if (mediaFile.storage_type === 's3' && mediaFile.s3_key) {
       accessUrl = await MediaFile.getSignedUrl(id);
     } else {
-      accessUrl = mediaFile.file_path;
+      // Convert file system path to HTTP URL
+      // file_path format: /var/www/backend/uploads/media/filename.mp4
+      // We need: http://domain/uploads/media/filename.mp4
+      const filename = path.basename(mediaFile.file_path);
+      accessUrl = `${process.env.BACKEND_URL || req.protocol + '://' + req.get('host')}/uploads/media/${filename}`;
     }
 
     logger.info('Media URL generated', { mediaId: id, userId: req.user.id, storageType: mediaFile.storage_type });
