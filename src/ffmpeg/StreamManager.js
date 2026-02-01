@@ -530,12 +530,26 @@ class StreamManager {
           throw new Error('Selected media file not found');
         }
 
-        if (!fs.existsSync(mediaFile.file_path)) {
-          throw new Error(`Media file not found at path: ${mediaFile.file_path}`);
-        }
+        // Check if it's an S3 URL or local file
+        const isS3File = mediaFile.file_path && (
+          mediaFile.file_path.startsWith('http://') ||
+          mediaFile.file_path.startsWith('https://') ||
+          mediaFile.file_path.includes('s3.') ||
+          mediaFile.file_path.includes('.amazonaws.com')
+        );
 
-        resolvedInputUrl = mediaFile.file_path;
-        logger.info(`Using video file for channel ${channelId}: ${mediaFile.original_name}`);
+        if (isS3File) {
+          // For S3 files, use the URL directly
+          resolvedInputUrl = mediaFile.file_path;
+          logger.info(`Using S3 video file for channel ${channelId}: ${mediaFile.original_name} (${mediaFile.file_path})`);
+        } else {
+          // For local files, check if file exists
+          if (!fs.existsSync(mediaFile.file_path)) {
+            throw new Error(`Media file not found at path: ${mediaFile.file_path}`);
+          }
+          resolvedInputUrl = mediaFile.file_path;
+          logger.info(`Using local video file for channel ${channelId}: ${mediaFile.original_name}`);
+        }
       } else if (resolvedInputUrl && (resolvedInputUrl.includes('youtube.com') || resolvedInputUrl.includes('youtu.be'))) {
         logger.info(`Resolving YouTube URL for channel ${channelId}`);
 
