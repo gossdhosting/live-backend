@@ -64,13 +64,16 @@ router.get('/', async (req, res) => {
       s.name === 'streaming-backend' && s.status === 'online'
     );
 
+    // Actually check if nginx-rtmp is listening on port 1935
+    const rtmpOnline = await checkPort('127.0.0.1', 1935);
+
     // Compile response with minimal public information
     res.json({
       timestamp: new Date().toISOString(),
       status: 'ok',
       services: {
         backend: backendOnline ? 'online' : 'offline',
-        rtmp: backendOnline ? 'online' : 'offline',
+        rtmp: rtmpOnline ? 'online' : 'offline',
         webrtc: backendOnline ? 'online' : 'offline'
       },
       features: {
