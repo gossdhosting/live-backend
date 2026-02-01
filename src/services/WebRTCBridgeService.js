@@ -113,9 +113,9 @@ class WebRTCBridgeService {
         throw new Error('Channel not found');
       }
 
-      if (channel.input_type !== 'webcam') {
-        debugLogger.writeLog(`ERROR: Channel ${channelId} input_type is ${channel.input_type}, not webcam`);
-        throw new Error('Channel input type must be webcam');
+      if (channel.input_type !== 'webcam' && channel.input_type !== 'screen') {
+        debugLogger.writeLog(`ERROR: Channel ${channelId} input_type is ${channel.input_type}, must be webcam or screen`);
+        throw new Error('Channel input type must be webcam or screen');
       }
 
       // Check if connection already exists - FORCE STOP IT
