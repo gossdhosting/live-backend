@@ -25,6 +25,7 @@ class WebRTCBridgeService {
     this.firstFrameReceived = new Map(); // channelId -> boolean (tracks if first frame received)
     this.platformStreamingStarted = new Map(); // channelId -> boolean (tracks if platform streaming already started)
     this.platformStreamingTimers = new Map(); // channelId -> setTimeout reference (for cleanup)
+    this.channelInputTypes = new Map(); // channelId -> input_type ('webcam' or 'screen')
 
     // Share Map references with debug logger for state inspection
     debugLogger.constructor.setServiceMaps(
@@ -117,6 +118,10 @@ class WebRTCBridgeService {
         debugLogger.writeLog(`ERROR: Channel ${channelId} input_type is ${channel.input_type}, must be webcam or screen`);
         throw new Error('Channel input type must be webcam or screen');
       }
+
+      // Store input type for use in callbacks where channel object isn't available
+      this.channelInputTypes.set(channelId, channel.input_type);
+      console.log(`[WebRTC Bridge] Stored input type for channel ${channelId}: ${channel.input_type}`);
 
       // Check if connection already exists - FORCE STOP IT
       const hasExisting = this.peerConnections.has(channelId);
@@ -320,14 +325,15 @@ class WebRTCBridgeService {
 
               // CRITICAL: For webcam, only accept 1280x720 to prevent 640x360 green tint bug
               // For screen share, accept any resolution since screens vary
-              if (channel.input_type === 'webcam' && (frame.width !== 1280 || frame.height !== 720)) {
+              const inputType = this.channelInputTypes.get(channelId) || 'webcam';
+              if (inputType === 'webcam' && (frame.width !== 1280 || frame.height !== 720)) {
                 logger.warn(`⚠️ DROPPING WEBCAM FRAME: Wrong resolution ${frameResolution}, waiting for 1280x720`);
                 console.log(`[WebRTC Bridge] ❌ DROPPING WEBCAM FRAME: Got ${frameResolution}, need 1280x720`);
                 frameCount = 0; // Reset so next frame is treated as first
                 return; // Skip this frame completely
               }
 
-              if (channel.input_type === 'screen') {
+              if (inputType === 'screen') {
                 console.log(`[WebRTC Bridge] ✅ ACCEPTING SCREEN SHARE FRAME: ${frameResolution}`);
                 logger.info(`Screen share frame accepted for channel ${channelId}: ${frameResolution}`);
               }
@@ -535,14 +541,15 @@ class WebRTCBridgeService {
 
                 // CRITICAL: For webcam, only accept 1280x720 to prevent 640x360 green tint bug
                 // For screen share, accept any resolution since screens vary
-                if (channel.input_type === 'webcam' && (frame.width !== 1280 || frame.height !== 720)) {
+                const inputType = this.channelInputTypes.get(channelId) || 'webcam';
+                if (inputType === 'webcam' && (frame.width !== 1280 || frame.height !== 720)) {
                   logger.warn(`⚠️ DROPPING WEBCAM FRAME (recreated sink): Wrong resolution ${frameResolution}, waiting for 1280x720`);
                   console.log(`[WebRTC Bridge] ❌ DROPPING WEBCAM FRAME (recreated sink): Got ${frameResolution}, need 1280x720`);
                   frameCount = 0; // Reset so next frame is treated as first
                   return; // Skip this frame completely
                 }
 
-                if (channel.input_type === 'screen') {
+                if (inputType === 'screen') {
                   console.log(`[WebRTC Bridge] ✅ ACCEPTING SCREEN SHARE FRAME (recreated sink): ${frameResolution}`);
                   logger.info(`Screen share frame accepted for channel ${channelId} (recreated sink): ${frameResolution}`);
                 }
@@ -1057,6 +1064,7 @@ class WebRTCBridgeService {
       this.ffmpegStdinClosed.delete(channelId);
       this.firstFrameReceived.delete(channelId);
       this.platformStreamingStarted.delete(channelId);
+      this.channelInputTypes.delete(channelId);
 
       // Release allocated RTMP port
       const releasedPort = portAllocator.release(channelId);
