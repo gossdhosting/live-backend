@@ -556,13 +556,13 @@ class StreamManager {
         });
       }
 
-      // --- HANDLE INPUT TYPE (YOUTUBE VS VIDEO FILE VS RTMP VS WEBCAM) ---
+      // --- HANDLE INPUT TYPE (YOUTUBE VS VIDEO FILE VS RTMP VS WEBCAM VS SCREEN) ---
       let resolvedInputUrl = channel.input_url;
       const isVideoFile = channel.input_type === 'video';
       const isRtmpInput = channel.input_type === 'rtmp';
-      const isWebcamInput = channel.input_type === 'webcam';
+      const isWebcamInput = channel.input_type === 'webcam' || channel.input_type === 'screen';
 
-      // If input type is RTMP or Webcam, use nginx-rtmp as input source
+      // If input type is RTMP or Webcam/Screen, use nginx-rtmp as input source
       if (isRtmpInput || isWebcamInput) {
         debugLogger.writeLog(`🚀 StreamManager.startStream() Input type check: isWebcam=${isWebcamInput}, isRtmp=${isRtmpInput}`);
         if (isWebcamInput) {
@@ -1785,9 +1785,9 @@ class StreamManager {
       // Clear reconnect attempts
       this.reconnectAttempts.delete(channelId);
 
-      // Stop WebRTC bridge if this is a webcam input
+      // Stop WebRTC bridge if this is a webcam or screen input
       const channel = await Channel.findById(channelId);
-      if (channel && channel.input_type === 'webcam') {
+      if (channel && (channel.input_type === 'webcam' || channel.input_type === 'screen')) {
         try {
           await webrtcBridgeService.stopBridge(channelId);
           logger.info(`WebRTC bridge stopped for channel ${channelId}`);
