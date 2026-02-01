@@ -14,8 +14,6 @@ import logger from '../utils/logger.js';
 import debugLogger from '../utils/debugLogger.js';
 import webrtcBridgeService from '../services/WebRTCBridgeService.js';
 import portAllocator from '../services/PortAllocator.js';
-import stateManager from '../services/StateManager.js';
-import OneSignalService from '../services/OneSignalService.js';
 
 class StreamManager {
   constructor() {
@@ -59,9 +57,6 @@ class StreamManager {
     // Initialize on startup: cleanup orphans and restore auto-restart streams
     this.initializeOnStartup();
 
-    // Cleanup orphaned state in Redis and adopt running streams
-    this.initializeRedisState();
-
     // Start health check interval
     this.startHealthMonitoring();
 
@@ -80,20 +75,6 @@ class StreamManager {
       });
     } catch (error) {
       logger.error('Failed to create directories', { error: error.message });
-    }
-  }
-
-  // Initialize Redis state on startup
-  async initializeRedisState() {
-    try {
-      await new Promise(resolve => setTimeout(resolve, 3000)); // Wait for Redis connection
-      logger.info('Cleaning up orphaned Redis state...');
-      await stateManager.cleanupOrphanedState();
-      logger.info('Adopting orphaned streams from Redis...');
-      await stateManager.adoptOrphanedStreams();
-      logger.info('Redis state initialization complete');
-    } catch (error) {
-      logger.error('Failed to initialize Redis state', { error: error.message });
     }
   }
 
@@ -229,103 +210,15 @@ class StreamManager {
     }, 30000); // Check every 30 seconds
   }
 
-  // Get encoding parameters from database settings
-  async getEncodingSettings() {
-    try {
-      const settings = await Settings.getAll();
-      const settingsMap = {};
-      settings.forEach(s => {
-        settingsMap[s.key] = s.value;
-      });
-
-      return {
-        encoder: settingsMap.ffmpeg_encoder || 'libx264',
-        preset: settingsMap.ffmpeg_preset || 'veryfast',
-        tune: settingsMap.ffmpeg_tune || 'zerolatency',
-        profile: settingsMap.ffmpeg_profile || 'main',
-        level: settingsMap.ffmpeg_level || '4.1',
-        fps: settingsMap.ffmpeg_fps || '30',
-        audioBitrate: `${settingsMap.ffmpeg_audio_bitrate || '128'}k`,
-        audioSampleRate: settingsMap.ffmpeg_audio_sample_rate || '48000',
-        keyframeInterval: settingsMap.ffmpeg_keyframe_interval || '60'
-      };
-    } catch (error) {
-      logger.error('Failed to fetch encoding settings from database, using defaults', { error: error.message });
-      // Fallback to hardcoded defaults if database read fails
-      return {
-        preset: 'veryfast',
-        tune: 'zerolatency',
-        profile: 'main',
-        level: '4.1',
-        fps: '30',
-        audioBitrate: '128k',
-        audioSampleRate: '48000',
-        keyframeInterval: '60'
-      };
-    }
-  }
-
-  // Build encoder-specific arguments (hardware encoders don't support all libx264 parameters)
-  getEncoderSpecificArgs(encoder, encodingSettings, streamIndex = null) {
-    const isHardwareEncoder = encoder !== 'libx264';
-    const suffix = streamIndex !== null ? `:v:${streamIndex}` : '';
-    const args = [];
-
-    // Encoder
-    args.push('-c:v' + suffix, encoder);
-
-    // Preset (supported by all encoders)
-    args.push('-preset' + suffix, encodingSettings.preset);
-
-    // Tune (only supported by libx264, not by hardware encoders)
-    if (!isHardwareEncoder) {
-      args.push('-tune' + suffix, encodingSettings.tune);
-    }
-
-    return args;
-  }
-
   // Get platform-specific encoding settings
-  // Get resolution from quality preset (now reads from database settings)
-  async getResolutionFromPreset(preset) {
-    try {
-      // Fetch quality settings from database
-      const settings = await Settings.getAll();
-      const settingsMap = {};
-      settings.forEach(s => {
-        settingsMap[s.key] = s.value;
-      });
-
-      // Build resolution object from database settings
-      const resolutions = {
-        '480p': {
-          width: parseInt(settingsMap.quality_480p_width || '854'),
-          height: parseInt(settingsMap.quality_480p_height || '480'),
-          bitrate: `${settingsMap.quality_480p_bitrate || '2500'}k`
-        },
-        '720p': {
-          width: parseInt(settingsMap.quality_720p_width || '1280'),
-          height: parseInt(settingsMap.quality_720p_height || '720'),
-          bitrate: `${settingsMap.quality_720p_bitrate || '4000'}k`
-        },
-        '1080p': {
-          width: parseInt(settingsMap.quality_1080p_width || '1920'),
-          height: parseInt(settingsMap.quality_1080p_height || '1080'),
-          bitrate: `${settingsMap.quality_1080p_bitrate || '6000'}k`
-        }
-      };
-
-      return resolutions[preset] || resolutions['720p'];
-    } catch (error) {
-      logger.error('Failed to fetch quality settings from database, using defaults', { error: error.message });
-      // Fallback to hardcoded defaults if database read fails
-      const resolutions = {
-        '480p': { width: 854, height: 480, bitrate: '2500k' },
-        '720p': { width: 1280, height: 720, bitrate: '4000k' },
-        '1080p': { width: 1920, height: 1080, bitrate: '6000k' },
-      };
-      return resolutions[preset] || resolutions['720p'];
-    }
+  // Get resolution from quality preset
+  getResolutionFromPreset(preset) {
+    const resolutions = {
+      '480p': { width: 854, height: 480, bitrate: '2500k' },
+      '720p': { width: 1280, height: 720, bitrate: '4000k' },
+      '1080p': { width: 1920, height: 1080, bitrate: '6000k' },
+    };
+    return resolutions[preset] || resolutions['720p'];
   }
 
   // Sanitize stream key to prevent path traversal attacks
@@ -556,13 +449,13 @@ class StreamManager {
         });
       }
 
-      // --- HANDLE INPUT TYPE (YOUTUBE VS VIDEO FILE VS RTMP VS WEBCAM VS SCREEN) ---
+      // --- HANDLE INPUT TYPE (YOUTUBE VS VIDEO FILE VS RTMP VS WEBCAM) ---
       let resolvedInputUrl = channel.input_url;
       const isVideoFile = channel.input_type === 'video';
       const isRtmpInput = channel.input_type === 'rtmp';
-      const isWebcamInput = channel.input_type === 'webcam' || channel.input_type === 'screen';
+      const isWebcamInput = channel.input_type === 'webcam';
 
-      // If input type is RTMP or Webcam/Screen, use nginx-rtmp as input source
+      // If input type is RTMP or Webcam, use nginx-rtmp as input source
       if (isRtmpInput || isWebcamInput) {
         debugLogger.writeLog(`🚀 StreamManager.startStream() Input type check: isWebcam=${isWebcamInput}, isRtmp=${isRtmpInput}`);
         if (isWebcamInput) {
@@ -581,11 +474,10 @@ class StreamManager {
               throw new Error('No RTMP port allocated for webcam stream');
             }
 
-            // Use nginx-rtmp on port 1935 - unique stream keys prevent conflicts
-            resolvedInputUrl = `rtmp://127.0.0.1:1935/live/${channel.stream_key}`;
+            resolvedInputUrl = `rtmp://streaming.rexstream.net:${allocatedPort}/live/${channel.stream_key}`;
             debugLogger.writeLog(`📡 Resolved input URL: ${resolvedInputUrl}`);
             logger.info(`[StreamManager] Starting platform streaming for webcam channel ${channelId}`);
-            logger.info(`[StreamManager] Input: ${resolvedInputUrl} (WebRTC bridge → nginx-rtmp on port 1935)`);
+            logger.info(`[StreamManager] Input: ${resolvedInputUrl} (WebRTC bridge → nginx-rtmp)`);
             console.log(`[StreamManager] Platform streaming triggered for webcam ${channelId}, pulling from ${resolvedInputUrl}`);
 
             // Continue to platform streaming setup below (don't return early)
@@ -638,20 +530,12 @@ class StreamManager {
           throw new Error('Selected media file not found');
         }
 
-        // Handle S3 storage vs local storage
-        if (mediaFile.storage_type === 's3' && mediaFile.s3_key) {
-          // For S3 files, use cache to avoid repeated downloads and reduce costs
-          const MediaCacheService = (await import('../services/MediaCacheService.js')).default;
-          resolvedInputUrl = await MediaCacheService.getCachedFile(mediaFile.s3_key, mediaFile.file_size);
-          logger.info(`Using cached S3 video file for channel ${channelId}: ${mediaFile.original_name} (S3: ${mediaFile.s3_key})`);
-        } else {
-          // For local files, use the file path
-          if (!fs.existsSync(mediaFile.file_path)) {
-            throw new Error(`Media file not found at path: ${mediaFile.file_path}`);
-          }
-          resolvedInputUrl = mediaFile.file_path;
-          logger.info(`Using local video file for channel ${channelId}: ${mediaFile.original_name}`);
+        if (!fs.existsSync(mediaFile.file_path)) {
+          throw new Error(`Media file not found at path: ${mediaFile.file_path}`);
         }
+
+        resolvedInputUrl = mediaFile.file_path;
+        logger.info(`Using video file for channel ${channelId}: ${mediaFile.original_name}`);
       } else if (resolvedInputUrl && (resolvedInputUrl.includes('youtube.com') || resolvedInputUrl.includes('youtu.be'))) {
         logger.info(`Resolving YouTube URL for channel ${channelId}`);
 
@@ -827,11 +711,9 @@ class StreamManager {
       // PostgreSQL returns boolean as true/false, SQLite as 1/0
       const hasCustomWatermark = userPlan && (userPlan.custom_watermark === true || userPlan.custom_watermark === 1);
 
-      // Get default watermark settings (async)
-      const defaultWatermarkEnabledSetting = await Settings.get('default_watermark_enabled');
-      const defaultWatermarkPathSetting = await Settings.get('default_watermark_path');
-      const defaultWatermarkEnabled = defaultWatermarkEnabledSetting?.value === '1';
-      const defaultWatermarkPath = defaultWatermarkPathSetting?.value;
+      // Get default watermark settings
+      const defaultWatermarkEnabled = Settings.get('default_watermark_enabled')?.value === '1';
+      const defaultWatermarkPath = Settings.get('default_watermark_path')?.value;
 
       // Get user-level watermark settings (async calls)
       const userWatermarkPathSetting = await UserSettings.get(channel.user_id, 'watermark_path');
@@ -870,12 +752,9 @@ class StreamManager {
       } else if (!hasCustomWatermark && defaultWatermarkEnabled && defaultWatermarkPath && fs.existsSync(defaultWatermarkPath)) {
         // Use default watermark ONLY if user doesn't have custom watermark permission
         watermarkPath = defaultWatermarkPath;
-        const defaultPositionSetting = await Settings.get('default_watermark_position');
-        const defaultOpacitySetting = await Settings.get('default_watermark_opacity');
-        const defaultScaleSetting = await Settings.get('default_watermark_scale');
-        watermarkPosition = defaultPositionSetting?.value || 'bottom-right';
-        watermarkOpacity = parseFloat(defaultOpacitySetting?.value) || 0.7;
-        watermarkScale = parseFloat(defaultScaleSetting?.value) || 0.15;
+        watermarkPosition = Settings.get('default_watermark_position')?.value || 'bottom-right';
+        watermarkOpacity = parseFloat(Settings.get('default_watermark_opacity')?.value) || 0.7;
+        watermarkScale = parseFloat(Settings.get('default_watermark_scale')?.value) || 0.15;
         logger.info(`Using default watermark for channel ${channelId} (no custom watermark permission)`, { path: watermarkPath });
       } else if (hasCustomWatermark) {
         // User has custom watermark permission but hasn't enabled it - no watermark at all
@@ -886,10 +765,7 @@ class StreamManager {
 
       // Get quality preset resolution
       const qualityPreset = channel.quality_preset || '720p';
-      let resolution = await this.getResolutionFromPreset(qualityPreset);
-
-      // Get encoding settings from database
-      const encodingSettings = await this.getEncodingSettings();
+      let resolution = this.getResolutionFromPreset(qualityPreset);
 
       // Apply video orientation - convert to portrait (9:16) if needed
       if (videoOrientation === '9:16') {
@@ -904,7 +780,7 @@ class StreamManager {
       }
 
       // Get threading setting from database
-      const threadingSetting = await Settings.get('ffmpeg_threading');
+      const threadingSetting = Settings.get('ffmpeg_threading');
       let threads;
 
       if (threadingSetting?.value) {
@@ -1163,42 +1039,44 @@ class StreamManager {
       if (hasMixedOrientations) {
         // MIXED ORIENTATIONS: Dual encoding chains with separate tee muxers
 
-        // Landscape encoding chain (using database settings)
-        ffmpegArgs.push('-map', '[out_land]');
-        ffmpegArgs.push(...this.getEncoderSpecificArgs(encodingSettings.encoder, encodingSettings, 0));
+        // Landscape encoding chain
         ffmpegArgs.push(
+          '-map', '[out_land]',
+          '-c:v:0', 'libx264',
+          '-preset:v:0', 'ultrafast',
+          '-tune:v:0', 'zerolatency',
           '-pix_fmt:v:0', 'yuv420p',
           '-flags:v:0', '+global_header',
-          '-g:v:0', encodingSettings.keyframeInterval,
-          '-keyint_min:v:0', encodingSettings.keyframeInterval,
+          '-g:v:0', '60',
+          '-keyint_min:v:0', '60',
           '-sc_threshold:v:0', '0',
           '-b:v:0', landscapeResolution.bitrate,
           '-maxrate:v:0', landscapeResolution.bitrate,
           '-bufsize:v:0', `${parseInt(landscapeResolution.bitrate) * 2}k`,
-          '-profile:v:0', encodingSettings.profile,
-          '-level:v:0', encodingSettings.level,
-          '-r:v:0', encodingSettings.fps
+          '-profile:v:0', 'main',
+          '-level:v:0', '4.1'
         );
 
-        // Portrait encoding chain (using database settings)
-        ffmpegArgs.push('-map', '[out_port]');
-        ffmpegArgs.push(...this.getEncoderSpecificArgs(encodingSettings.encoder, encodingSettings, 1));
+        // Portrait encoding chain
         ffmpegArgs.push(
+          '-map', '[out_port]',
+          '-c:v:1', 'libx264',
+          '-preset:v:1', 'ultrafast',
+          '-tune:v:1', 'zerolatency',
           '-pix_fmt:v:1', 'yuv420p',
           '-flags:v:1', '+global_header',
-          '-g:v:1', encodingSettings.keyframeInterval,
-          '-keyint_min:v:1', encodingSettings.keyframeInterval,
+          '-g:v:1', '60',
+          '-keyint_min:v:1', '60',
           '-sc_threshold:v:1', '0',
           '-b:v:1', portraitResolution.bitrate,
           '-maxrate:v:1', portraitResolution.bitrate,
           '-bufsize:v:1', `${parseInt(portraitResolution.bitrate) * 2}k`,
-          '-profile:v:1', encodingSettings.profile,
-          '-level:v:1', encodingSettings.level,
-          '-r:v:1', encodingSettings.fps
+          '-profile:v:1', 'main',
+          '-level:v:1', '4.1'
         );
 
-        // Audio encoding (shared by both) - using database settings
-        ffmpegArgs.push('-map', '0:a?', '-c:a', 'aac', '-b:a', encodingSettings.audioBitrate, '-ar', encodingSettings.audioSampleRate);
+        // Audio encoding (shared by both)
+        ffmpegArgs.push('-map', '0:a?', '-c:a', 'aac', '-b:a', '128k', '-ar', '48000');
 
         // Build separate tee outputs for landscape and portrait
         const landscapeTeeOutputs = [];
@@ -1238,27 +1116,28 @@ class StreamManager {
         // SINGLE ORIENTATION: Original single-encode behavior
 
         if (needsEncoding) {
-          // Single encoder for all outputs (using database settings)
-          ffmpegArgs.push(...this.getEncoderSpecificArgs(encodingSettings.encoder, encodingSettings));
+          // Single encoder for all outputs
           ffmpegArgs.push(
+            '-c:v', 'libx264',
+            '-preset', 'ultrafast',
+            '-tune', 'zerolatency',
             '-pix_fmt', 'yuv420p',
             '-flags', '+global_header',
-            '-g', encodingSettings.keyframeInterval,
-            '-keyint_min', encodingSettings.keyframeInterval,
+            '-g', '60',
+            '-keyint_min', '60',
             '-sc_threshold', '0',
             '-b:v', resolution.bitrate,
             '-maxrate', resolution.bitrate,
             '-bufsize', `${parseInt(resolution.bitrate) * 2}k`,
-            '-profile:v', encodingSettings.profile,
-            '-level', encodingSettings.level,
-            '-r', encodingSettings.fps
+            '-profile:v', 'main',
+            '-level', '4.1'
           );
         } else {
           ffmpegArgs.push('-c:v', 'copy');
         }
 
-        // Audio encoding once (AAC for RTMP compatibility) - using database settings
-        ffmpegArgs.push('-c:a', 'aac', '-b:a', encodingSettings.audioBitrate, '-ar', encodingSettings.audioSampleRate);
+        // Audio encoding once (AAC for RTMP compatibility)
+        ffmpegArgs.push('-c:a', 'aac', '-b:a', '128k', '-ar', '48000');
 
         // Map once - tee muxer will distribute the encoded stream
         if (needsEncoding) {
@@ -1364,27 +1243,9 @@ class StreamManager {
         resolution: `${resolution.width}x${resolution.height}`,
       });
 
-      // Save stream state to Redis for recovery
-      await stateManager.saveStreamState(channelId, {
-        pid: ffmpegProcess.pid,
-        status: 'running',
-        startTime: Date.now(),
-        qualityPreset
-      });
-
       // Update channel status
       Channel.updateStatus(channelId, 'running', ffmpegProcess.pid, null);
       Channel.addLog(channelId, 'info', 'Stream started successfully');
-
-      // Send OneSignal notification
-      try {
-        const playerId = await User.getOneSignalPlayerId(channel.user_id);
-        if (playerId) {
-          await OneSignalService.notifyStreamStarted(playerId, channel.name);
-        }
-      } catch (notifError) {
-        logger.error('Failed to send stream started notification', { error: notifError.message });
-      }
 
       // Auto-update RTMP connection status after 5 seconds as fallback
       // This handles cases where FFmpeg doesn't output connection messages
@@ -1653,16 +1514,6 @@ class StreamManager {
           Channel.updateStatus(channelId, 'error', null, errorMsg);
           Channel.addLog(channelId, 'error', errorMsg);
 
-          // Send OneSignal error notification
-          try {
-            const playerId = await User.getOneSignalPlayerId(currentChannel.user_id);
-            if (playerId) {
-              await OneSignalService.notifyStreamError(playerId, currentChannel.name, lastError);
-            }
-          } catch (notifError) {
-            logger.error('Failed to send stream error notification', { error: notifError.message });
-          }
-
           // Detect persistent connection errors (RTMP/network issues)
           const isPersistentConnectionError =
             lastError.includes('Input/output error') ||
@@ -1785,9 +1636,9 @@ class StreamManager {
       // Clear reconnect attempts
       this.reconnectAttempts.delete(channelId);
 
-      // Stop WebRTC bridge if this is a webcam or screen input
+      // Stop WebRTC bridge if this is a webcam input
       const channel = await Channel.findById(channelId);
-      if (channel && (channel.input_type === 'webcam' || channel.input_type === 'screen')) {
+      if (channel && channel.input_type === 'webcam') {
         try {
           await webrtcBridgeService.stopBridge(channelId);
           logger.info(`WebRTC bridge stopped for channel ${channelId}`);
@@ -1843,25 +1694,7 @@ class StreamManager {
 
       // HLS cleanup timer removed - no HLS files are generated anymore
 
-      // Clean up Redis state
-      await stateManager.deleteStreamState(channelId);
-      await stateManager.deleteFFmpegProcess(channelId);
-      await stateManager.deleteRtmpStatuses(channelId);
-      logger.info(`Cleaned up Redis state for channel ${channelId}`);
-
       Channel.addLog(channelId, 'info', 'Stream stop requested');
-
-      // Send OneSignal notification
-      try {
-        if (channel) {
-          const playerId = await User.getOneSignalPlayerId(channel.user_id);
-          if (playerId) {
-            await OneSignalService.notifyStreamStopped(playerId, channel.name);
-          }
-        }
-      } catch (notifError) {
-        logger.error('Failed to send stream stopped notification', { error: notifError.message });
-      }
 
       return {
         success: true,

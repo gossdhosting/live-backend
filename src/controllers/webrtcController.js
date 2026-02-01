@@ -51,9 +51,9 @@ export const startWebRTC = async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized: You do not own this channel' });
     }
 
-    if (channel.input_type !== 'webcam' && channel.input_type !== 'screen') {
+    if (channel.input_type !== 'webcam') {
       console.log('[WebRTC Start] Invalid input type:', channel.input_type);
-      return res.status(400).json({ error: 'Channel input type must be webcam or screen' });
+      return res.status(400).json({ error: 'Channel input type must be webcam' });
     }
 
     // Check if channel is already streaming
@@ -140,14 +140,6 @@ export const handleOffer = async (req, res) => {
 
     console.log('[WebRTC Offer] Authorized, processing offer...');
 
-    // Check if peer connection exists, create if missing (race condition handling)
-    if (!webrtcBridgeService.peerConnections.has(channelId)) {
-      console.log('[WebRTC Offer] ⚠️ Peer connection not found, creating it now (race condition fix)');
-      logger.warn(`Peer connection missing for channel ${channelId} during offer, creating now`);
-      await webrtcBridgeService.createPeerConnection(channelId, channel.stream_key);
-      console.log('[WebRTC Offer] Peer connection created successfully');
-    }
-
     // Handle offer and get answer
     const answer = await webrtcBridgeService.handleOffer(channelId, offer);
 
@@ -165,17 +157,8 @@ export const handleOffer = async (req, res) => {
   } catch (error) {
     console.error('[WebRTC Offer] ERROR:', error.message);
     console.error('[WebRTC Offer] Stack:', error.stack);
-    logger.error('Failed to handle WebRTC offer', {
-      error: error.message,
-      stack: error.stack,
-      channelId: req.params.channelId,
-      userId: req.user?.userId,
-      hasOffer: !!req.body.offer
-    });
-    res.status(500).json({
-      error: 'Failed to handle offer',
-      details: error.message
-    });
+    logger.error('Failed to handle WebRTC offer', { error: error.message });
+    res.status(500).json({ error: 'Failed to handle offer' });
   }
 };
 
