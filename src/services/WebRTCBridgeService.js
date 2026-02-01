@@ -844,11 +844,11 @@ class WebRTCBridgeService {
 
       // OPTIMIZED FFmpeg command for Ultra-Low Latency
       const ffmpegArgs = [
-        '-loglevel', 'error',  // Show errors for debugging
+        '-loglevel', 'warning',
         '-threads', '4',
 
         // GLOBAL FLAGS - CRITICAL for low latency
-        '-fflags', '+genpts+nobuffer+igndts',  // Generate PTS, no buffer, ignore DTS
+        '-fflags', '+nobuffer',  // Prevent input buffering
         '-flags', 'low_delay',   // Low delay mode
 
         // Video input (raw YUV420 from WebRTC)
@@ -856,14 +856,14 @@ class WebRTCBridgeService {
         '-pixel_format', 'yuv420p',
         '-video_size', `${width}x${height}`,
         '-framerate', '30',
-        '-thread_queue_size', '1024',  // Increased buffer
+        '-thread_queue_size', '512',
         '-i', 'pipe:0',
 
         // Audio input (raw PCM from WebRTC)
         '-f', 's16le',
         '-ar', '48000',
         '-ac', '2',
-        '-thread_queue_size', '1024',  // Increased buffer
+        '-thread_queue_size', '512',
         '-i', 'pipe:3',
 
         // Video encoding - TUNED FOR SPEED
@@ -886,10 +886,6 @@ class WebRTCBridgeService {
         '-b:a', '128k',
         '-ar', '48000',
         '-ac', '2',
-
-        // Audio/Video sync - prevent blocking
-        '-async', '1',  // Stretch/squeeze audio to match video
-        '-vsync', 'cfr',  // Constant frame rate
 
         // Output format
         '-f', 'flv',
