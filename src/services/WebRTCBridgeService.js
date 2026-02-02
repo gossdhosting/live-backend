@@ -295,6 +295,9 @@ class WebRTCBridgeService {
             const ffmpegProcess = this.ffmpegProcesses.get(channelId);
             const isProcessRunning = ffmpegProcess && !ffmpegProcess.killed && ffmpegProcess.exitCode === null;
 
+            // Check if we're currently starting a process (prevents race condition)
+            const isStarting = this.ffmpegStarting && this.ffmpegStarting.has(channelId);
+
             // Log frame details every 30 frames
             if (frameCount % 30 === 0 || frameCount === 1) {
               debugLogger.frameReceived(channelId, frameCount, frameResolution, !!ffmpegProcess, isProcessRunning);
@@ -302,7 +305,8 @@ class WebRTCBridgeService {
             }
 
             // ZOMBIE DETECTION: If frames are coming but process is dead/missing, we must restart
-            if (frameCount > 1 && !isProcessRunning) {
+            // BUT: Don't trigger if we're currently starting a process (prevents race condition)
+            if (frameCount > 1 && !isProcessRunning && !isStarting) {
               debugLogger.zombieDetected(channelId, frameCount, `Process dead - hasProcess: ${!!ffmpegProcess}, isRunning: ${isProcessRunning}`);
               logger.warn(`ZOMBIE DETECTED for channel ${channelId}: Frame ${frameCount} but no running process. Forcing cleanup and restart.`);
               console.log(`[WebRTC Bridge] 🧟 ZOMBIE CONNECTION: Frame ${frameCount} but process dead. Resetting...`);
@@ -347,8 +351,12 @@ class WebRTCBridgeService {
 
               currentResolution = frameResolution;
 
-              // Only start FFmpeg bridge if not already running
-              if (!isProcessRunning) {
+              // Only start FFmpeg bridge if not already running AND not currently starting
+              if (!isProcessRunning && !isStarting) {
+                // Mark as starting to prevent race condition
+                if (!this.ffmpegStarting) this.ffmpegStarting = new Map();
+                this.ffmpegStarting.set(channelId, true);
+
                 this.startFFmpegBridge(channelId, streamKey, frame);
               }
 
@@ -518,8 +526,12 @@ class WebRTCBridgeService {
               const ffmpegProcess2 = this.ffmpegProcesses.get(channelId);
               const isProcessRunning2 = ffmpegProcess2 && !ffmpegProcess2.killed && ffmpegProcess2.exitCode === null;
 
+              // Check if we're currently starting a process (prevents race condition)
+              const isStarting = this.ffmpegStarting && this.ffmpegStarting.has(channelId);
+
               // ZOMBIE DETECTION: If frames are coming but process is dead/missing, we must restart
-              if (frameCount > 1 && !isProcessRunning2) {
+              // BUT: Don't trigger if we're currently starting a process (prevents race condition)
+              if (frameCount > 1 && !isProcessRunning2 && !isStarting) {
                 logger.warn(`ZOMBIE DETECTED (recreated sink) for channel ${channelId}: Frame ${frameCount} but no running process. Forcing cleanup and restart.`);
                 console.log(`[WebRTC Bridge] 🧟 ZOMBIE CONNECTION (recreated sink): Frame ${frameCount} but process dead. Resetting...`);
 
@@ -555,8 +567,12 @@ class WebRTCBridgeService {
 
                 currentResolution = frameResolution;
 
-                // Only start FFmpeg bridge if not already running
-                if (!isProcessRunning2) {
+                // Only start FFmpeg bridge if not already running AND not currently starting
+                if (!isProcessRunning2 && !isStarting) {
+                  // Mark as starting to prevent race condition
+                  if (!this.ffmpegStarting) this.ffmpegStarting = new Map();
+                  this.ffmpegStarting.set(channelId, true);
+
                   this.startFFmpegBridge(channelId, streamKey, frame);
 
                   // Update channel status to waiting_for_input when WebRTC bridge starts
@@ -1044,6 +1060,11 @@ class WebRTCBridgeService {
       // Store FFmpeg process
       this.ffmpegProcesses.set(channelId, ffmpegProcess);
 
+      // Clear starting flag now that process is stored
+      if (this.ffmpegStarting) {
+        this.ffmpegStarting.delete(channelId);
+      }
+
       // Mark stdin as open
       this.ffmpegStdinClosed.set(channelId, false);
 
@@ -1155,6 +1176,11 @@ class WebRTCBridgeService {
       this.platformStreamingStarted.delete(channelId);
       this.channelInputTypes.delete(channelId);
       this.hasAudioTrack.delete(channelId);
+
+      // Clear starting flag to allow clean restart
+      if (this.ffmpegStarting) {
+        this.ffmpegStarting.delete(channelId);
+      }
 
       // Release allocated RTMP port
       const releasedPort = portAllocator.release(channelId);
