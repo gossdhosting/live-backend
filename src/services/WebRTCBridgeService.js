@@ -187,17 +187,10 @@ class WebRTCBridgeService {
         logger.info(`WebRTC track received for channel ${channelId}: ${track.kind}`);
         console.log(`[WebRTC Bridge] Track received - Kind: ${track.kind}, ID: ${track.id}, Label: ${track.label}`);
 
-        // Track if audio is present
-        // IMPORTANT: Disable audio for screen share due to sync issues causing 0.05x encoding speed
-        // Screen share audio (microphone/system) arrives in bursts, not synchronized with video frames
-        // This causes FFmpeg to wait for audio sync, slowing encoding to unusable speeds
-        const inputType = this.channelInputTypes.get(channelId) || 'webcam';
-        if (track.kind === 'audio' && inputType === 'webcam') {
+        // Track if audio is present (important for screen share which may not have audio)
+        if (track.kind === 'audio') {
           this.hasAudioTrack.set(channelId, true);
           console.log(`[WebRTC Bridge] Audio track detected for channel ${channelId}`);
-        } else if (track.kind === 'audio' && inputType === 'screen') {
-          console.log(`[WebRTC Bridge] Audio track ignored for screen share channel ${channelId} (video-only mode)`);
-          logger.info(`Screen share audio ignored for channel ${channelId} to prevent sync issues`);
         }
 
         // Check transceiver direction for debugging
@@ -890,40 +883,22 @@ class WebRTCBridgeService {
       console.log(`[startFFmpegBridge] Audio track present: ${hasAudio}`);
       logger.info(`Starting FFmpeg bridge for channel ${channelId}: ${width}x${height} -> ${rtmpUrl} (audio: ${hasAudio})`);
 
-      // Build OPTIMIZED video filter for scaling, padding and rotation
-      // KEY: fps reduction FIRST to drop frames before expensive scaling
-      // KEY: Use flags=bilinear for much faster scaling (vs default bicubic)
+      // Build video filter for padding and rotation
       let videoFilter = '';
 
-      // Get input type to determine if this is screen share or webcam
-      const inputType = this.channelInputTypes.get(channelId) || 'webcam';
-
-      // OPTIMIZED FOR SCREEN SHARE: Reduce FPS first, then scale with fast algorithm
-      // fps=20 drops 33% of frames BEFORE scaling (huge CPU savings)
-      // flags=bilinear is 2-3x faster than default bicubic with negligible quality loss
-      if (inputType === 'screen' && (width > 1280 || height > 720)) {
-        console.log(`[startFFmpegBridge] Optimized screen share: ${width}x${height} -> 1280x720 @ 20fps`);
-        logger.info(`Screen share optimized: fps=20, bilinear scaling from ${width}x${height} to 1280x720`);
-        videoFilter = 'fps=20,scale=1280:720:force_original_aspect_ratio=decrease:flags=bilinear,pad=1280:720:(ow-iw)/2:(oh-ih)/2:black';
-      }
-      // For already small screen shares: just reduce FPS
-      else if (inputType === 'screen' && width === 1280 && height === 720) {
-        console.log(`[startFFmpegBridge] Screen share FPS reduction: 30fps -> 20fps`);
-        videoFilter = 'fps=20';
-      }
-      // For webcam or small screen shares: only pad if needed
-      else if (needsPadding) {
+      // Add padding if needed (x264 requires 16-aligned dimensions)
+      if (needsPadding) {
         videoFilter = `pad=${paddedWidth}:${paddedHeight}:(ow-iw)/2:(oh-ih)/2:black`;
       }
 
       // Add rotation for webcam (1280x720 portrait mode)
-      if (inputType === 'webcam' && width === 1280 && height === 720) {
+      if (width === 1280 && height === 720) {
         videoFilter = videoFilter ? `${videoFilter},transpose=1` : 'transpose=1';
       }
 
       // OPTIMIZED FFmpeg command for Ultra-Low Latency
       const ffmpegArgs = [
-        '-loglevel', 'info',  // Increased to debug screen share encoding issues
+        '-loglevel', 'warning',
         '-threads', '4',
 
         // GLOBAL FLAGS - CRITICAL for low latency
@@ -935,7 +910,7 @@ class WebRTCBridgeService {
         '-pixel_format', 'yuv420p',
         '-video_size', `${width}x${height}`,
         '-framerate', '30',
-        '-thread_queue_size', '2048',  // Increased buffer to prevent pipe stalls
+        '-thread_queue_size', '512',
         '-i', 'pipe:0',
       ];
 
@@ -946,14 +921,10 @@ class WebRTCBridgeService {
           '-f', 's16le',
           '-ar', '48000',
           '-ac', '2',
-          '-thread_queue_size', '2048',  // Increased buffer for audio
+          '-thread_queue_size', '512',
           '-i', 'pipe:3'
         );
       }
-
-      // Use lower bitrate for screen share since it's scaled to 1280x720 @ 20fps
-      const videoBitrate = inputType === 'screen' ? '1500k' : '2500k';
-      const videoBufferSize = inputType === 'screen' ? '300k' : '1000k';  // Tighter buffer for lower latency
 
       ffmpegArgs.push(
 
@@ -962,9 +933,9 @@ class WebRTCBridgeService {
         '-preset', 'ultrafast',  // Lowest CPU usage for real-time encoding
         '-tune', 'zerolatency',
         '-pix_fmt', 'yuv420p',
-        '-b:v', videoBitrate,
-        '-maxrate', videoBitrate,     // Match bitrate to prevent spikes
-        '-bufsize', videoBufferSize,  // Small buffer forces low latency
+        '-b:v', '2500k',
+        '-maxrate', '2500k',     // Match bitrate to prevent spikes
+        '-bufsize', '1000k',     // CRITICAL: Small buffer forces low latency
         '-g', '30',              // 1 keyframe/sec helps player sync faster
         '-keyint_min', '30',
         '-sc_threshold', '0',
@@ -1038,8 +1009,6 @@ class WebRTCBridgeService {
       // Handle FFmpeg output
       ffmpegProcess.stderr.on('data', (data) => {
         const message = data.toString();
-        // TEMPORARY: Log ALL output to debug screen share encoding
-        console.log(`[FFmpeg ${channelId}] ${message}`);
         // Only log actual errors, ignore common warnings in low-latency mode
         if ((message.includes('error') || message.includes('Error')) && !message.includes('buffer underflow')) {
           logger.error(`FFmpeg bridge error for channel ${channelId}: ${message}`);
