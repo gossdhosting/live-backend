@@ -1033,6 +1033,8 @@ class WebRTCBridgeService {
       // Handle FFmpeg output
       ffmpegProcess.stderr.on('data', (data) => {
         const message = data.toString();
+        // Log ALL stderr output for debugging
+        console.log(`[FFmpeg WebRTC Bridge stderr] channel ${channelId}:`, message.trim());
         // Only log actual errors, ignore common warnings in low-latency mode
         if ((message.includes('error') || message.includes('Error')) && !message.includes('buffer underflow')) {
           logger.error(`FFmpeg bridge error for channel ${channelId}: ${message}`);
