@@ -296,7 +296,9 @@ class WebRTCBridgeService {
             const isProcessRunning = ffmpegProcess && !ffmpegProcess.killed && ffmpegProcess.exitCode === null;
 
             // Check if we're currently starting a process (prevents race condition)
+            // Also check if process exists in map (even if not fully started yet)
             const isStarting = this.ffmpegStarting && this.ffmpegStarting.has(channelId);
+            const processExists = this.ffmpegProcesses.has(channelId);
 
             // Log frame details every 30 frames
             if (frameCount % 30 === 0 || frameCount === 1) {
@@ -305,8 +307,8 @@ class WebRTCBridgeService {
             }
 
             // ZOMBIE DETECTION: If frames are coming but process is dead/missing, we must restart
-            // BUT: Don't trigger if we're currently starting a process (prevents race condition)
-            if (frameCount > 1 && !isProcessRunning && !isStarting) {
+            // BUT: Don't trigger if we're currently starting a process OR if process exists in map (prevents race condition)
+            if (frameCount > 1 && !isProcessRunning && !isStarting && !processExists) {
               debugLogger.zombieDetected(channelId, frameCount, `Process dead - hasProcess: ${!!ffmpegProcess}, isRunning: ${isProcessRunning}`);
               logger.warn(`ZOMBIE DETECTED for channel ${channelId}: Frame ${frameCount} but no running process. Forcing cleanup and restart.`);
               console.log(`[WebRTC Bridge] 🧟 ZOMBIE CONNECTION: Frame ${frameCount} but process dead. Resetting...`);
@@ -527,11 +529,13 @@ class WebRTCBridgeService {
               const isProcessRunning2 = ffmpegProcess2 && !ffmpegProcess2.killed && ffmpegProcess2.exitCode === null;
 
               // Check if we're currently starting a process (prevents race condition)
+              // Also check if process exists in map (even if not fully started yet)
               const isStarting = this.ffmpegStarting && this.ffmpegStarting.has(channelId);
+              const processExists = this.ffmpegProcesses.has(channelId);
 
               // ZOMBIE DETECTION: If frames are coming but process is dead/missing, we must restart
-              // BUT: Don't trigger if we're currently starting a process (prevents race condition)
-              if (frameCount > 1 && !isProcessRunning2 && !isStarting) {
+              // BUT: Don't trigger if we're currently starting a process OR if process exists in map (prevents race condition)
+              if (frameCount > 1 && !isProcessRunning2 && !isStarting && !processExists) {
                 logger.warn(`ZOMBIE DETECTED (recreated sink) for channel ${channelId}: Frame ${frameCount} but no running process. Forcing cleanup and restart.`);
                 console.log(`[WebRTC Bridge] 🧟 ZOMBIE CONNECTION (recreated sink): Frame ${frameCount} but process dead. Resetting...`);
 
