@@ -898,7 +898,7 @@ class WebRTCBridgeService {
 
       // OPTIMIZED FFmpeg command for Ultra-Low Latency
       const ffmpegArgs = [
-        '-loglevel', 'warning',
+        '-loglevel', 'info',  // Increased to debug screen share encoding issues
         '-threads', '4',
 
         // GLOBAL FLAGS - CRITICAL for low latency
