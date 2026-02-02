@@ -1059,11 +1059,28 @@ class WebRTCBridgeService {
   /**
    * Stop WebRTC bridge and cleanup resources
    */
-  async stopBridge(channelId) {
+  async stopBridge(channelId, skipPlatformStreaming = false) {
     try {
       debugLogger.sessionStopped(channelId, 'stopBridge called');
       debugLogger.mapState('BEFORE_STOP', channelId);
-      logger.info(`Stopping WebRTC bridge for channel ${channelId}`);
+      logger.info(`Stopping WebRTC bridge for channel ${channelId}`, { skipPlatformStreaming });
+
+      // CRITICAL FIX: Stop platform streaming FIRST before cleaning up WebRTC
+      // This disconnects from Twitch/YouTube and stops the platform FFmpeg processes
+      // skipPlatformStreaming is used when called from StreamManager.stopStream to avoid circular calls
+      if (!skipPlatformStreaming) {
+        const streamManager = (await import('../ffmpeg/StreamManager.js')).default;
+        try {
+          logger.info(`Stopping platform streaming for channel ${channelId}`);
+          await streamManager.stopStream(channelId);
+          logger.info(`Platform streaming stopped for channel ${channelId}`);
+        } catch (err) {
+          // Log but continue - the platform stream might already be stopped
+          logger.warn(`Failed to stop platform streaming for channel ${channelId}: ${err.message}`);
+        }
+      } else {
+        logger.info(`Skipping platform streaming stop for channel ${channelId} (called from StreamManager)`);
+      }
 
       // CRITICAL FIX: Clear platform streaming timer if exists
       const timer = this.platformStreamingTimers.get(channelId);

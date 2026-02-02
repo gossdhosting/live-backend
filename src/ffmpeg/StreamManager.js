@@ -1655,7 +1655,8 @@ class StreamManager {
       const channel = await Channel.findById(channelId);
       if (channel && (channel.input_type === 'webcam' || channel.input_type === 'screen')) {
         try {
-          await webrtcBridgeService.stopBridge(channelId);
+          // Pass true to skip platform streaming stop (we're already stopping it here)
+          await webrtcBridgeService.stopBridge(channelId, true);
           logger.info(`WebRTC bridge stopped for channel ${channelId}`);
         } catch (error) {
           logger.error(`Failed to stop WebRTC bridge for channel ${channelId}`, { error: error.message });
