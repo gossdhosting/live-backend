@@ -374,9 +374,9 @@ class WebRTCBridgeService {
                 // Build RTMP URL for polling - use nginx-rtmp port 1935, not the allocated dynamic port
                 const rtmpUrl = `rtmp://127.0.0.1:1935/live/${streamKey}`;
 
-                // Wait 5 seconds for RTMP stream to buffer before starting verification
+                // Wait 10 seconds for RTMP stream to buffer before starting verification
                 setTimeout(async () => {
-                  console.log(`[Platform Streaming] Starting RTMP verification after 5s delay for channel ${channelId}`);
+                  console.log(`[Platform Streaming] Starting RTMP verification after 10s delay for channel ${channelId}`);
                   // Use smart polling instead of fixed timeout - wait for stream to be available
                   // 10 attempts (5 seconds total: 10 attempts * 500ms) - balanced between speed and reliability
                   this.waitForRtmpStream(rtmpUrl, 10)
@@ -402,7 +402,7 @@ class WebRTCBridgeService {
                     // Retry after 5 seconds
                     setTimeout(() => this.retryPlatformStreaming(channelId), 5000);
                   });
-                }, 5000); // 5 second delay before starting verification
+                }, 10000); // 10 second delay before starting verification
               } else {
                 logger.info(`Platform streaming already started for channel ${channelId}, skipping trigger`);
               }
