@@ -890,18 +890,26 @@ class WebRTCBridgeService {
       console.log(`[startFFmpegBridge] Audio track present: ${hasAudio}`);
       logger.info(`Starting FFmpeg bridge for channel ${channelId}: ${width}x${height} -> ${rtmpUrl} (audio: ${hasAudio})`);
 
-      // Build video filter for scaling, padding and rotation
+      // Build OPTIMIZED video filter for scaling, padding and rotation
+      // KEY: fps reduction FIRST to drop frames before expensive scaling
+      // KEY: Use flags=bilinear for much faster scaling (vs default bicubic)
       let videoFilter = '';
 
       // Get input type to determine if this is screen share or webcam
       const inputType = this.channelInputTypes.get(channelId) || 'webcam';
 
-      // For screen share: scale down to 1280x720 for faster encoding
-      // High resolution screen shares (1920x1080+) are too slow to encode in real-time
+      // OPTIMIZED FOR SCREEN SHARE: Reduce FPS first, then scale with fast algorithm
+      // fps=20 drops 33% of frames BEFORE scaling (huge CPU savings)
+      // flags=bilinear is 2-3x faster than default bicubic with negligible quality loss
       if (inputType === 'screen' && (width > 1280 || height > 720)) {
-        console.log(`[startFFmpegBridge] Scaling down screen share from ${width}x${height} to 1280x720`);
-        logger.info(`Scaling screen share from ${width}x${height} to 1280x720 for real-time encoding`);
-        videoFilter = 'scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:black';
+        console.log(`[startFFmpegBridge] Optimized screen share: ${width}x${height} -> 1280x720 @ 20fps`);
+        logger.info(`Screen share optimized: fps=20, bilinear scaling from ${width}x${height} to 1280x720`);
+        videoFilter = 'fps=20,scale=1280:720:force_original_aspect_ratio=decrease:flags=bilinear,pad=1280:720:(ow-iw)/2:(oh-ih)/2:black';
+      }
+      // For already small screen shares: just reduce FPS
+      else if (inputType === 'screen' && width === 1280 && height === 720) {
+        console.log(`[startFFmpegBridge] Screen share FPS reduction: 30fps -> 20fps`);
+        videoFilter = 'fps=20';
       }
       // For webcam or small screen shares: only pad if needed
       else if (needsPadding) {
@@ -927,7 +935,7 @@ class WebRTCBridgeService {
         '-pixel_format', 'yuv420p',
         '-video_size', `${width}x${height}`,
         '-framerate', '30',
-        '-thread_queue_size', '512',
+        '-thread_queue_size', '2048',  // Increased buffer to prevent pipe stalls
         '-i', 'pipe:0',
       ];
 
@@ -938,14 +946,14 @@ class WebRTCBridgeService {
           '-f', 's16le',
           '-ar', '48000',
           '-ac', '2',
-          '-thread_queue_size', '512',
+          '-thread_queue_size', '2048',  // Increased buffer for audio
           '-i', 'pipe:3'
         );
       }
 
-      // Use lower bitrate for screen share since it's scaled to 1280x720
+      // Use lower bitrate for screen share since it's scaled to 1280x720 @ 20fps
       const videoBitrate = inputType === 'screen' ? '1500k' : '2500k';
-      const videoBufferSize = inputType === 'screen' ? '750k' : '1000k';
+      const videoBufferSize = inputType === 'screen' ? '300k' : '1000k';  // Tighter buffer for lower latency
 
       ffmpegArgs.push(
 
