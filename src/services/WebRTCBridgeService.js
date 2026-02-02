@@ -994,8 +994,9 @@ class WebRTCBridgeService {
       }
 
       // Stream mapping and audio encoding
+      const audioBitrate = (await Settings.get('audio_bitrate'))?.value || '128';
+
       if (hasAudio) {
-        const audioBitrate = (await Settings.get('audio_bitrate'))?.value || '128';
         ffmpegArgs.push(
           // Map both video and audio
           '-map', '0:v',
@@ -1007,10 +1008,21 @@ class WebRTCBridgeService {
           '-ac', '2'
         );
       } else {
-        // No audio - map video only
+        // No audio from WebRTC - generate silent audio
         ffmpegArgs.push(
+          // Generate silent audio source
+          '-f', 'lavfi',
+          '-i', `anullsrc=r=${audioSampleRate}:cl=stereo`,
+          // Map video and silent audio
           '-map', '0:v',
-          '-an'
+          '-map', '1:a',
+          // Encode silent audio
+          '-c:a', 'aac',
+          '-b:a', `${audioBitrate}k`,
+          '-ar', audioSampleRate,
+          '-ac', '2',
+          // Ensure audio duration matches video
+          '-shortest'
         );
       }
 
