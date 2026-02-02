@@ -54,11 +54,11 @@ class WebRTCBridgeService {
         attempt++;
         logger.info(`Checking RTMP stream availability (attempt ${attempt}/${maxAttempts}): ${streamUrl}`);
 
-        // Probe the stream with FFmpeg and a short timeout
-        // -rw_timeout 1000000 = 1 second timeout (in microseconds)
+        // Probe the stream with FFmpeg with 3 second timeout
+        // -rw_timeout 3000000 = 3 seconds timeout (in microseconds)
         const args = [
           '-v', 'error',
-          '-rw_timeout', '1000000',
+          '-rw_timeout', '3000000',
           '-rtmp_live', 'live',
           '-i', streamUrl,
           '-f', 'null',
@@ -636,9 +636,9 @@ class WebRTCBridgeService {
                       // Retry after 5 seconds if failed
                       setTimeout(() => this.retryPlatformStreaming(channelId), 5000);
                     }
-                  }, 15000); // 15 second delay to let WebRTC→RTMP bridge establish
+                  }, 10000); // 10 second delay to let WebRTC→RTMP bridge establish
 
-                  debugLogger.writeLog(`Platform streaming timer created for channel ${channelId} (15000ms delay)`);
+                  debugLogger.writeLog(`Platform streaming timer created for channel ${channelId} (10000ms delay)`);
                   this.platformStreamingTimers.set(channelId, timer);
                 } else {
                   logger.info(`Platform streaming already started for channel ${channelId}, skipping trigger`);
