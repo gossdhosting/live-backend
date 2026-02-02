@@ -544,6 +544,7 @@ class WebRTCBridgeService {
                 frameCount = 0; // Reset will increment to 1 on next line
 
                 // Clean up zombie process entry (non-blocking)
+                console.log(`[FFmpeg Map] REMOVED process from map by zombie cleanup for channel ${channelId}`);
                 this.ffmpegProcesses.delete(channelId);
                 this.ffmpegStdinClosed.delete(channelId);
                 this.platformStreamingStarted.delete(channelId);
@@ -1048,6 +1049,7 @@ class WebRTCBridgeService {
       ffmpegProcess.on('exit', (code, signal) => {
         debugLogger.ffmpegStopped(channelId, ffmpegProcess.pid, code, signal);
         logger.info(`FFmpeg bridge exited for channel ${channelId}: code=${code}, signal=${signal}`);
+        console.log(`[FFmpeg Map] REMOVED process from map on exit for channel ${channelId}, PID: ${ffmpegProcess.pid}, code: ${code}`);
         this.ffmpegProcesses.delete(channelId);
 
         if (code !== 0 && code !== null) {
@@ -1064,6 +1066,7 @@ class WebRTCBridgeService {
 
       // Store FFmpeg process
       this.ffmpegProcesses.set(channelId, ffmpegProcess);
+      console.log(`[FFmpeg Map] ADDED process to map for channel ${channelId}, PID: ${ffmpegProcess.pid}`);
 
       // Clear starting flag now that process is stored
       if (this.ffmpegStarting) {
