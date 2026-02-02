@@ -1009,6 +1009,8 @@ class WebRTCBridgeService {
       // Handle FFmpeg output
       ffmpegProcess.stderr.on('data', (data) => {
         const message = data.toString();
+        // TEMPORARY: Log ALL output to debug screen share encoding
+        console.log(`[FFmpeg ${channelId}] ${message}`);
         // Only log actual errors, ignore common warnings in low-latency mode
         if ((message.includes('error') || message.includes('Error')) && !message.includes('buffer underflow')) {
           logger.error(`FFmpeg bridge error for channel ${channelId}: ${message}`);
