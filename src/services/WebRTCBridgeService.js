@@ -886,7 +886,6 @@ class WebRTCBridgeService {
       console.log(`[startFFmpegBridge] Using quality preset: ${qualityPreset}, bitrate: ${bitrate}k, preset: ${encodingPreset}`);
       logger.info(`Starting FFmpeg bridge with settings: quality=${qualityPreset}, bitrate=${bitrate}k, preset=${encodingPreset}`);
 
-    try {
       // FORCE CLEANUP: Check if entry exists but process is actually dead
       if (this.ffmpegProcesses.has(channelId)) {
         const existingProcess = this.ffmpegProcesses.get(channelId);
