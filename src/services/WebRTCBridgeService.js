@@ -883,16 +883,26 @@ class WebRTCBridgeService {
       console.log(`[startFFmpegBridge] Audio track present: ${hasAudio}`);
       logger.info(`Starting FFmpeg bridge for channel ${channelId}: ${width}x${height} -> ${rtmpUrl} (audio: ${hasAudio})`);
 
-      // Build video filter for padding and rotation
+      // Build video filter for scaling, padding and rotation
       let videoFilter = '';
 
-      // Add padding if needed (x264 requires 16-aligned dimensions)
-      if (needsPadding) {
+      // Get input type to determine if this is screen share or webcam
+      const inputType = this.channelInputTypes.get(channelId) || 'webcam';
+
+      // For screen share: scale down to 1280x720 for faster encoding
+      // High resolution screen shares (1920x1080+) are too slow to encode in real-time
+      if (inputType === 'screen' && (width > 1280 || height > 720)) {
+        console.log(`[startFFmpegBridge] Scaling down screen share from ${width}x${height} to 1280x720`);
+        logger.info(`Scaling screen share from ${width}x${height} to 1280x720 for real-time encoding`);
+        videoFilter = 'scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:black';
+      }
+      // For webcam or small screen shares: only pad if needed
+      else if (needsPadding) {
         videoFilter = `pad=${paddedWidth}:${paddedHeight}:(ow-iw)/2:(oh-ih)/2:black`;
       }
 
       // Add rotation for webcam (1280x720 portrait mode)
-      if (width === 1280 && height === 720) {
+      if (inputType === 'webcam' && width === 1280 && height === 720) {
         videoFilter = videoFilter ? `${videoFilter},transpose=1` : 'transpose=1';
       }
 
@@ -926,6 +936,10 @@ class WebRTCBridgeService {
         );
       }
 
+      // Use lower bitrate for screen share since it's scaled to 1280x720
+      const videoBitrate = inputType === 'screen' ? '1500k' : '2500k';
+      const videoBufferSize = inputType === 'screen' ? '750k' : '1000k';
+
       ffmpegArgs.push(
 
         // Video encoding - TUNED FOR SPEED
@@ -933,9 +947,9 @@ class WebRTCBridgeService {
         '-preset', 'ultrafast',  // Lowest CPU usage for real-time encoding
         '-tune', 'zerolatency',
         '-pix_fmt', 'yuv420p',
-        '-b:v', '2500k',
-        '-maxrate', '2500k',     // Match bitrate to prevent spikes
-        '-bufsize', '1000k',     // CRITICAL: Small buffer forces low latency
+        '-b:v', videoBitrate,
+        '-maxrate', videoBitrate,     // Match bitrate to prevent spikes
+        '-bufsize', videoBufferSize,  // Small buffer forces low latency
         '-g', '30',              // 1 keyframe/sec helps player sync faster
         '-keyint_min', '30',
         '-sc_threshold', '0',
