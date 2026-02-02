@@ -636,9 +636,9 @@ class WebRTCBridgeService {
                       // Retry after 5 seconds if failed
                       setTimeout(() => this.retryPlatformStreaming(channelId), 5000);
                     }
-                  }, 8000); // 8 second delay to let WebRTC→RTMP bridge establish
+                  }, 15000); // 15 second delay to let WebRTC→RTMP bridge establish
 
-                  debugLogger.writeLog(`Platform streaming timer created for channel ${channelId} (8000ms delay)`);
+                  debugLogger.writeLog(`Platform streaming timer created for channel ${channelId} (15000ms delay)`);
                   this.platformStreamingTimers.set(channelId, timer);
                 } else {
                   logger.info(`Platform streaming already started for channel ${channelId}, skipping trigger`);
