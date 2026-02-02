@@ -856,7 +856,8 @@ class StreamManager {
       // Video files don't need reconnection as they're local files
       // RTMP protocol doesn't support -reconnect/-timeout options (HTTP/HLS only)
       // CRITICAL: -timeout for RTMP implies -rtmp_listen 1 (server mode)
-      if (!isVideoFile && !isRtmpInput && !isWebcamInput) {
+      // Exclude webcam AND screen share (both push to nginx-rtmp via WebRTC bridge)
+      if (!isVideoFile && !isRtmpInput && !isWebcamInput && !isScreenInput) {
         ffmpegArgs.push(
           '-reconnect', '1',
           '-reconnect_streamed', '1',
@@ -867,7 +868,7 @@ class StreamManager {
 
       // For RTMP input, add specific buffer settings to handle incoming stream
       // Following Gemini's recommendations for robust RTMP client configuration
-      if (isRtmpInput || isWebcamInput) {
+      if (isRtmpInput || isWebcamInput || isScreenInput) {
         ffmpegArgs.push(
           // Force FLV container format for RTMP input (ensures proper format detection)
           '-f', 'flv',
