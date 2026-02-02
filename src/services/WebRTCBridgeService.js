@@ -535,6 +535,7 @@ class WebRTCBridgeService {
 
               // ZOMBIE DETECTION: If frames are coming but process is dead/missing, we must restart
               // BUT: Don't trigger if we're currently starting a process OR if process exists in map (prevents race condition)
+              console.log(`[Zombie Check] frameCount=${frameCount}, isProcessRunning2=${isProcessRunning2}, isStarting=${isStarting}, processExists=${processExists}`);
               if (frameCount > 1 && !isProcessRunning2 && !isStarting && !processExists) {
                 logger.warn(`ZOMBIE DETECTED (recreated sink) for channel ${channelId}: Frame ${frameCount} but no running process. Forcing cleanup and restart.`);
                 console.log(`[WebRTC Bridge] 🧟 ZOMBIE CONNECTION (recreated sink): Frame ${frameCount} but process dead. Resetting...`);
