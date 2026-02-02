@@ -1,10 +1,16 @@
 import { spawn } from 'child_process';
 import wrtc from 'wrtc';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { createStream } from 'rotating-file-stream';
 import logger from '../utils/logger.js';
 import debugLogger from '../utils/debugLogger.js';
 import Channel from '../models/Channel.js';
 import streamManager from '../ffmpeg/StreamManager.js';
 import portAllocator from './PortAllocator.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const { RTCPeerConnection, RTCSessionDescription, RTCIceCandidate, nonstandard } = wrtc;
 const { RTCAudioSink, RTCVideoSink } = nonstandard;
@@ -27,6 +33,10 @@ class WebRTCBridgeService {
     this.platformStreamingTimers = new Map(); // channelId -> setTimeout reference (for cleanup)
     this.channelInputTypes = new Map(); // channelId -> input_type ('webcam' or 'screen')
     this.hasAudioTrack = new Map(); // channelId -> boolean (tracks if audio track received)
+    this.logStreams = new Map(); // channelId -> rotating log stream for FFmpeg output
+
+    // Setup log directory
+    this.ffmpegLogPath = path.join(__dirname, '../../logs/ffmpeg');
 
     // Share Map references with debug logger for state inspection
     debugLogger.constructor.setServiceMaps(
@@ -1001,6 +1011,19 @@ class WebRTCBridgeService {
         stdio: stdioConfig
       });
 
+      // Create log stream for this channel (same as StreamManager)
+      const logStream = createStream(`channel_${channelId}.log`, {
+        size: '10M',
+        maxFiles: 5,
+        path: this.ffmpegLogPath,
+        compress: 'gzip'
+      });
+      this.logStreams.set(channelId, logStream);
+
+      // Log FFmpeg command to file
+      const timestamp = new Date().toISOString();
+      logStream.write(`[CMD] ${timestamp} - ffmpeg ${ffmpegArgs.join(' ')}\n`);
+
       // Create separate audio stdin only if audio track present
       if (hasAudio) {
         ffmpegProcess.audioStdin = ffmpegProcess.stdio[3];
@@ -1025,8 +1048,17 @@ class WebRTCBridgeService {
       // Handle FFmpeg output
       ffmpegProcess.stderr.on('data', (data) => {
         const message = data.toString();
+
+        // Write to log file (same as StreamManager)
+        const logStream = this.logStreams.get(channelId);
+        if (logStream) {
+          const timestamp = new Date().toISOString();
+          logStream.write(`[STDERR] ${timestamp} - ${message}`);
+        }
+
         // Log ALL stderr output for debugging
         console.log(`[FFmpeg WebRTC Bridge stderr] channel ${channelId}:`, message.trim());
+
         // Only log actual errors, ignore common warnings in low-latency mode
         if ((message.includes('error') || message.includes('Error')) && !message.includes('buffer underflow')) {
           logger.error(`FFmpeg bridge error for channel ${channelId}: ${message}`);
@@ -1169,6 +1201,14 @@ class WebRTCBridgeService {
         peerConnection.close();
         this.peerConnections.delete(channelId);
         debugLogger.writeLog(`Peer connection closed and deleted for channel ${channelId}`);
+      }
+
+      // Close log stream
+      const logStream = this.logStreams.get(channelId);
+      if (logStream) {
+        logStream.end();
+        this.logStreams.delete(channelId);
+        logger.info(`Log stream closed for channel ${channelId}`);
       }
 
       // CRITICAL FIX: Clear ALL state tracking maps
