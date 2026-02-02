@@ -923,7 +923,7 @@ class WebRTCBridgeService {
         '-i', 'pipe:0',
       ];
 
-      // Only add audio input if audio track is present
+      // Add audio input - either from WebRTC or silent audio
       if (hasAudio) {
         ffmpegArgs.push(
           // Audio input (raw PCM from WebRTC)
@@ -932,6 +932,12 @@ class WebRTCBridgeService {
           '-ac', '2',
           '-thread_queue_size', '512',
           '-i', 'pipe:3'
+        );
+      } else {
+        // No audio from WebRTC - generate silent audio source
+        ffmpegArgs.push(
+          '-f', 'lavfi',
+          '-i', `anullsrc=r=${audioSampleRate}:cl=stereo`
         );
       }
 
@@ -961,34 +967,20 @@ class WebRTCBridgeService {
       // Stream mapping and audio encoding
       const audioBitrate = (await Settings.get('audio_bitrate'))?.value || '128';
 
-      if (hasAudio) {
-        ffmpegArgs.push(
-          // Map both video and audio
-          '-map', '0:v',
-          '-map', '1:a',
-          // Audio encoding - using admin settings
-          '-c:a', 'aac',
-          '-b:a', `${audioBitrate}k`,
-          '-ar', audioSampleRate,
-          '-ac', '2'
-        );
-      } else {
-        // No audio from WebRTC - generate silent audio
-        ffmpegArgs.push(
-          // Generate silent audio source
-          '-f', 'lavfi',
-          '-i', `anullsrc=r=${audioSampleRate}:cl=stereo`,
-          // Map video and silent audio
-          '-map', '0:v',
-          '-map', '1:a',
-          // Encode silent audio
-          '-c:a', 'aac',
-          '-b:a', `${audioBitrate}k`,
-          '-ar', audioSampleRate,
-          '-ac', '2',
-          // Ensure audio duration matches video
-          '-shortest'
-        );
+      // Map video and audio streams (both real audio and silent audio use input 1)
+      ffmpegArgs.push(
+        '-map', '0:v',
+        '-map', '1:a',
+        // Audio encoding - using admin settings
+        '-c:a', 'aac',
+        '-b:a', `${audioBitrate}k`,
+        '-ar', audioSampleRate,
+        '-ac', '2'
+      );
+
+      // Add -shortest flag only for silent audio to match video duration
+      if (!hasAudio) {
+        ffmpegArgs.push('-shortest');
       }
 
       // Output format
