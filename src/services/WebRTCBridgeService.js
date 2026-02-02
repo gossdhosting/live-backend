@@ -604,13 +604,28 @@ class WebRTCBridgeService {
                     try {
                       // Double-check it hasn't been started by another code path
                       if (!this.platformStreamingStarted.get(channelId)) {
-                        console.log(`[Platform Streaming] STARTING streamManager.startStream(${channelId})`);
-                        logger.info(`Starting platform streaming for webcam channel ${channelId} after first frame`);
-                        await streamManager.startStream(channelId);
-                        this.platformStreamingStarted.set(channelId, true);
-                        this.platformStreamingTimers.delete(channelId);
-                        debugLogger.platformStreamingStarted(channelId);
-                        logger.info(`Platform streaming started successfully for channel ${channelId}`);
+                        // CRITICAL: Wait for RTMP stream to be available before starting platform streaming
+                        const rtmpUrl = `rtmp://127.0.0.1:1935/live/${streamKey}`;
+                        console.log(`[Platform Streaming] Verifying RTMP stream availability: ${rtmpUrl}`);
+                        logger.info(`Verifying RTMP stream for channel ${channelId} before platform streaming`);
+
+                        try {
+                          // Poll RTMP stream with 10 attempts (5 seconds)
+                          await this.waitForRtmpStream(rtmpUrl, 10);
+                          console.log(`[Platform Streaming] RTMP stream verified, STARTING streamManager.startStream(${channelId})`);
+                          logger.info(`RTMP stream verified, starting platform streaming for channel ${channelId}`);
+
+                          await streamManager.startStream(channelId);
+                          this.platformStreamingStarted.set(channelId, true);
+                          this.platformStreamingTimers.delete(channelId);
+                          debugLogger.platformStreamingStarted(channelId);
+                          logger.info(`Platform streaming started successfully for channel ${channelId}`);
+                        } catch (verifyErr) {
+                          logger.error(`RTMP stream verification failed for channel ${channelId}`, { error: verifyErr.message });
+                          this.platformStreamingTimers.delete(channelId);
+                          // Retry after 5 seconds if verification failed
+                          setTimeout(() => this.retryPlatformStreaming(channelId), 5000);
+                        }
                       } else {
                         logger.warn(`Platform streaming already started for channel ${channelId}, skipping`);
                       }
