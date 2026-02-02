@@ -375,7 +375,8 @@ class WebRTCBridgeService {
                 const rtmpUrl = `rtmp://127.0.0.1:1935/live/${streamKey}`;
 
                 // Use smart polling instead of fixed timeout - wait for stream to be available
-                this.waitForRtmpStream(rtmpUrl, 20)
+                // Reduced to 4 attempts (2 seconds total: 4 attempts * 500ms)
+                this.waitForRtmpStream(rtmpUrl, 4)
                   .then(async () => {
                     console.log(`[Platform Streaming] Stream verified active for channel ${channelId}, starting platform stream`);
                     logger.info(`RTMP stream verified active for channel ${channelId}, starting platform streaming`);
