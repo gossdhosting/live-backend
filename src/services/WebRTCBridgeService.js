@@ -575,65 +575,8 @@ class WebRTCBridgeService {
                   });
                 }
 
-                // CRITICAL FIX: Start platform streaming only if NOT already started
-                const platformAlreadyStarted = this.platformStreamingStarted.get(channelId);
-                console.log(`[Platform Streaming Check] channel ${channelId}: platformAlreadyStarted = ${platformAlreadyStarted}`);
-                if (!platformAlreadyStarted) {
-                  console.log(`[Platform Streaming] Scheduling start for channel ${channelId} in 3 seconds`);
-                  logger.info(`Scheduling platform streaming start for channel ${channelId} in 3 seconds`);
-
-                  // Clear any existing timer first
-                  const existingTimer = this.platformStreamingTimers.get(channelId);
-                  if (existingTimer) {
-                    clearTimeout(existingTimer);
-                    logger.warn(`Cleared existing platform streaming timer for channel ${channelId}`);
-                  }
-
-                  const timer = setTimeout(async () => {
-                    console.log(`[Platform Streaming Timer] Fired for channel ${channelId}`);
-                    debugLogger.platformStreamingTriggered(channelId, 20000);
-                    try {
-                      // Double-check it hasn't been started by another code path
-                      if (!this.platformStreamingStarted.get(channelId)) {
-                        // CRITICAL: Wait for RTMP stream to be available before starting platform streaming
-                        const rtmpUrl = `rtmp://127.0.0.1:1935/live/${streamKey}`;
-                        console.log(`[Platform Streaming] Verifying RTMP stream availability: ${rtmpUrl}`);
-                        logger.info(`Verifying RTMP stream for channel ${channelId} before platform streaming`);
-
-                        try {
-                          // Poll RTMP stream with 10 attempts (5 seconds)
-                          await this.waitForRtmpStream(rtmpUrl, 10);
-                          console.log(`[Platform Streaming] RTMP stream verified, STARTING streamManager.startStream(${channelId})`);
-                          logger.info(`RTMP stream verified, starting platform streaming for channel ${channelId}`);
-
-                          await streamManager.startStream(channelId);
-                          this.platformStreamingStarted.set(channelId, true);
-                          this.platformStreamingTimers.delete(channelId);
-                          debugLogger.platformStreamingStarted(channelId);
-                          logger.info(`Platform streaming started successfully for channel ${channelId}`);
-                        } catch (verifyErr) {
-                          logger.error(`RTMP stream verification failed for channel ${channelId}`, { error: verifyErr.message });
-                          this.platformStreamingTimers.delete(channelId);
-                          // Retry after 5 seconds if verification failed
-                          setTimeout(() => this.retryPlatformStreaming(channelId), 5000);
-                        }
-                      } else {
-                        logger.warn(`Platform streaming already started for channel ${channelId}, skipping`);
-                      }
-                    } catch (err) {
-                      debugLogger.platformStreamingFailed(channelId, err.message);
-                      logger.error(`Failed to start platform streaming for channel ${channelId}`, { error: err.message });
-                      this.platformStreamingTimers.delete(channelId);
-                      // Retry after 5 seconds if failed
-                      setTimeout(() => this.retryPlatformStreaming(channelId), 5000);
-                    }
-                  }, 10000); // 10 second delay to let WebRTC→RTMP bridge establish
-
-                  debugLogger.writeLog(`Platform streaming timer created for channel ${channelId} (10000ms delay)`);
-                  this.platformStreamingTimers.set(channelId, timer);
-                } else {
-                  logger.info(`Platform streaming already started for channel ${channelId}, skipping trigger`);
-                }
+                // Platform streaming trigger removed - handled by first frame handler (lines 355-395)
+                // This prevents duplicate platform streaming attempts when sink is recreated
               } else if (currentResolution !== frameResolution) {
                 // Resolution changed - log detailed info and restart FFmpeg with new dimensions
                 logger.warn(`⚠️ RESOLUTION MISMATCH DETECTED for channel ${channelId}!`);
