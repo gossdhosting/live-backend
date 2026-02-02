@@ -187,10 +187,17 @@ class WebRTCBridgeService {
         logger.info(`WebRTC track received for channel ${channelId}: ${track.kind}`);
         console.log(`[WebRTC Bridge] Track received - Kind: ${track.kind}, ID: ${track.id}, Label: ${track.label}`);
 
-        // Track if audio is present (important for screen share which may not have audio)
-        if (track.kind === 'audio') {
+        // Track if audio is present
+        // IMPORTANT: Disable audio for screen share due to sync issues causing 0.05x encoding speed
+        // Screen share audio (microphone/system) arrives in bursts, not synchronized with video frames
+        // This causes FFmpeg to wait for audio sync, slowing encoding to unusable speeds
+        const inputType = this.channelInputTypes.get(channelId) || 'webcam';
+        if (track.kind === 'audio' && inputType === 'webcam') {
           this.hasAudioTrack.set(channelId, true);
           console.log(`[WebRTC Bridge] Audio track detected for channel ${channelId}`);
+        } else if (track.kind === 'audio' && inputType === 'screen') {
+          console.log(`[WebRTC Bridge] Audio track ignored for screen share channel ${channelId} (video-only mode)`);
+          logger.info(`Screen share audio ignored for channel ${channelId} to prevent sync issues`);
         }
 
         // Check transceiver direction for debugging
