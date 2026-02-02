@@ -990,7 +990,7 @@ class WebRTCBridgeService {
         '-level', h264Level,
         '-b:v', `${bitrate}k`,
         '-maxrate', `${bitrate}k`,     // Match bitrate to prevent spikes
-        '-bufsize', `${parseInt(bitrate) * 2}k`,  // 2x bitrate for buffer
+        '-bufsize', '1000k',  // Small buffer for low latency (fixed for WebRTC bridge)
         '-g', gopSize,              // Keyframe interval from settings
         '-keyint_min', gopSize,
         '-sc_threshold', '0',
