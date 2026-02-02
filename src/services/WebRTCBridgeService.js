@@ -374,35 +374,22 @@ class WebRTCBridgeService {
                 // Build RTMP URL for polling - use nginx-rtmp port 1935, not the allocated dynamic port
                 const rtmpUrl = `rtmp://127.0.0.1:1935/live/${streamKey}`;
 
-                // Wait 10 seconds for RTMP stream to buffer before starting verification
+                // Wait 15 seconds for RTMP stream to buffer, then start platform streaming
                 setTimeout(async () => {
-                  console.log(`[Platform Streaming] Starting RTMP verification after 10s delay for channel ${channelId}`);
-                  // Use smart polling instead of fixed timeout - wait for stream to be available
-                  // 10 attempts (5 seconds total: 10 attempts * 500ms) - balanced between speed and reliability
-                  this.waitForRtmpStream(rtmpUrl, 10)
-                  .then(async () => {
-                    console.log(`[Platform Streaming] Stream verified active for channel ${channelId}, starting platform stream`);
-                    logger.info(`RTMP stream verified active for channel ${channelId}, starting platform streaming`);
+                  console.log(`[Platform Streaming] Starting platform streaming after 15s delay for channel ${channelId}`);
+                  logger.info(`Starting platform streaming for channel ${channelId} after buffer delay`);
 
-                    try {
-                      await streamManager.startStream(channelId);
-                      logger.info(`Platform streaming started successfully for channel ${channelId}`);
-                    } catch (err) {
-                      logger.error(`Failed to start platform streaming for channel ${channelId}`, { error: err.message });
-                      // Reset flag so it can be retried
-                      this.platformStreamingStarted.set(channelId, false);
-                      // Retry after 5 seconds
-                      setTimeout(() => this.retryPlatformStreaming(channelId), 5000);
-                    }
-                  })
-                  .catch((err) => {
-                    logger.error(`Failed to verify RTMP stream for channel ${channelId}`, { error: err.message });
+                  try {
+                    await streamManager.startStream(channelId);
+                    logger.info(`Platform streaming started successfully for channel ${channelId}`);
+                  } catch (err) {
+                    logger.error(`Failed to start platform streaming for channel ${channelId}`, { error: err.message });
                     // Reset flag so it can be retried
                     this.platformStreamingStarted.set(channelId, false);
                     // Retry after 5 seconds
                     setTimeout(() => this.retryPlatformStreaming(channelId), 5000);
-                  });
-                }, 10000); // 10 second delay before starting verification
+                  }
+                }, 15000); // 15 second delay for WebRTC bridge to buffer
               } else {
                 logger.info(`Platform streaming already started for channel ${channelId}, skipping trigger`);
               }
