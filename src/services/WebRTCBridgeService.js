@@ -842,11 +842,49 @@ class WebRTCBridgeService {
   /**
    * Start FFmpeg bridge to convert WebRTC stream to RTMP
    */
-  startFFmpegBridge(channelId, streamKey, firstFrame) {
+  async startFFmpegBridge(channelId, streamKey, firstFrame) {
     console.log(`[startFFmpegBridge] CALLED for channel ${channelId}, streamKey: ${streamKey}`);
     console.log(`[startFFmpegBridge] firstFrame dimensions: ${firstFrame.width}x${firstFrame.height}, data size: ${firstFrame.data.length} bytes`);
     debugLogger.writeLog(`>>> startFFmpegBridge CALLED: Channel ${channelId} | StreamKey: ${streamKey} | FirstFrame: ${firstFrame.width}x${firstFrame.height} (${firstFrame.data.length} bytes)`);
     debugLogger.mapState('BEFORE_FFMPEG_START', channelId);
+
+    try {
+      // Get channel details and admin settings for encoding parameters
+      const Channel = (await import('../models/Channel.js')).default;
+      const Settings = (await import('../models/Settings.js')).default;
+
+      const channel = await Channel.findById(channelId);
+      if (!channel) {
+        logger.error(`Channel ${channelId} not found for FFmpeg bridge`);
+        return;
+      }
+
+      // Get quality preset from channel (480p, 720p, 1080p)
+      const qualityPreset = channel.quality_preset || '720p';
+
+      // Get bitrate from admin settings (quality presets)
+      const bitrateSettings = {
+        '480p': await Settings.get('quality_480p_bitrate'),
+        '720p': await Settings.get('quality_720p_bitrate'),
+        '1080p': await Settings.get('quality_1080p_bitrate')
+      };
+
+      // Parse bitrate (default fallback values if settings not found)
+      const bitrate = bitrateSettings[qualityPreset]?.value ||
+                     (qualityPreset === '480p' ? '1000' :
+                      qualityPreset === '720p' ? '3000' : '5000');
+
+      // Get encoding settings from admin panel
+      const encodingPreset = (await Settings.get('encoding_preset'))?.value || 'ultrafast';
+      const encodingTune = (await Settings.get('encoding_tune'))?.value || 'zerolatency';
+      const h264Profile = (await Settings.get('h264_profile'))?.value || 'baseline';
+      const h264Level = (await Settings.get('h264_level'))?.value || '4.1';
+      const framerate = parseInt((await Settings.get('framerate'))?.value || '30');
+      const gopSize = parseInt((await Settings.get('keyframe_interval'))?.value || '60');
+      const audioSampleRate = (await Settings.get('audio_sample_rate'))?.value || '48000';
+
+      console.log(`[startFFmpegBridge] Using quality preset: ${qualityPreset}, bitrate: ${bitrate}k, preset: ${encodingPreset}`);
+      logger.info(`Starting FFmpeg bridge with settings: quality=${qualityPreset}, bitrate=${bitrate}k, preset=${encodingPreset}`);
 
     try {
       // FORCE CLEANUP: Check if entry exists but process is actually dead
@@ -925,7 +963,7 @@ class WebRTCBridgeService {
         '-f', 'rawvideo',
         '-pixel_format', 'yuv420p',
         '-video_size', `${width}x${height}`,
-        '-framerate', '30',
+        '-framerate', framerate.toString(),
         '-thread_queue_size', '512',
         '-i', 'pipe:0',
       ];
@@ -935,7 +973,7 @@ class WebRTCBridgeService {
         ffmpegArgs.push(
           // Audio input (raw PCM from WebRTC)
           '-f', 's16le',
-          '-ar', '48000',
+          '-ar', audioSampleRate,
           '-ac', '2',
           '-thread_queue_size', '512',
           '-i', 'pipe:3'
@@ -944,16 +982,18 @@ class WebRTCBridgeService {
 
       ffmpegArgs.push(
 
-        // Video encoding - TUNED FOR SPEED
+        // Video encoding - Using admin settings
         '-c:v', 'libx264',
-        '-preset', 'ultrafast',  // Lowest CPU usage for real-time encoding
-        '-tune', 'zerolatency',
+        '-preset', encodingPreset,
+        '-tune', encodingTune,
         '-pix_fmt', 'yuv420p',
-        '-b:v', '2500k',
-        '-maxrate', '2500k',     // Match bitrate to prevent spikes
-        '-bufsize', '1000k',     // CRITICAL: Small buffer forces low latency
-        '-g', '30',              // 1 keyframe/sec helps player sync faster
-        '-keyint_min', '30',
+        '-profile:v', h264Profile,
+        '-level', h264Level,
+        '-b:v', `${bitrate}k`,
+        '-maxrate', `${bitrate}k`,     // Match bitrate to prevent spikes
+        '-bufsize', `${parseInt(bitrate) * 2}k`,  // 2x bitrate for buffer
+        '-g', gopSize,              // Keyframe interval from settings
+        '-keyint_min', gopSize,
         '-sc_threshold', '0',
         '-x264opts', 'no-scenecut:ref=1:bframes=0'  // Disable B-frames for lower latency
       );
@@ -965,14 +1005,15 @@ class WebRTCBridgeService {
 
       // Stream mapping and audio encoding
       if (hasAudio) {
+        const audioBitrate = (await Settings.get('audio_bitrate'))?.value || '128';
         ffmpegArgs.push(
           // Map both video and audio
           '-map', '0:v',
           '-map', '1:a',
-          // Audio encoding
+          // Audio encoding - using admin settings
           '-c:a', 'aac',
-          '-b:a', '128k',
-          '-ar', '48000',
+          '-b:a', `${audioBitrate}k`,
+          '-ar', audioSampleRate,
           '-ac', '2'
         );
       } else {
