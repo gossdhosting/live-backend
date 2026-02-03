@@ -914,12 +914,6 @@ class WebRTCBridgeService {
         '-fflags', '+nobuffer',  // Prevent input buffering
         '-flags', 'low_delay',   // Low delay mode
 
-        // Network timeouts and retries for RTMP output
-        '-timeout', '5000000',   // 5 second connection timeout (in microseconds)
-        '-reconnect', '1',       // Enable reconnection
-        '-reconnect_streamed', '1',
-        '-reconnect_delay_max', '2',  // Max 2 seconds between reconnect attempts
-
         // Video input (raw YUV420 from WebRTC)
         '-f', 'rawvideo',
         '-pixel_format', 'yuv420p',
