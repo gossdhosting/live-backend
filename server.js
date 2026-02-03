@@ -65,6 +65,11 @@ app.use('/api/webhooks', webhookRoutes);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// CRITICAL: Mount RTMP routes BEFORE rate limiter
+// nginx-rtmp calls these endpoints for authentication on every publish attempt
+// Rate limiting would cause connection failures and 90-second delays
+app.use('/api/rtmp', rtmpRoutes);
+
 // Apply rate limiting to all API routes
 app.use('/api/', apiLimiter);
 
@@ -86,7 +91,7 @@ app.use('/api/rtmp/templates', rtmpTemplateRoutes);
 app.use('/api/watermark', watermarkRoutes);
 app.use('/api/server-stats', serverStatsRoutes);
 app.use('/api/media', mediaRoutes);
-app.use('/api/rtmp', rtmpRoutes);
+// RTMP routes moved above rate limiter (see line 68-71)
 app.use('/api/billing', billingRoutes);
 app.use('/api/iap', iapRoutes);
 app.use('/api/scheduled-streams', scheduledStreamRoutes);
