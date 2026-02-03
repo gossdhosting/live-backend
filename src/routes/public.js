@@ -25,24 +25,24 @@ router.get('/channels', (req, res) => {
   }
 });
 
-// Get single channel info
+// Get single channel info (used by embed player to check stream status)
 router.get('/channels/:id', (req, res) => {
   try {
     const { id } = req.params;
     const channel = Channel.findById(id);
 
-    if (!channel || channel.status !== 'running') {
-      return res.status(404).json({ error: 'Channel not found or not streaming' });
+    if (!channel) {
+      return res.status(404).json({ error: 'Channel not found' });
     }
 
+    // Return channel info with status - embed player needs this to handle offline/online states
     res.json({
-      channel: {
-        id: channel.id,
-        name: channel.name,
-        description: channel.description,
-        hls_url: `/hls/channel_${channel.id}/index.m3u8`,
-        created_at: channel.created_at,
-      },
+      id: channel.id,
+      name: channel.name,
+      description: channel.description,
+      status: channel.status,
+      hls_url: `/hls/channel_${channel.id}/index.m3u8`,
+      created_at: channel.created_at,
     });
   } catch (error) {
     res.status(500).json({ error: 'Internal server error' });
