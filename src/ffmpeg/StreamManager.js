@@ -1201,7 +1201,7 @@ class StreamManager {
 
         // Direct RTMP outputs only (no HLS)
         if (rtmpDestinations.length === 0) {
-          throw new Error('No RTMP destinations configured. Please add at least one platform or custom RTMP destination.');
+          throw new Error('No Destination configured for this channel');
         }
 
         if (rtmpDestinations.length === 1) {

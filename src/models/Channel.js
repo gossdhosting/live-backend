@@ -138,6 +138,16 @@ class Channel {
 
     return await stmt.all(channelId, limit);
   }
+
+  // Set RTMP input connected status
+  static async setRtmpInputConnected(id, connected) {
+    const stmt = db.prepare(`
+      UPDATE channels SET rtmp_input_connected = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+    `);
+
+    await stmt.run(connected, id);
+    return this.findById(id);
+  }
 }
 
 export default Channel;

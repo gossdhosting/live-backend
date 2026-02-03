@@ -39,6 +39,9 @@ export const rtmpAuth = async (req, res) => {
       return res.status(403).send('Forbidden');
     }
 
+    // Mark channel as receiving RTMP input
+    await Channel.setRtmpInputConnected(channel.id, true);
+
     logger.info('RTMP authentication successful', {
       streamKey,
       channelId: channel.id,
@@ -68,6 +71,9 @@ export const rtmpPublishDone = async (req, res) => {
     const channel = await Channel.findByStreamKey(streamKey);
 
     if (channel) {
+      // Mark channel as no longer receiving RTMP input
+      await Channel.setRtmpInputConnected(channel.id, false);
+
       // Update channel status if it was running
       if (channel.status === 'running') {
         await Channel.updateStatus(channel.id, 'stopped', null, 'RTMP stream disconnected');
