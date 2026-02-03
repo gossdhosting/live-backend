@@ -1105,23 +1105,9 @@ class WebRTCBridgeService {
       debugLogger.mapState('AFTER_FFMPEG_START', channelId);
       logger.info(`FFmpeg bridge started for channel ${channelId}`);
 
-      // Start platform streaming after 15 second delay (only if not already started)
-      if (!this.platformStreamingStarted.get(channelId)) {
-        this.platformStreamingStarted.set(channelId, true);
-
-        setTimeout(async () => {
-          console.log(`[Platform Streaming] Starting after 15s delay for channel ${channelId}`);
-          logger.info(`Starting platform streaming for channel ${channelId} after buffer delay`);
-
-          try {
-            await streamManager.startStream(channelId);
-            logger.info(`Platform streaming started successfully for channel ${channelId}`);
-          } catch (err) {
-            logger.error(`Failed to start platform streaming for channel ${channelId}`, { error: err.message });
-            this.platformStreamingStarted.set(channelId, false);
-          }
-        }, 15000);
-      }
+      // NOTE: Platform streaming is triggered from handleVideoTrack() first frame handler (line 386-402)
+      // with proper 15-second delay. DO NOT trigger it here to avoid race conditions.
+      // The first frame handler ensures the stream is truly ready before starting platform streaming.
 
     } catch (error) {
       logger.error(`Failed to start FFmpeg bridge for channel ${channelId}`, { error: error.message });
