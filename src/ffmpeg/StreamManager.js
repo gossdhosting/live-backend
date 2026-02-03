@@ -83,31 +83,34 @@ class StreamManager {
   }
 
   // Check if RTMP stream is available and ready to pull from
-  async checkRtmpStreamAvailable(streamKey, maxAttempts = 30, delayMs = 1000) {
+  async checkRtmpStreamAvailable(streamKey, maxAttempts = 10, delayMs = 500) {
     logger.info(`Checking RTMP stream availability for key ${streamKey}...`);
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
-        // Use ffprobe to check if stream exists and is readable
+        // Use ffprobe to check if stream exists - probe for streams, not duration
+        // -analyzeduration and -probesize help ffprobe connect faster to live streams
         const { stdout, stderr } = await execPromise(
-          `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 -timeout 1000000 rtmp://127.0.0.1:1935/live/${streamKey}`,
-          { timeout: 2000 }
+          `ffprobe -v error -analyzeduration 1M -probesize 1M -show_entries stream=codec_type -of default=noprint_wrappers=1 -timeout 2000000 rtmp://127.0.0.1:1935/live/${streamKey}`,
+          { timeout: 3000 }
         );
 
-        // If we get here without error, stream is available
-        logger.info(`RTMP stream ${streamKey} is available (attempt ${attempt}/${maxAttempts})`);
-        return true;
-      } catch (error) {
-        if (attempt < maxAttempts) {
-          logger.debug(`RTMP stream ${streamKey} not ready yet (attempt ${attempt}/${maxAttempts}), retrying in ${delayMs}ms...`);
-          await new Promise(resolve => setTimeout(resolve, delayMs));
-        } else {
-          logger.error(`RTMP stream ${streamKey} not available after ${maxAttempts} attempts`);
-          return false;
+        // If we get output with "video" or "audio", stream is available
+        if (stdout && (stdout.includes('video') || stdout.includes('audio'))) {
+          logger.info(`RTMP stream ${streamKey} is available (attempt ${attempt}/${maxAttempts})`);
+          return true;
         }
+      } catch (error) {
+        // Stream not ready yet
+        debugLogger.writeLog(`⏳ Attempt ${attempt}/${maxAttempts} - waiting for RTMP stream ${streamKey}...`);
+      }
+
+      if (attempt < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, delayMs));
       }
     }
 
+    logger.error(`RTMP stream ${streamKey} not available after ${maxAttempts} attempts`);
     return false;
   }
 

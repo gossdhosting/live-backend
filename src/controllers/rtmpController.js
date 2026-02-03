@@ -29,9 +29,12 @@ export const rtmpAuth = async (req, res) => {
       return res.status(403).send('Forbidden');
     }
 
-    // Check if channel is configured for RTMP input
-    if (channel.input_type !== 'rtmp') {
-      logger.warn('RTMP auth failed: channel not configured for RTMP input', {
+    // Allow RTMP input for:
+    // 1. Channels configured for RTMP input (OBS/vMix)
+    // 2. WebRTC channels (webcam/screen share) - they use nginx-rtmp as intermediate buffer
+    const allowedInputTypes = ['rtmp', 'webcam', 'screen'];
+    if (!allowedInputTypes.includes(channel.input_type)) {
+      logger.warn('RTMP auth failed: channel not configured for RTMP/WebRTC input', {
         streamKey,
         channelId: channel.id,
         inputType: channel.input_type
@@ -39,13 +42,16 @@ export const rtmpAuth = async (req, res) => {
       return res.status(403).send('Forbidden');
     }
 
-    // Mark channel as receiving RTMP input
-    await Channel.setRtmpInputConnected(channel.id, true);
+    // Mark channel as receiving RTMP input (only for actual RTMP channels)
+    if (channel.input_type === 'rtmp') {
+      await Channel.setRtmpInputConnected(channel.id, true);
+    }
 
     logger.info('RTMP authentication successful', {
       streamKey,
       channelId: channel.id,
-      channelName: channel.name
+      channelName: channel.name,
+      inputType: channel.input_type
     });
 
     // Return 200 OK to allow the publish
@@ -71,15 +77,25 @@ export const rtmpPublishDone = async (req, res) => {
     const channel = await Channel.findByStreamKey(streamKey);
 
     if (channel) {
-      // Mark channel as no longer receiving RTMP input
-      await Channel.setRtmpInputConnected(channel.id, false);
+      // Only handle RTMP input disconnection for actual RTMP channels
+      // WebRTC channels manage their own state
+      if (channel.input_type === 'rtmp') {
+        // Mark channel as no longer receiving RTMP input
+        await Channel.setRtmpInputConnected(channel.id, false);
 
-      // Update channel status if it was running
-      if (channel.status === 'running') {
-        await Channel.updateStatus(channel.id, 'stopped', null, 'RTMP stream disconnected');
-        await Channel.addLog(channel.id, 'info', 'RTMP input stream disconnected');
-        logger.info('Channel status updated after RTMP disconnect', {
+        // Update channel status if it was running
+        if (channel.status === 'running') {
+          await Channel.updateStatus(channel.id, 'stopped', null, 'RTMP stream disconnected');
+          await Channel.addLog(channel.id, 'info', 'RTMP input stream disconnected');
+          logger.info('Channel status updated after RTMP disconnect', {
+            channelId: channel.id,
+            streamKey
+          });
+        }
+      } else {
+        logger.info('RTMP stream ended for WebRTC channel (no status change)', {
           channelId: channel.id,
+          inputType: channel.input_type,
           streamKey
         });
       }
