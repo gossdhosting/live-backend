@@ -83,7 +83,7 @@ class StreamManager {
   }
 
   // Check if RTMP stream is available and ready to pull from
-  async checkRtmpStreamAvailable(streamKey, maxAttempts = 10, delayMs = 500) {
+  async checkRtmpStreamAvailable(streamKey, maxAttempts = 8, delayMs = 300) {
     logger.info(`Checking RTMP stream availability for key ${streamKey}...`);
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -172,7 +172,7 @@ class StreamManager {
         logger.info(`Successfully restored stream: ${channel.name} (ID: ${channel.id})`);
 
         // Small delay between starting streams to avoid overwhelming the system
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise(resolve => setTimeout(resolve, 500));
       } catch (error) {
         logger.error(`Failed to restore stream ${channel.id}: ${error.message}`);
         // Continue with next stream even if one fails

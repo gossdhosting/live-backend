@@ -383,10 +383,10 @@ class WebRTCBridgeService {
                 // Mark as started immediately to prevent duplicate triggers
                 this.platformStreamingStarted.set(channelId, true);
 
-                // Wait 15 seconds for RTMP stream to buffer, then start platform streaming
-                // Note: Port allocation happens in startFFmpegBridge, not here
+                // Wait 5 seconds for WebRTC bridge to establish and buffer initial frames
+                // This gives FFmpeg time to connect to nginx and start encoding
                 setTimeout(async () => {
-                  console.log(`[Platform Streaming] Starting platform streaming after 15s delay for channel ${channelId}`);
+                  console.log(`[Platform Streaming] Starting platform streaming after 5s delay for channel ${channelId}`);
                   logger.info(`Starting platform streaming for channel ${channelId} after buffer delay`);
 
                   try {
@@ -396,10 +396,10 @@ class WebRTCBridgeService {
                     logger.error(`Failed to start platform streaming for channel ${channelId}`, { error: err.message });
                     // Reset flag so it can be retried
                     this.platformStreamingStarted.set(channelId, false);
-                    // Retry after 5 seconds
-                    setTimeout(() => this.retryPlatformStreaming(channelId), 5000);
+                    // Retry after 2 seconds
+                    setTimeout(() => this.retryPlatformStreaming(channelId), 2000);
                   }
-                }, 15000); // 15 second delay for WebRTC bridge to buffer
+                }, 5000); // 5 second delay - enough for WebRTC bridge to establish and buffer
               } else {
                 logger.info(`Platform streaming already started for channel ${channelId}, skipping trigger`);
               }
