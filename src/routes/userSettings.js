@@ -65,7 +65,8 @@ router.post('/watermark/upload', checkPlanLimit('watermark'), upload.single('wat
     }
 
     // Delete old watermark if exists
-    const oldWatermarkPath = UserSettings.get(req.user.id, 'watermark_path')?.value;
+    const oldWatermarkSetting = await UserSettings.get(req.user.id, 'watermark_path');
+    const oldWatermarkPath = oldWatermarkSetting?.value;
     if (oldWatermarkPath && fs.existsSync(oldWatermarkPath)) {
       try {
         fs.unlinkSync(oldWatermarkPath);
@@ -75,7 +76,7 @@ router.post('/watermark/upload', checkPlanLimit('watermark'), upload.single('wat
     }
 
     // Save watermark path to user settings
-    UserSettings.set(req.user.id, 'watermark_path', req.file.path);
+    await UserSettings.set(req.user.id, 'watermark_path', req.file.path);
 
     logger.info(`User watermark uploaded`, { userId: req.user.id, path: req.file.path });
     res.json({
@@ -95,7 +96,8 @@ router.post('/watermark/upload', checkPlanLimit('watermark'), upload.single('wat
 // Delete user watermark
 router.delete('/watermark', async (req, res) => {
   try {
-    const watermarkPath = UserSettings.get(req.user.id, 'watermark_path')?.value;
+    const watermarkSetting = await UserSettings.get(req.user.id, 'watermark_path');
+    const watermarkPath = watermarkSetting?.value;
 
     // Delete watermark file
     if (watermarkPath && fs.existsSync(watermarkPath)) {
@@ -103,10 +105,10 @@ router.delete('/watermark', async (req, res) => {
     }
 
     // Delete from user settings
-    UserSettings.delete(req.user.id, 'watermark_path');
-    UserSettings.delete(req.user.id, 'watermark_position');
-    UserSettings.delete(req.user.id, 'watermark_opacity');
-    UserSettings.delete(req.user.id, 'watermark_scale');
+    await UserSettings.delete(req.user.id, 'watermark_path');
+    await UserSettings.delete(req.user.id, 'watermark_position');
+    await UserSettings.delete(req.user.id, 'watermark_opacity');
+    await UserSettings.delete(req.user.id, 'watermark_scale');
 
     logger.info(`User watermark deleted`, { userId: req.user.id });
     res.json({ message: 'Watermark deleted successfully' });
