@@ -383,18 +383,8 @@ class WebRTCBridgeService {
                 // Mark as started immediately to prevent duplicate triggers
                 this.platformStreamingStarted.set(channelId, true);
 
-                // Get allocated port for this channel
-                const rtmpPort = portAllocator.getPort(channelId);
-                if (!rtmpPort) {
-                  logger.error(`No RTMP port allocated for channel ${channelId}`);
-                  this.platformStreamingStarted.set(channelId, false);
-                  return;
-                }
-
-                // Build RTMP URL for polling - use nginx-rtmp port 1935, not the allocated dynamic port
-                const rtmpUrl = `rtmp://127.0.0.1:1935/live/${streamKey}`;
-
                 // Wait 15 seconds for RTMP stream to buffer, then start platform streaming
+                // Note: Port allocation happens in startFFmpegBridge, not here
                 setTimeout(async () => {
                   console.log(`[Platform Streaming] Starting platform streaming after 15s delay for channel ${channelId}`);
                   logger.info(`Starting platform streaming for channel ${channelId} after buffer delay`);
