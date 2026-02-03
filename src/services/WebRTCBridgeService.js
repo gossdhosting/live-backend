@@ -606,10 +606,45 @@ class WebRTCBridgeService {
                       });
                   });
                 }
+              }
 
-                // Platform streaming trigger removed - handled by first frame handler (lines 355-395)
-                // This prevents duplicate platform streaming attempts when sink is recreated
-              } else if (currentResolution !== frameResolution) {
+              // CRITICAL: Check platform streaming status for recreated sink handler too
+              // This ensures platform streaming starts even when sink is recreated
+              if (frameCount === 2) {
+                console.log(`[PLATFORM DEBUG FRAME 2 - RECREATED] isProcessRunning2=${isProcessRunning2}, frameResolution=${frameResolution}`);
+              }
+
+              if (isProcessRunning2 && frameResolution) {
+                const platformAlreadyStarted = this.platformStreamingStarted.get(channelId);
+                console.log(`[Platform Streaming Check - Recreated Sink] channel ${channelId}: platformAlreadyStarted = ${platformAlreadyStarted}, processRunning = ${isProcessRunning2}, frameResolution = ${frameResolution}`);
+
+                if (!platformAlreadyStarted) {
+                  console.log(`[Platform Streaming] Starting smart RTMP polling for channel ${channelId}`);
+                  logger.info(`Starting smart RTMP stream polling for channel ${channelId}`);
+
+                  // Mark as started immediately to prevent duplicate triggers
+                  this.platformStreamingStarted.set(channelId, true);
+
+                  // Wait 5 seconds for WebRTC bridge to establish and buffer initial frames
+                  setTimeout(async () => {
+                    console.log(`[Platform Streaming] Starting platform streaming after 5s delay for channel ${channelId}`);
+                    logger.info(`Starting platform streaming for channel ${channelId} after buffer delay`);
+
+                    try {
+                      await streamManager.startStream(channelId);
+                      logger.info(`Platform streaming started successfully for channel ${channelId}`);
+                    } catch (err) {
+                      logger.error(`Failed to start platform streaming for channel ${channelId}`, { error: err.message });
+                      // Reset flag so it can be retried
+                      this.platformStreamingStarted.set(channelId, false);
+                      // Retry after 2 seconds
+                      setTimeout(() => this.retryPlatformStreaming(channelId), 2000);
+                    }
+                  }, 5000);
+                }
+              }
+
+              if (currentResolution !== frameResolution && frameCount > 1) {
                 // Resolution changed - log detailed info and restart FFmpeg with new dimensions
                 logger.warn(`⚠️ RESOLUTION MISMATCH DETECTED for channel ${channelId}!`);
                 logger.warn(`  Expected: ${currentResolution}`);
