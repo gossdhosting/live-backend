@@ -371,11 +371,14 @@ class WebRTCBridgeService {
 
                 this.startFFmpegBridge(channelId, streamKey, frame);
               }
+            }
 
-              // CRITICAL FIX: Start platform streaming only if NOT already started
-              // Use smart RTMP stream polling instead of fixed delay to prevent race conditions
+            // CRITICAL: Check platform streaming status OUTSIDE the first frame block
+            // This ensures platform streaming starts even if service restarts mid-session
+            if (isProcessRunning && currentResolution) {
               const platformAlreadyStarted = this.platformStreamingStarted.get(channelId);
-              console.log(`[Platform Streaming Check] channel ${channelId}: platformAlreadyStarted = ${platformAlreadyStarted}`);
+              console.log(`[Platform Streaming Check] channel ${channelId}: platformAlreadyStarted = ${platformAlreadyStarted}, processRunning = ${isProcessRunning}`);
+
               if (!platformAlreadyStarted) {
                 console.log(`[Platform Streaming] Starting smart RTMP polling for channel ${channelId}`);
                 logger.info(`Starting smart RTMP stream polling for channel ${channelId}`);
@@ -400,10 +403,10 @@ class WebRTCBridgeService {
                     setTimeout(() => this.retryPlatformStreaming(channelId), 2000);
                   }
                 }, 5000); // 5 second delay - enough for WebRTC bridge to establish and buffer
-              } else {
-                logger.info(`Platform streaming already started for channel ${channelId}, skipping trigger`);
               }
-            } else if (currentResolution !== frameResolution) {
+            }
+
+            if (currentResolution !== frameResolution && frameCount > 1) {
               // Resolution changed - restart FFmpeg with new dimensions
               logger.warn(`Resolution changed for channel ${channelId}: ${currentResolution} -> ${frameResolution}`);
               logger.info(`Restarting FFmpeg bridge with new resolution...`);
