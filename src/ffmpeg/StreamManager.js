@@ -3,6 +3,8 @@ import path from 'path';
 import fs from 'fs';
 import { mkdir, rm, access } from 'fs/promises';
 import { createStream } from 'rotating-file-stream';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 import Channel from '../models/Channel.js';
 import Settings from '../models/Settings.js';
 import UserSettings from '../models/UserSettings.js';
@@ -14,6 +16,8 @@ import logger from '../utils/logger.js';
 import debugLogger from '../utils/debugLogger.js';
 import webrtcBridgeService from '../services/WebRTCBridgeService.js';
 import portAllocator from '../services/PortAllocator.js';
+
+const execPromise = promisify(exec);
 
 class StreamManager {
   constructor() {
@@ -76,6 +80,35 @@ class StreamManager {
     } catch (error) {
       logger.error('Failed to create directories', { error: error.message });
     }
+  }
+
+  // Check if RTMP stream is available and ready to pull from
+  async checkRtmpStreamAvailable(streamKey, maxAttempts = 30, delayMs = 1000) {
+    logger.info(`Checking RTMP stream availability for key ${streamKey}...`);
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        // Use ffprobe to check if stream exists and is readable
+        const { stdout, stderr } = await execPromise(
+          `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 -timeout 1000000 rtmp://127.0.0.1:1935/live/${streamKey}`,
+          { timeout: 2000 }
+        );
+
+        // If we get here without error, stream is available
+        logger.info(`RTMP stream ${streamKey} is available (attempt ${attempt}/${maxAttempts})`);
+        return true;
+      } catch (error) {
+        if (attempt < maxAttempts) {
+          logger.debug(`RTMP stream ${streamKey} not ready yet (attempt ${attempt}/${maxAttempts}), retrying in ${delayMs}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        } else {
+          logger.error(`RTMP stream ${streamKey} not available after ${maxAttempts} attempts`);
+          return false;
+        }
+      }
+    }
+
+    return false;
   }
 
   // Initialize on startup: cleanup orphaned streams and restore auto-restart streams
@@ -481,6 +514,17 @@ class StreamManager {
             logger.info(`[StreamManager] Starting platform streaming for ${inputTypeName} channel ${channelId}`);
             logger.info(`[StreamManager] Input: ${resolvedInputUrl} (WebRTC bridge → nginx-rtmp)`);
             console.log(`[StreamManager] Platform streaming triggered for ${inputTypeName} ${channelId}, pulling from ${resolvedInputUrl}`);
+
+            // Wait for RTMP stream to be available before starting platform streaming
+            debugLogger.writeLog(`⏳ Checking RTMP stream availability for ${channel.stream_key}...`);
+            const streamReady = await this.checkRtmpStreamAvailable(channel.stream_key);
+            if (!streamReady) {
+              const errorMsg = `RTMP stream ${channel.stream_key} not available for platform streaming`;
+              logger.error(`[StreamManager] ${errorMsg}`);
+              debugLogger.writeLog(`❌ ${errorMsg}`);
+              throw new Error(errorMsg);
+            }
+            debugLogger.writeLog(`✅ RTMP stream ${channel.stream_key} is ready for platform streaming`);
 
             // Continue to platform streaming setup below (don't return early)
           } else {
