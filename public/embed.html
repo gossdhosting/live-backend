@@ -311,15 +311,19 @@
           const response = await fetch(`/api/public/channels/${channelId}`);
           const data = await response.json();
 
-          if (data.status === 'running' && !isStreamLive) {
-            // Stream just started
-            console.log('Stream detected as running, loading player...');
+          // Check if HLS manifest exists (more reliable than DB status)
+          const hlsCheck = await fetch(streamUrl, { method: 'HEAD' });
+          const hlsAvailable = hlsCheck.ok;
+
+          if ((data.status === 'running' || hlsAvailable) && !isStreamLive) {
+            // Stream is available (either DB says running OR HLS manifest exists)
+            console.log('Stream detected, loading player... (Status:', data.status, ', HLS:', hlsAvailable ? 'available' : 'not available', ')');
             if (!hls) {
               initializeHLS();
             }
-          } else if (data.status !== 'running' && isStreamLive) {
-            // Stream stopped while it was live - cleanup
-            console.log('Stream stopped, cleaning up...');
+          } else if (!hlsAvailable && isStreamLive) {
+            // HLS manifest gone while stream was live - cleanup
+            console.log('Stream stopped (HLS manifest not found), cleaning up...');
             isStreamLive = false;
             liveIndicator.style.display = 'none';
 
@@ -332,8 +336,8 @@
             video.load();
             loading.style.display = 'none';
             showError('Stream has ended');
-          } else if (data.status !== 'running' && !isStreamLive) {
-            // Stream not running - show waiting message
+          } else if (!hlsAvailable && !isStreamLive) {
+            // Stream not available - show waiting message
             showError('Waiting for stream to start...');
           }
         } catch (error) {
