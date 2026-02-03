@@ -26,10 +26,10 @@ router.get('/channels', (req, res) => {
 });
 
 // Get single channel info (used by embed player to check stream status)
-router.get('/channels/:id', (req, res) => {
+router.get('/channels/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const channel = Channel.findById(parseInt(id));
+    const channel = await Channel.findById(parseInt(id));
 
     if (!channel) {
       return res.status(404).json({ error: 'Channel not found' });
