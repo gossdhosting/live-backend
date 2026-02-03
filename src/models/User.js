@@ -199,11 +199,12 @@ class User {
     `);
     const platformConnectionCount = (await platformConnectionsStmt.get(userId))?.count || 0;
 
-    // Get plan features (max_platform_connections and schedule_enabled) from user's plan
-    const planStmt = db.prepare('SELECT max_platform_connections, schedule_enabled FROM plans WHERE id = ?');
+    // Get plan features (max_platform_connections, schedule_enabled, hls_embed_enabled) from user's plan
+    const planStmt = db.prepare('SELECT max_platform_connections, schedule_enabled, hls_embed_enabled FROM plans WHERE id = ?');
     const planData = await planStmt.get(user.plan_id);
     const maxPlatformConnections = planData?.max_platform_connections || 1;
     const scheduleEnabled = planData?.schedule_enabled === true || planData?.schedule_enabled === 1;
+    const hlsEmbedEnabled = planData?.hls_embed_enabled === true || planData?.hls_embed_enabled === 1;
 
     const limits = {
       max_concurrent_streams: user.max_concurrent_streams,
@@ -212,7 +213,8 @@ class User {
       storage_limit_mb: user.storage_limit_mb,
       custom_watermark: user.custom_watermark === true,
       max_platform_connections: maxPlatformConnections,
-      schedule_enabled: scheduleEnabled
+      schedule_enabled: scheduleEnabled,
+      hls_embed_enabled: hlsEmbedEnabled
     };
 
     const usage = {

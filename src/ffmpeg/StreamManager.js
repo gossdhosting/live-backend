@@ -762,11 +762,12 @@ class StreamManager {
       this.rtmpConnectionStatus.set(channelId, rtmpStatusMap);
       logger.info(`[RTMP-INIT] Set rtmpConnectionStatus for channel ${channelId}, map size: ${rtmpStatusMap.size}`);
 
-      // Check watermark availability based on plan (async calls)
+      // Check watermark and HLS embed availability based on plan (async calls)
       const channelUser = await User.findById(channel.user_id);
       const userPlan = channelUser ? await Plan.getById(channelUser.plan_id) : null;
       // PostgreSQL returns boolean as true/false, SQLite as 1/0
       const hasCustomWatermark = userPlan && (userPlan.custom_watermark === true || userPlan.custom_watermark === 1);
+      const hasHlsEmbedAccess = userPlan && (userPlan.hls_embed_enabled === true || userPlan.hls_embed_enabled === 1);
 
       // Get default watermark settings (for users without custom watermark permission)
       const defaultWatermarkEnabled = Settings.get('default_watermark_enabled')?.value === '1';
@@ -1166,20 +1167,6 @@ class StreamManager {
         // Audio encoding (shared by both)
         ffmpegArgs.push('-map', '0:a?', '-c:a', 'aac', '-b:a', '128k', '-ar', '48000');
 
-        // Create HLS output directory
-        const channelHlsPath = path.join(this.hlsBasePath, `channel_${channelId}`);
-        try {
-          await mkdir(channelHlsPath, { recursive: true });
-          logger.info(`Created HLS directory for channel ${channelId}: ${channelHlsPath}`);
-        } catch (error) {
-          logger.error(`Failed to create HLS directory for channel ${channelId}`, { error: error.message });
-        }
-
-        const hlsSegmentDuration = parseInt(Settings.get('hls_segment_duration')?.value || '2');
-        const hlsListSize = parseInt(Settings.get('hls_list_size')?.value || '5');
-        const hlsPlaylistPath = path.join(channelHlsPath, 'index.m3u8');
-        const hlsFlags = 'delete_segments+append_list';
-
         // Build separate tee outputs for landscape and portrait
         const landscapeTeeOutputs = [];
         const portraitTeeOutputs = [];
@@ -1196,11 +1183,31 @@ class StreamManager {
           Channel.addLog(channelId, 'info', `Streaming to ${dest.platform} (landscape 16:9)`);
         });
 
-        // Add HLS output to landscape tee (using landscape video stream v:0)
-        landscapeTeeOutputs.push(
-          `[f=hls:hls_time=${hlsSegmentDuration}:hls_list_size=${hlsListSize}:hls_flags=${hlsFlags}:hls_segment_filename=${path.join(channelHlsPath, 'segment_%03d.ts')}:onfail=ignore:select=\\'v:0,a\\']${hlsPlaylistPath}`
-        );
-        logger.info(`Added HLS output (landscape) to tee muxer for channel ${channelId}`);
+        // Add HLS output to landscape tee only if user has HLS embed access
+        if (hasHlsEmbedAccess) {
+          // Create HLS output directory
+          const channelHlsPath = path.join(this.hlsBasePath, `channel_${channelId}`);
+          try {
+            await mkdir(channelHlsPath, { recursive: true });
+            logger.info(`Created HLS directory for channel ${channelId}: ${channelHlsPath}`);
+          } catch (error) {
+            logger.error(`Failed to create HLS directory for channel ${channelId}`, { error: error.message });
+          }
+
+          const hlsSegmentDuration = parseInt(Settings.get('hls_segment_duration')?.value || '2');
+          const hlsListSize = parseInt(Settings.get('hls_list_size')?.value || '5');
+          const hlsPlaylistPath = path.join(channelHlsPath, 'index.m3u8');
+          const hlsFlags = 'delete_segments+append_list';
+
+          landscapeTeeOutputs.push(
+            `[f=hls:hls_time=${hlsSegmentDuration}:hls_list_size=${hlsListSize}:hls_flags=${hlsFlags}:hls_segment_filename=${path.join(channelHlsPath, 'segment_%03d.ts')}:onfail=ignore:select=\\'v:0,a\\']${hlsPlaylistPath}`
+          );
+          logger.info(`Added HLS output (landscape) to tee muxer for channel ${channelId}`);
+          Channel.addLog(channelId, 'info', 'HLS embed player enabled (landscape orientation)');
+        } else {
+          logger.info(`HLS disabled for channel ${channelId} - user plan does not include HLS embed feature`);
+          Channel.addLog(channelId, 'info', 'HLS embed player disabled (upgrade plan to enable)');
+        }
 
         portrait9x16Destinations.forEach((dest) => {
           let rtmpUrl = dest.rtmp_url;
@@ -1263,22 +1270,6 @@ class StreamManager {
         }
         ffmpegArgs.push('-map', '0:a?');
 
-        // Create HLS output directory for this channel
-        const channelHlsPath = path.join(this.hlsBasePath, `channel_${channelId}`);
-        try {
-          await mkdir(channelHlsPath, { recursive: true });
-          logger.info(`Created HLS directory for channel ${channelId}: ${channelHlsPath}`);
-        } catch (error) {
-          logger.error(`Failed to create HLS directory for channel ${channelId}`, { error: error.message });
-        }
-
-        // HLS segment settings from database
-        const hlsSegmentDuration = parseInt(Settings.get('hls_segment_duration')?.value || '2');
-        const hlsListSize = parseInt(Settings.get('hls_list_size')?.value || '5');
-
-        // Build HLS output path
-        const hlsPlaylistPath = path.join(channelHlsPath, 'index.m3u8');
-
         // Build tee outputs with both RTMP destinations and HLS
         const teeOutputs = [];
 
@@ -1298,27 +1289,52 @@ class StreamManager {
           });
         }
 
-        // Add HLS output to tee muxer
-        // HLS flags: delete_segments (cleanup old segments), append_list (don't reset on restart)
-        const hlsFlags = 'delete_segments+append_list';
-        teeOutputs.push(
-          `[f=hls:hls_time=${hlsSegmentDuration}:hls_list_size=${hlsListSize}:hls_flags=${hlsFlags}:hls_segment_filename=${path.join(channelHlsPath, 'segment_%03d.ts')}:onfail=ignore]${hlsPlaylistPath}`
-        );
-        logger.info(`Added HLS output to tee muxer for channel ${channelId}: ${hlsPlaylistPath}`);
-        Channel.addLog(channelId, 'info', 'HLS embed player enabled');
+        // Add HLS output to tee muxer only if user has HLS embed access
+        let hlsOutputAdded = false;
+        if (hasHlsEmbedAccess) {
+          // Create HLS output directory for this channel
+          const channelHlsPath = path.join(this.hlsBasePath, `channel_${channelId}`);
+          try {
+            await mkdir(channelHlsPath, { recursive: true });
+            logger.info(`Created HLS directory for channel ${channelId}: ${channelHlsPath}`);
+          } catch (error) {
+            logger.error(`Failed to create HLS directory for channel ${channelId}`, { error: error.message });
+          }
 
-        // Use tee muxer for all outputs (RTMP + HLS)
+          // HLS segment settings from database
+          const hlsSegmentDuration = parseInt(Settings.get('hls_segment_duration')?.value || '2');
+          const hlsListSize = parseInt(Settings.get('hls_list_size')?.value || '5');
+
+          // Build HLS output path
+          const hlsPlaylistPath = path.join(channelHlsPath, 'index.m3u8');
+
+          // HLS flags: delete_segments (cleanup old segments), append_list (don't reset on restart)
+          const hlsFlags = 'delete_segments+append_list';
+          teeOutputs.push(
+            `[f=hls:hls_time=${hlsSegmentDuration}:hls_list_size=${hlsListSize}:hls_flags=${hlsFlags}:hls_segment_filename=${path.join(channelHlsPath, 'segment_%03d.ts')}:onfail=ignore]${hlsPlaylistPath}`
+          );
+          logger.info(`Added HLS output to tee muxer for channel ${channelId}: ${hlsPlaylistPath}`);
+          Channel.addLog(channelId, 'info', 'HLS embed player enabled');
+          hlsOutputAdded = true;
+        } else {
+          logger.info(`HLS disabled for channel ${channelId} - user plan does not include HLS embed feature`);
+          Channel.addLog(channelId, 'info', 'HLS embed player disabled (upgrade plan to enable)');
+        }
+
+        // Use tee muxer for all outputs (RTMP + HLS if enabled)
         ffmpegArgs.push(
           '-f', 'tee',
           teeOutputs.join('|')
         );
 
-        const outputCount = rtmpDestinations.length + 1; // RTMP destinations + HLS
-        logger.info(`Using tee muxer for ${outputCount} outputs (${rtmpDestinations.length} RTMP + 1 HLS)`);
-        if (rtmpDestinations.length === 0) {
+        const outputCount = rtmpDestinations.length + (hlsOutputAdded ? 1 : 0); // RTMP destinations + HLS if enabled
+        logger.info(`Using tee muxer for ${outputCount} outputs (${rtmpDestinations.length} RTMP${hlsOutputAdded ? ' + HLS' : ''})`);
+        if (rtmpDestinations.length === 0 && hlsOutputAdded) {
           Channel.addLog(channelId, 'info', 'HLS-only output (no platform destinations configured)');
-        } else {
+        } else if (hlsOutputAdded) {
           Channel.addLog(channelId, 'info', `Multi-output: ${rtmpDestinations.length} platform(s) + HLS embed`);
+        } else {
+          Channel.addLog(channelId, 'info', `RTMP output: ${rtmpDestinations.length} platform(s)`);
         }
       }
 

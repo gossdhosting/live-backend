@@ -55,6 +55,7 @@ class Plan {
     youtube_restreaming,
     schedule_enabled,
     cloud_storage_enabled,
+    hls_embed_enabled,
     android_product_id_monthly,
     android_product_id_yearly,
     ios_product_id_monthly,
@@ -65,11 +66,11 @@ class Plan {
         name, description, price_monthly, price_yearly,
         max_concurrent_streams, max_bitrate, max_stream_duration,
         storage_limit_mb, custom_watermark, max_platform_connections, youtube_restreaming, schedule_enabled,
-        cloud_storage_enabled,
+        cloud_storage_enabled, hls_embed_enabled,
         android_product_id_monthly, android_product_id_yearly,
         ios_product_id_monthly, ios_product_id_yearly
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = await stmt.run(
@@ -86,6 +87,7 @@ class Plan {
       youtube_restreaming ? true : false,
       schedule_enabled ? true : false,
       cloud_storage_enabled ? true : false,
+      hls_embed_enabled ? true : false,
       android_product_id_monthly || null,
       android_product_id_yearly || null,
       ios_product_id_monthly || null,
@@ -119,6 +121,7 @@ class Plan {
       'youtube_restreaming',
       'schedule_enabled',
       'cloud_storage_enabled',
+      'hls_embed_enabled',
       'android_product_id_monthly',
       'android_product_id_yearly',
       'ios_product_id_monthly',
@@ -128,7 +131,7 @@ class Plan {
     allowedFields.forEach(field => {
       if (data[field] !== undefined) {
         fields.push(`${field} = ?`);
-        if (field === 'custom_watermark' || field === 'is_active' || field === 'is_hidden' || field === 'youtube_restreaming' || field === 'schedule_enabled' || field === 'cloud_storage_enabled') {
+        if (field === 'custom_watermark' || field === 'is_active' || field === 'is_hidden' || field === 'youtube_restreaming' || field === 'schedule_enabled' || field === 'cloud_storage_enabled' || field === 'hls_embed_enabled') {
           values.push(data[field] ? true : false);
         } else {
           values.push(data[field]);
@@ -198,7 +201,8 @@ class Plan {
       storage_limit_mb: plan.storage_limit_mb,
       custom_watermark: plan.custom_watermark === true,
       max_platform_connections: plan.max_platform_connections || 1,
-      schedule_enabled: plan.schedule_enabled === true
+      schedule_enabled: plan.schedule_enabled === true,
+      hls_embed_enabled: plan.hls_embed_enabled === true
     };
 
     return limits[limitType];
