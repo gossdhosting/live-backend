@@ -221,6 +221,7 @@
       let hls = null;
       let isStreamLive = false;
       let statusCheckInterval = null;
+      let hlsPlayerInitialized = false;
 
       // Construct HLS stream URL
       const streamUrl = `/hls/channel_${channelId}/index.m3u8`;
@@ -231,14 +232,8 @@
           const response = await fetch(`/api/public/channels/${channelId}`);
           const data = await response.json();
 
-          if (data.status === 'running' && !isStreamLive) {
-            // Stream started - initialize player
-            isStreamLive = true;
-            loading.style.display = 'none';
-            liveIndicator.style.display = 'flex';
-            errorMessage.style.display = 'none';
-          } else if (data.status !== 'running' && isStreamLive) {
-            // Stream stopped - cleanup
+          if (data.status !== 'running' && isStreamLive) {
+            // Stream stopped while it was live - cleanup
             isStreamLive = false;
             liveIndicator.style.display = 'none';
 
@@ -250,8 +245,8 @@
             video.src = '';
             video.load();
             showError('Stream has ended');
-          } else if (data.status !== 'running' && !isStreamLive) {
-            // Stream not running - show waiting message
+          } else if (data.status !== 'running' && !isStreamLive && !hlsPlayerInitialized) {
+            // Stream not running and player hasn't loaded yet - show waiting message
             showError('Waiting for stream to start...');
           }
         } catch (error) {
@@ -260,7 +255,6 @@
       }
 
       // Check stream status every 5 seconds
-      checkStreamStatus();
       statusCheckInterval = setInterval(checkStreamStatus, 5000);
 
       // Check if HLS.js is supported
@@ -281,7 +275,9 @@
         hls.on(Hls.Events.MANIFEST_PARSED, function() {
           loading.style.display = 'none';
           liveIndicator.style.display = 'flex';
+          errorMessage.style.display = 'none';
           isStreamLive = true;
+          hlsPlayerInitialized = true;
           video.play().catch(e => console.log('Autoplay prevented:', e));
         });
 
@@ -315,7 +311,9 @@
         video.addEventListener('loadedmetadata', function() {
           loading.style.display = 'none';
           liveIndicator.style.display = 'flex';
+          errorMessage.style.display = 'none';
           isStreamLive = true;
+          hlsPlayerInitialized = true;
           video.play().catch(e => console.log('Autoplay prevented:', e));
         });
 
