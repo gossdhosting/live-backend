@@ -65,12 +65,20 @@ app.use('/api/webhooks', webhookRoutes);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// CRITICAL: Mount RTMP routes BEFORE rate limiter
-// nginx-rtmp calls these endpoints for authentication on every publish attempt
-// Rate limiting would cause connection failures and 90-second delays
+// CRITICAL: Mount time-sensitive routes BEFORE rate limiter
+// These routes must not be rate-limited to prevent connection delays
+
+// 1. RTMP auth - nginx-rtmp calls these endpoints for authentication on every publish attempt
 app.use('/api/rtmp', rtmpRoutes);
 
-// Apply rate limiting to all API routes
+// 2. WebRTC signaling - ICE candidates are sent rapidly during connection setup
+// Rate limiting would break WebRTC connections entirely
+app.use('/api/webrtc', webrtcRoutes);
+
+// 3. Public status endpoint - used by monitoring services and public status pages
+app.use('/api/status', statusRoutes);
+
+// Apply rate limiting to all other API routes
 app.use('/api/', apiLimiter);
 
 // Health check
@@ -96,9 +104,9 @@ app.use('/api/billing', billingRoutes);
 app.use('/api/iap', iapRoutes);
 app.use('/api/scheduled-streams', scheduledStreamRoutes);
 app.use('/api/faqs', faqRoutes);
-app.use('/api/webrtc', webrtcRoutes);
+// WebRTC routes moved above rate limiter (see line 73-75)
 app.use('/api/cache', cacheRoutes);
-app.use('/api/status', statusRoutes);
+// Status routes moved above rate limiter (see line 77-78)
 app.use('/api/tickets', ticketRoutes);
 
 // Public API (for Flutter app)
