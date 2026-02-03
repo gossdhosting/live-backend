@@ -377,9 +377,9 @@ class WebRTCBridgeService {
             // This ensures platform streaming starts even if service restarts mid-session
             // Use frameResolution instead of currentResolution since currentResolution is local var
 
-            // DEBUG: Log the condition values to troubleshoot
-            if (frameCount % 30 === 2) {  // Log every 30 frames to avoid spam
-              console.log(`[Platform Streaming Debug] channel ${channelId}: isProcessRunning=${isProcessRunning}, frameResolution=${frameResolution}, frameCount=${frameCount}`);
+            // DEBUG: Log on frame 2 to confirm this code block is reached
+            if (frameCount === 2) {
+              console.log(`[PLATFORM DEBUG FRAME 2] isProcessRunning=${isProcessRunning}, frameResolution=${frameResolution}`);
             }
 
             if (isProcessRunning && frameResolution) {
