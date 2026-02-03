@@ -518,11 +518,11 @@ class StreamManager {
             logger.info(`[StreamManager] Input: ${resolvedInputUrl} (WebRTC bridge → nginx-rtmp)`);
             console.log(`[StreamManager] Platform streaming triggered for ${inputTypeName} ${channelId}, pulling from ${resolvedInputUrl}`);
 
-            // Give the RTMP stream a moment to buffer before platform streaming starts
-            // WebRTC bridge is already running and publishing, just need to let nginx buffer a bit
+            // Give the RTMP stream time to buffer before platform streaming starts
+            // WebRTC bridge needs time to successfully publish to nginx (can take 10-15s initially)
             debugLogger.writeLog(`⏳ Waiting for RTMP stream buffer for ${channel.stream_key}...`);
-            logger.info(`[StreamManager] Waiting 2 seconds for RTMP stream buffer before platform streaming`);
-            await new Promise(resolve => setTimeout(resolve, 2000));
+            logger.info(`[StreamManager] Waiting 20 seconds for WebRTC bridge to establish RTMP stream`);
+            await new Promise(resolve => setTimeout(resolve, 20000));
             debugLogger.writeLog(`✅ RTMP stream ${channel.stream_key} buffer ready for platform streaming`);
 
             // Continue to platform streaming setup below (don't return early)
