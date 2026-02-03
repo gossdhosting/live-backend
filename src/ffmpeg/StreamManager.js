@@ -729,16 +729,11 @@ class StreamManager {
       const defaultWatermarkEnabled = Settings.get('default_watermark_enabled')?.value === '1';
       const defaultWatermarkPath = Settings.get('default_watermark_path')?.value;
 
-      // Get user-level watermark settings (async calls)
-      const userWatermarkPathSetting = await UserSettings.get(channel.user_id, 'watermark_path');
-      const userWatermarkPositionSetting = await UserSettings.get(channel.user_id, 'watermark_position');
-      const userWatermarkOpacitySetting = await UserSettings.get(channel.user_id, 'watermark_opacity');
-      const userWatermarkScaleSetting = await UserSettings.get(channel.user_id, 'watermark_scale');
-
-      const userWatermarkPath = userWatermarkPathSetting?.value;
-      const userWatermarkPosition = userWatermarkPositionSetting?.value;
-      const userWatermarkOpacity = userWatermarkOpacitySetting?.value;
-      const userWatermarkScale = userWatermarkScaleSetting?.value;
+      // Get channel-level watermark settings (watermark is stored per-channel, not per-user)
+      const channelWatermarkPath = channel.watermark_path;
+      const channelWatermarkPosition = channel.watermark_position;
+      const channelWatermarkOpacity = channel.watermark_opacity;
+      const channelWatermarkScale = channel.watermark_scale;
 
       // Determine watermark to use
       let watermarkPath = null;
@@ -750,19 +745,19 @@ class StreamManager {
       logger.info(`Watermark check for channel ${channelId}:`, {
         hasCustomWatermark,
         channelWatermarkEnabled: channel.watermark_enabled,
-        userWatermarkPath,
-        userWatermarkPathExists: userWatermarkPath ? fs.existsSync(userWatermarkPath) : false,
+        channelWatermarkPath,
+        channelWatermarkPathExists: channelWatermarkPath ? fs.existsSync(channelWatermarkPath) : false,
         defaultWatermarkEnabled,
         defaultWatermarkPath
       });
 
-      if (hasCustomWatermark && channel.watermark_enabled && userWatermarkPath && fs.existsSync(userWatermarkPath)) {
-        // User has custom watermark permission, channel has it enabled, and user has uploaded one
-        watermarkPath = userWatermarkPath;
-        watermarkPosition = userWatermarkPosition || 'top-left';
-        watermarkOpacity = parseFloat(userWatermarkOpacity) || 1.0;
-        watermarkScale = parseFloat(userWatermarkScale) || 1.0;
-        logger.info(`Using user watermark for channel ${channelId}`, { path: watermarkPath });
+      if (hasCustomWatermark && channel.watermark_enabled && channelWatermarkPath && fs.existsSync(channelWatermarkPath)) {
+        // User has custom watermark permission, channel has it enabled, and watermark is uploaded
+        watermarkPath = channelWatermarkPath;
+        watermarkPosition = channelWatermarkPosition || 'top-left';
+        watermarkOpacity = parseFloat(channelWatermarkOpacity) || 1.0;
+        watermarkScale = parseFloat(channelWatermarkScale) || 1.0;
+        logger.info(`Using channel watermark for channel ${channelId}`, { path: watermarkPath });
       } else if (!hasCustomWatermark && defaultWatermarkEnabled && defaultWatermarkPath && fs.existsSync(defaultWatermarkPath)) {
         // Use default watermark ONLY if user doesn't have custom watermark permission
         watermarkPath = defaultWatermarkPath;
