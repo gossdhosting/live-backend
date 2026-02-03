@@ -29,7 +29,7 @@ router.get('/channels', (req, res) => {
 router.get('/channels/:id', (req, res) => {
   try {
     const { id } = req.params;
-    const channel = Channel.findById(id);
+    const channel = Channel.findById(parseInt(id));
 
     if (!channel) {
       return res.status(404).json({ error: 'Channel not found' });
@@ -38,14 +38,15 @@ router.get('/channels/:id', (req, res) => {
     // Return channel info with status - embed player needs this to handle offline/online states
     res.json({
       id: channel.id,
-      name: channel.name,
-      description: channel.description,
-      status: channel.status,
+      name: channel.name || 'Untitled Channel',
+      description: channel.description || '',
+      status: channel.status || 'stopped',
       hls_url: `/hls/channel_${channel.id}/index.m3u8`,
       created_at: channel.created_at,
     });
   } catch (error) {
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('Public API error:', error);
+    res.status(500).json({ error: 'Internal server error', details: error.message });
   }
 });
 
