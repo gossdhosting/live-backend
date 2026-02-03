@@ -1166,6 +1166,20 @@ class StreamManager {
         // Audio encoding (shared by both)
         ffmpegArgs.push('-map', '0:a?', '-c:a', 'aac', '-b:a', '128k', '-ar', '48000');
 
+        // Create HLS output directory
+        const channelHlsPath = path.join(this.hlsBasePath, `channel_${channelId}`);
+        try {
+          await mkdir(channelHlsPath, { recursive: true });
+          logger.info(`Created HLS directory for channel ${channelId}: ${channelHlsPath}`);
+        } catch (error) {
+          logger.error(`Failed to create HLS directory for channel ${channelId}`, { error: error.message });
+        }
+
+        const hlsSegmentDuration = parseInt(Settings.get('hls_segment_duration')?.value || '2');
+        const hlsListSize = parseInt(Settings.get('hls_list_size')?.value || '5');
+        const hlsPlaylistPath = path.join(channelHlsPath, 'index.m3u8');
+        const hlsFlags = 'delete_segments+append_list';
+
         // Build separate tee outputs for landscape and portrait
         const landscapeTeeOutputs = [];
         const portraitTeeOutputs = [];
@@ -1181,6 +1195,12 @@ class StreamManager {
           logger.info(`Added ${dest.platform} to landscape tee muxer for channel ${channelId}`);
           Channel.addLog(channelId, 'info', `Streaming to ${dest.platform} (landscape 16:9)`);
         });
+
+        // Add HLS output to landscape tee (using landscape video stream v:0)
+        landscapeTeeOutputs.push(
+          `[f=hls:hls_time=${hlsSegmentDuration}:hls_list_size=${hlsListSize}:hls_flags=${hlsFlags}:hls_segment_filename=${path.join(channelHlsPath, 'segment_%03d.ts')}:onfail=ignore:select=\\'v:0,a\\']${hlsPlaylistPath}`
+        );
+        logger.info(`Added HLS output (landscape) to tee muxer for channel ${channelId}`);
 
         portrait9x16Destinations.forEach((dest) => {
           let rtmpUrl = dest.rtmp_url;
@@ -1198,7 +1218,8 @@ class StreamManager {
         const allTeeOutputs = [...landscapeTeeOutputs, ...portraitTeeOutputs];
         ffmpegArgs.push('-f', 'tee', allTeeOutputs.join('|'));
 
-        logger.info(`Using split-encode-tee with ${landscape16x9Destinations.length} landscape + ${portrait9x16Destinations.length} portrait outputs`);
+        Channel.addLog(channelId, 'info', 'HLS embed player enabled (landscape orientation)');
+        logger.info(`Using split-encode-tee with ${landscape16x9Destinations.length} landscape + ${portrait9x16Destinations.length} portrait outputs + HLS`);
 
       } else {
         // SINGLE ORIENTATION: Original single-encode behavior
@@ -1242,33 +1263,27 @@ class StreamManager {
         }
         ffmpegArgs.push('-map', '0:a?');
 
-        // Direct RTMP outputs only (no HLS)
-        if (rtmpDestinations.length === 0) {
-          throw new Error('No Destination configured for this channel');
+        // Create HLS output directory for this channel
+        const channelHlsPath = path.join(this.hlsBasePath, `channel_${channelId}`);
+        try {
+          await mkdir(channelHlsPath, { recursive: true });
+          logger.info(`Created HLS directory for channel ${channelId}: ${channelHlsPath}`);
+        } catch (error) {
+          logger.error(`Failed to create HLS directory for channel ${channelId}`, { error: error.message });
         }
 
-        if (rtmpDestinations.length === 1) {
-          // Single output - direct RTMP without tee muxer
-          const dest = rtmpDestinations[0];
-          let rtmpUrl = dest.rtmp_url;
-          // FIX: Only append stream key if it exists and isn't already in the URL
-          if (dest.stream_key && !rtmpUrl.includes(dest.stream_key)) {
-            const separator = (!rtmpUrl.endsWith('/') && !dest.stream_key.startsWith('/')) ? '/' : '';
-            rtmpUrl = `${rtmpUrl}${separator}${dest.stream_key}`;
-          }
+        // HLS segment settings from database
+        const hlsSegmentDuration = parseInt(Settings.get('hls_segment_duration')?.value || '2');
+        const hlsListSize = parseInt(Settings.get('hls_list_size')?.value || '5');
 
-          ffmpegArgs.push(
-            '-f', 'flv',
-            '-flvflags', 'no_duration_filesize',
-            rtmpUrl
-          );
+        // Build HLS output path
+        const hlsPlaylistPath = path.join(channelHlsPath, 'index.m3u8');
 
-          logger.info(`Direct RTMP output to ${dest.platform} for channel ${channelId}`);
-          Channel.addLog(channelId, 'info', `Streaming to ${dest.platform}`);
-        } else {
-          // Multiple outputs - use tee muxer
-          const teeOutputs = [];
+        // Build tee outputs with both RTMP destinations and HLS
+        const teeOutputs = [];
 
+        // Add RTMP destinations
+        if (rtmpDestinations.length > 0) {
           rtmpDestinations.forEach((dest) => {
             let rtmpUrl = dest.rtmp_url;
             // FIX: Only append stream key if it exists and isn't already in the URL
@@ -1281,14 +1296,29 @@ class StreamManager {
             logger.info(`Added ${dest.platform} to tee muxer for channel ${channelId}`);
             Channel.addLog(channelId, 'info', `Streaming to ${dest.platform}`);
           });
+        }
 
-          ffmpegArgs.push(
-            '-f', 'tee',
-            teeOutputs.join('|')
-          );
+        // Add HLS output to tee muxer
+        // HLS flags: delete_segments (cleanup old segments), append_list (don't reset on restart)
+        const hlsFlags = 'delete_segments+append_list';
+        teeOutputs.push(
+          `[f=hls:hls_time=${hlsSegmentDuration}:hls_list_size=${hlsListSize}:hls_flags=${hlsFlags}:hls_segment_filename=${path.join(channelHlsPath, 'segment_%03d.ts')}:onfail=ignore]${hlsPlaylistPath}`
+        );
+        logger.info(`Added HLS output to tee muxer for channel ${channelId}: ${hlsPlaylistPath}`);
+        Channel.addLog(channelId, 'info', 'HLS embed player enabled');
 
-          logger.info(`Using tee muxer for ${rtmpDestinations.length} RTMP outputs`);
-          Channel.addLog(channelId, 'info', `Multi-output: ${rtmpDestinations.length} RTMP destination(s)`);
+        // Use tee muxer for all outputs (RTMP + HLS)
+        ffmpegArgs.push(
+          '-f', 'tee',
+          teeOutputs.join('|')
+        );
+
+        const outputCount = rtmpDestinations.length + 1; // RTMP destinations + HLS
+        logger.info(`Using tee muxer for ${outputCount} outputs (${rtmpDestinations.length} RTMP + 1 HLS)`);
+        if (rtmpDestinations.length === 0) {
+          Channel.addLog(channelId, 'info', 'HLS-only output (no platform destinations configured)');
+        } else {
+          Channel.addLog(channelId, 'info', `Multi-output: ${rtmpDestinations.length} platform(s) + HLS embed`);
         }
       }
 

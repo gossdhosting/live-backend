@@ -129,6 +129,11 @@ app.use('/.well-known', express.static(wellKnownPath, {
   fallthrough: false, // Return 404 if file not found instead of continuing to next handler
 }));
 
+// Serve embed player HTML
+app.get('/embed/:channelId', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'embed.html'));
+});
+
 // Serve HLS files
 const hlsBasePath = process.env.HLS_BASE_PATH || path.join(process.cwd(), 'var', 'hls');
 app.use('/hls', express.static(hlsBasePath, {
