@@ -1818,7 +1818,16 @@ class StreamManager {
         }
       }, 3000); // Reduced from 5 seconds to 3 seconds
 
-      // HLS cleanup timer removed - no HLS files are generated anymore
+      // Clean up HLS directory after stream stops
+      setTimeout(async () => {
+        try {
+          const channelHlsPath = path.join(this.hlsBasePath, `channel_${channelId}`);
+          await rm(channelHlsPath, { recursive: true, force: true });
+          logger.info(`HLS directory cleaned up for channel ${channelId}`);
+        } catch (error) {
+          logger.error(`Failed to clean up HLS directory for channel ${channelId}:`, error);
+        }
+      }, 5000); // Wait 5 seconds after stream stop to ensure player disconnects
 
       Channel.addLog(channelId, 'info', 'Stream stop requested');
 

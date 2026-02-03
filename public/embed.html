@@ -218,12 +218,54 @@
       const volumeIcon = document.getElementById('volume-icon');
       const muteIcon = document.getElementById('mute-icon');
 
+      let hls = null;
+      let isStreamLive = false;
+      let statusCheckInterval = null;
+
       // Construct HLS stream URL
       const streamUrl = `/hls/channel_${channelId}/index.m3u8`;
 
+      // Function to check stream status
+      async function checkStreamStatus() {
+        try {
+          const response = await fetch(`/api/public/channels/${channelId}`);
+          const data = await response.json();
+
+          if (data.status === 'running' && !isStreamLive) {
+            // Stream started - initialize player
+            isStreamLive = true;
+            loading.style.display = 'none';
+            liveIndicator.style.display = 'flex';
+            errorMessage.style.display = 'none';
+          } else if (data.status !== 'running' && isStreamLive) {
+            // Stream stopped - cleanup
+            isStreamLive = false;
+            liveIndicator.style.display = 'none';
+
+            if (hls) {
+              hls.destroy();
+              hls = null;
+            }
+
+            video.src = '';
+            video.load();
+            showError('Stream has ended');
+          } else if (data.status !== 'running' && !isStreamLive) {
+            // Stream not running - show waiting message
+            showError('Waiting for stream to start...');
+          }
+        } catch (error) {
+          console.error('Failed to check stream status:', error);
+        }
+      }
+
+      // Check stream status every 5 seconds
+      checkStreamStatus();
+      statusCheckInterval = setInterval(checkStreamStatus, 5000);
+
       // Check if HLS.js is supported
       if (Hls.isSupported()) {
-        const hls = new Hls({
+        hls = new Hls({
           enableWorker: true,
           lowLatencyMode: true,
           backBufferLength: 90,
@@ -239,6 +281,7 @@
         hls.on(Hls.Events.MANIFEST_PARSED, function() {
           loading.style.display = 'none';
           liveIndicator.style.display = 'flex';
+          isStreamLive = true;
           video.play().catch(e => console.log('Autoplay prevented:', e));
         });
 
@@ -246,15 +289,22 @@
           if (data.fatal) {
             switch(data.type) {
               case Hls.ErrorTypes.NETWORK_ERROR:
-                showError('Network error - please check your connection');
-                hls.startLoad();
+                console.log('Network error, will retry...');
+                setTimeout(() => hls.startLoad(), 1000);
                 break;
               case Hls.ErrorTypes.MEDIA_ERROR:
-                showError('Media error - trying to recover...');
+                console.log('Media error, recovering...');
                 hls.recoverMediaError();
                 break;
               default:
-                showError('Fatal error - unable to load stream');
+                if (isStreamLive) {
+                  showError('Stream connection lost - reconnecting...');
+                  setTimeout(() => {
+                    hls.destroy();
+                    hls.loadSource(streamUrl);
+                    hls.attachMedia(video);
+                  }, 2000);
+                }
                 break;
             }
           }
@@ -265,11 +315,14 @@
         video.addEventListener('loadedmetadata', function() {
           loading.style.display = 'none';
           liveIndicator.style.display = 'flex';
+          isStreamLive = true;
           video.play().catch(e => console.log('Autoplay prevented:', e));
         });
 
         video.addEventListener('error', function() {
-          showError('Unable to load stream');
+          if (isStreamLive) {
+            showError('Stream connection lost');
+          }
         });
       } else {
         showError('Your browser does not support HLS playback');
