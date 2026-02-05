@@ -374,7 +374,8 @@ export const getUserStats = async (req, res) => {
         price_monthly: parseFloat(planDetails.price_monthly),
         price_yearly: parseFloat(planDetails.price_yearly)
       } : { name: planLimits.user_plan },
-      youtube_restreaming: hasYouTubeAccess
+      youtube_restreaming: hasYouTubeAccess,
+      account_credit: parseFloat(user.account_credit || 0)
     });
   } catch (error) {
     logger.error('Failed to fetch user stats', { error: error.message });
