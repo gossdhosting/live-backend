@@ -104,8 +104,12 @@ export const register = async (req, res) => {
 // Get all users (admin only)
 export const getAllUsers = async (req, res) => {
   try {
-    const { includeInactive } = req.query;
-    const users = await User.getAll({ includeInactive: includeInactive === 'true' });
+    const { includeInactive, search, limit } = req.query;
+    const users = await User.getAll({
+      includeInactive: includeInactive === 'true',
+      search: search || '',
+      limit: limit ? parseInt(limit) : 100
+    });
 
     res.json({ users });
   } catch (error) {

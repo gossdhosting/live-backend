@@ -62,8 +62,22 @@ class User {
   }
 
   // Get all users (admin only) - excludes password hashes
-  static async getAll({ includeInactive = false } = {}) {
-    const condition = includeInactive ? '' : "WHERE u.status = 'active'";
+  static async getAll({ includeInactive = false, search = '', limit = 100 } = {}) {
+    let conditions = [];
+    let params = [];
+
+    if (!includeInactive) {
+      conditions.push("u.status = 'active'");
+    }
+
+    if (search && search.trim().length > 0) {
+      const searchTerm = `%${search.trim()}%`;
+      conditions.push("(u.name LIKE ? OR u.email LIKE ? OR CAST(u.id AS TEXT) LIKE ?)");
+      params.push(searchTerm, searchTerm, searchTerm);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
     const stmt = db.prepare(`
       SELECT
         u.id, u.email, u.name, u.role, u.plan_id, u.subscription_type,
@@ -74,10 +88,12 @@ class User {
         p.name as plan_name
       FROM users u
       LEFT JOIN plans p ON u.plan_id = p.id
-      ${condition}
+      ${whereClause}
       ORDER BY u.created_at DESC
+      LIMIT ?
     `);
-    return await stmt.all();
+
+    return await stmt.all(...params, limit);
   }
 
   // Verify password
