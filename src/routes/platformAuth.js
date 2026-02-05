@@ -16,7 +16,9 @@ const router = express.Router();
 // Initiate Facebook OAuth
 router.get('/facebook', authenticateToken, (req, res) => {
   try {
-    const state = JSON.stringify({ userId: req.user.id });
+    // Check if request is from mobile app
+    const isFromApp = req.query.mobile === 'true';
+    const state = JSON.stringify({ userId: req.user.id, source: isFromApp ? 'app' : 'web' });
     const authUrl = FacebookService.getAuthUrl(state);
     res.json({ authUrl });
   } catch (error) {
@@ -34,7 +36,9 @@ router.get('/facebook/callback', async (req, res) => {
   }
 
   try {
-    const { userId } = JSON.parse(state);
+    const parsedState = JSON.parse(state);
+    const { userId, source } = parsedState;
+    const isFromApp = source === 'app';
 
     // Exchange code for access token
     const tokenData = await FacebookService.getAccessToken(code);
@@ -84,15 +88,20 @@ router.get('/facebook/callback', async (req, res) => {
       logger.error('Failed to send platform connected notification', { error: notifError.message });
     }
 
-    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/platforms?success=facebook_connected`);
+    // Redirect to app callback if request came from mobile app
+    if (isFromApp) {
+      res.redirect(`/api/app/oauth-callback?platform=facebook&success=true`);
+    } else {
+      res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/platforms?success=facebook_connected`);
+    }
   } catch (error) {
     logger.error('Facebook OAuth callback failed', { error: error.message, stack: error.stack, userId: state ? JSON.parse(state).userId : 'unknown' });
     console.error('Facebook OAuth callback error:', error);
 
     // Send OneSignal error notification
     try {
-      const { userId } = JSON.parse(state);
-      const playerId = await User.getOneSignalPlayerId(userId);
+      const parsedState = JSON.parse(state);
+      const playerId = await User.getOneSignalPlayerId(parsedState.userId);
       if (playerId) {
         await OneSignalService.notifyPlatformConnectionFailed(playerId, 'Facebook', error.message);
       }
@@ -100,7 +109,13 @@ router.get('/facebook/callback', async (req, res) => {
       logger.error('Failed to send platform connection failed notification', { error: notifError.message });
     }
 
-    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/platforms?error=facebook_auth_failed`);
+    // Redirect to app callback if request came from mobile app
+    const parsedStateForError = JSON.parse(state || '{}');
+    if (parsedStateForError.source === 'app') {
+      res.redirect(`/api/app/oauth-callback?platform=facebook&success=false&error=${encodeURIComponent(error.message)}`);
+    } else {
+      res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/platforms?error=facebook_auth_failed`);
+    }
   }
 });
 
@@ -109,7 +124,9 @@ router.get('/facebook/callback', async (req, res) => {
 // Initiate YouTube OAuth
 router.get('/youtube', authenticateToken, (req, res) => {
   try {
-    const state = JSON.stringify({ userId: req.user.id });
+    // Check if request is from mobile app
+    const isFromApp = req.query.mobile === 'true';
+    const state = JSON.stringify({ userId: req.user.id, source: isFromApp ? 'app' : 'web' });
     const authUrl = YouTubeService.getAuthUrl(state);
     res.json({ authUrl });
   } catch (error) {
@@ -132,9 +149,11 @@ router.get('/youtube/callback', async (req, res) => {
   }
 
   try {
-    const { userId } = JSON.parse(state);
-    console.log('=== YouTube OAuth - parsed state ===', { userId });
-    logger.info('YouTube OAuth - parsed state', { userId });
+    const parsedState = JSON.parse(state);
+    const { userId, source } = parsedState;
+    const isFromApp = source === 'app';
+    console.log('=== YouTube OAuth - parsed state ===', { userId, source, isFromApp });
+    logger.info('YouTube OAuth - parsed state', { userId, source, isFromApp });
 
     // Exchange code for tokens
     console.log('=== YouTube OAuth - exchanging code for tokens ===');
@@ -193,15 +212,20 @@ router.get('/youtube/callback', async (req, res) => {
       logger.error('Failed to send platform connected notification', { error: notifError.message });
     }
 
-    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/platforms?success=youtube_connected`);
+    // Redirect to app callback if request came from mobile app
+    if (isFromApp) {
+      res.redirect(`/api/app/oauth-callback?platform=youtube&success=true`);
+    } else {
+      res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/platforms?success=youtube_connected`);
+    }
   } catch (error) {
     console.error('=== YouTube OAuth callback FAILED ===', { error: error.message, stack: error.stack });
     logger.error('YouTube OAuth callback failed', { error: error.message, stack: error.stack });
 
     // Send OneSignal error notification
     try {
-      const { userId } = JSON.parse(state);
-      const playerId = await User.getOneSignalPlayerId(userId);
+      const parsedState = JSON.parse(state);
+      const playerId = await User.getOneSignalPlayerId(parsedState.userId);
       if (playerId) {
         await OneSignalService.notifyPlatformConnectionFailed(playerId, 'YouTube', error.message);
       }
@@ -209,7 +233,13 @@ router.get('/youtube/callback', async (req, res) => {
       logger.error('Failed to send platform connection failed notification', { error: notifError.message });
     }
 
-    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/platforms?error=youtube_auth_failed`);
+    // Redirect to app callback if request came from mobile app
+    const parsedStateForError = JSON.parse(state || '{}');
+    if (parsedStateForError.source === 'app') {
+      res.redirect(`/api/app/oauth-callback?platform=youtube&success=false&error=${encodeURIComponent(error.message)}`);
+    } else {
+      res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/platforms?error=youtube_auth_failed`);
+    }
   }
 });
 
@@ -218,7 +248,9 @@ router.get('/youtube/callback', async (req, res) => {
 // Initiate Twitch OAuth
 router.get('/twitch', authenticateToken, (req, res) => {
   try {
-    const state = JSON.stringify({ userId: req.user.id });
+    // Check if request is from mobile app
+    const isFromApp = req.query.mobile === 'true';
+    const state = JSON.stringify({ userId: req.user.id, source: isFromApp ? 'app' : 'web' });
     const authUrl = TwitchService.getAuthUrl(state);
     res.json({ authUrl });
   } catch (error) {
@@ -236,7 +268,9 @@ router.get('/twitch/callback', async (req, res) => {
   }
 
   try {
-    const { userId } = JSON.parse(state);
+    const parsedState = JSON.parse(state);
+    const { userId, source } = parsedState;
+    const isFromApp = source === 'app';
 
     // Exchange code for access token
     const tokenData = await TwitchService.getAccessToken(code);
@@ -277,15 +311,20 @@ router.get('/twitch/callback', async (req, res) => {
       logger.error('Failed to send platform connected notification', { error: notifError.message });
     }
 
-    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/platforms?success=twitch_connected`);
+    // Redirect to app callback if request came from mobile app
+    if (isFromApp) {
+      res.redirect(`/api/app/oauth-callback?platform=twitch&success=true`);
+    } else {
+      res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/platforms?success=twitch_connected`);
+    }
   } catch (error) {
     logger.error('Twitch OAuth callback failed', { error: error.message, stack: error.stack, userId: state ? JSON.parse(state).userId : 'unknown' });
     console.error('Twitch OAuth callback error:', error);
 
     // Send OneSignal error notification
     try {
-      const { userId } = JSON.parse(state);
-      const playerId = await User.getOneSignalPlayerId(userId);
+      const parsedState = JSON.parse(state);
+      const playerId = await User.getOneSignalPlayerId(parsedState.userId);
       if (playerId) {
         await OneSignalService.notifyPlatformConnectionFailed(playerId, 'Twitch', error.message);
       }
@@ -293,7 +332,13 @@ router.get('/twitch/callback', async (req, res) => {
       logger.error('Failed to send platform connection failed notification', { error: notifError.message });
     }
 
-    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/platforms?error=twitch_auth_failed`);
+    // Redirect to app callback if request came from mobile app
+    const parsedStateForError = JSON.parse(state || '{}');
+    if (parsedStateForError.source === 'app') {
+      res.redirect(`/api/app/oauth-callback?platform=twitch&success=false&error=${encodeURIComponent(error.message)}`);
+    } else {
+      res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/platforms?error=twitch_auth_failed`);
+    }
   }
 });
 
