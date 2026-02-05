@@ -32,6 +32,7 @@ import webrtcRoutes from './src/routes/webrtc.js';
 import cacheRoutes from './src/routes/cache.js';
 import statusRoutes from './src/routes/status.js';
 import ticketRoutes from './src/routes/tickets.js';
+import creditRoutes from './src/routes/credit.js';
 
 // Middleware
 import { apiLimiter } from './src/middleware/rateLimiter.js';
@@ -108,6 +109,7 @@ app.use('/api/faqs', faqRoutes);
 app.use('/api/cache', cacheRoutes);
 // Status routes moved above rate limiter (see line 77-78)
 app.use('/api/tickets', ticketRoutes);
+app.use('/api/credits', creditRoutes);
 
 // Public API (for Flutter app)
 app.use('/api/public', publicRoutes);

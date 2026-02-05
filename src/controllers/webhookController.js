@@ -4,6 +4,8 @@ import Invoice from '../models/Invoice.js';
 import User from '../models/User.js';
 import StripeCustomer from '../models/StripeCustomer.js';
 import CouponCode from '../models/CouponCode.js';
+import Credit, { TRANSACTION_TYPES, REFERENCE_TYPES } from '../models/Credit.js';
+import Plan from '../models/Plan.js';
 import logger from '../utils/logger.js';
 import { sendSubscriptionEmail } from '../services/EmailService.js';
 import PushoverService from '../services/PushoverService.js';

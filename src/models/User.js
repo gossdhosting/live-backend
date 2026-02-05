@@ -34,6 +34,7 @@ class User {
         u.subscription_status, u.subscription_started_at, u.subscription_expires_at,
         u.status, u.last_login_at, u.last_login_ip, u.created_at, u.updated_at,
         u.auth_provider, u.email_verified, u.profile_picture, u.youtube_restreaming,
+        u.account_credit,
         p.name as plan_name,
         p.max_concurrent_streams,
         p.max_bitrate,
@@ -69,6 +70,7 @@ class User {
         u.subscription_status, u.subscription_started_at, u.subscription_expires_at,
         u.status, u.last_login_at, u.last_login_ip, u.created_at, u.updated_at,
         u.auth_provider, u.email_verified, u.youtube_restreaming,
+        u.account_credit,
         p.name as plan_name
       FROM users u
       LEFT JOIN plans p ON u.plan_id = p.id
