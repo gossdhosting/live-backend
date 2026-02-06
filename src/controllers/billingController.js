@@ -22,20 +22,38 @@ async function applyCreditsToStripeBalance(userId, customerId, maxAmount) {
   if (creditBalance <= 0) return 0;
 
   const stripe = stripeConfig.getStripe();
-  const creditToApply = Math.min(creditBalance, maxAmount);
 
-  // Add credit to Stripe customer balance (negative = credit for user)
+  // Check existing Stripe customer balance to avoid stacking on repeated attempts
+  const customer = await stripe.customers.retrieve(customerId);
+  const existingStripeBalance = customer.balance || 0; // negative = credit already on account
+
+  // Calculate how much credit is already applied on Stripe (as positive dollars)
+  const alreadyAppliedOnStripe = existingStripeBalance < 0 ? Math.abs(existingStripeBalance) / 100 : 0;
+
+  // Only add the difference: what we want to apply minus what's already there
+  const creditToApply = Math.min(creditBalance, maxAmount);
+  const additionalToApply = Math.max(0, creditToApply - alreadyAppliedOnStripe);
+
+  if (additionalToApply <= 0) {
+    logger.info('Stripe customer already has sufficient credit balance, skipping', {
+      userId, customerId, existingStripeBalance, creditBalance,
+    });
+    return creditToApply;
+  }
+
+  // Add only the additional credit to Stripe customer balance
   await stripe.customers.createBalanceTransaction(customerId, {
-    amount: -Math.round(creditToApply * 100), // negative cents = credit
+    amount: -Math.round(additionalToApply * 100), // negative cents = credit
     currency: 'usd',
-    description: `Account credit applied - $${creditToApply.toFixed(2)}`,
+    description: `Account credit applied - $${additionalToApply.toFixed(2)}`,
   });
 
   logger.info('Applied account credit to Stripe customer balance', {
     userId,
     customerId,
-    creditApplied: creditToApply,
-    note: 'Internal credit deduction will happen on invoice.paid webhook',
+    creditApplied: additionalToApply,
+    alreadyOnStripe: alreadyAppliedOnStripe,
+    totalStripeCredit: alreadyAppliedOnStripe + additionalToApply,
   });
 
   return creditToApply;
