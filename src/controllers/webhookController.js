@@ -386,6 +386,38 @@ async function handleInvoicePaid(invoice) {
     amount: invoice.amount_paid / 100,
   });
 
+  // Apply account credits: deduct from user's credit balance after successful payment
+  try {
+    const amountPaidDollars = invoice.amount_paid / 100;
+    if (amountPaidDollars > 0) {
+      const creditBalance = await Credit.getBalance(userId);
+      if (creditBalance > 0) {
+        const creditToApply = Math.min(creditBalance, amountPaidDollars);
+        await Credit.deductCredit(
+          userId,
+          creditToApply,
+          TRANSACTION_TYPES.PLAN_PAYMENT,
+          `Credit applied to invoice ${invoiceId}`,
+          REFERENCE_TYPES.STRIPE_PAYMENT,
+          invoiceId
+        );
+        logger.info('Stripe Webhook: Account credit deducted after successful payment', {
+          userId,
+          invoiceId,
+          creditDeducted: creditToApply,
+          remainingCredit: creditBalance - creditToApply,
+        });
+      }
+    }
+  } catch (creditError) {
+    // Don't fail the webhook if credit deduction fails
+    logger.error('Stripe Webhook: Failed to deduct account credit', {
+      userId,
+      invoiceId,
+      error: creditError.message,
+    });
+  }
+
   // Send payment confirmation email
   const user = await User.getById(userId);
   await sendSubscriptionEmail(user.email, 'payment_success', {

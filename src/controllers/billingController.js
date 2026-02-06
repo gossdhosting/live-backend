@@ -6,50 +6,11 @@ import Invoice from '../models/Invoice.js';
 import Plan from '../models/Plan.js';
 import User from '../models/User.js';
 import CouponCode from '../models/CouponCode.js';
-import Credit, { TRANSACTION_TYPES, REFERENCE_TYPES } from '../models/Credit.js';
+import Credit from '../models/Credit.js';
 import PdfService from '../services/PdfService.js';
 import logger from '../utils/logger.js';
 import path from 'path';
 import { sendSubscriptionEmail } from '../services/EmailService.js';
-
-/**
- * Apply user's account credit to Stripe customer balance before payment.
- * Stripe customer balance is negative = credit available for invoices.
- * Returns the amount of credit applied (in dollars).
- */
-async function applyAccountCreditToStripe(userId, customerId, maxAmount, referenceId) {
-  const creditBalance = await Credit.getBalance(userId);
-  if (creditBalance <= 0) return 0;
-
-  const stripe = stripeConfig.getStripe();
-  const creditToApply = Math.min(creditBalance, maxAmount);
-
-  // Add credit to Stripe customer balance (negative = credit for user)
-  await stripe.customers.createBalanceTransaction(customerId, {
-    amount: -Math.round(creditToApply * 100), // negative cents = credit
-    currency: 'usd',
-    description: `Account credit applied - $${creditToApply.toFixed(2)}`,
-  });
-
-  // Deduct from our internal credit system
-  await Credit.deductCredit(
-    userId,
-    creditToApply,
-    TRANSACTION_TYPES.PLAN_PAYMENT,
-    `Credit applied to ${referenceId}`,
-    REFERENCE_TYPES.STRIPE_PAYMENT,
-    referenceId
-  );
-
-  logger.info('Applied account credit to Stripe customer', {
-    userId,
-    customerId,
-    creditApplied: creditToApply,
-    remainingCredit: creditBalance - creditToApply,
-  });
-
-  return creditToApply;
-}
 
 // Create Stripe Checkout Session
 export async function createCheckoutSession(req, res) {
@@ -116,11 +77,6 @@ export async function createCheckoutSession(req, res) {
       await StripeCustomer.create(userId, customerId, user.email, mode);
     }
 
-    // Apply account credits to Stripe customer balance before checkout
-    const creditApplied = await applyAccountCreditToStripe(
-      userId, customerId, amount, `checkout_plan_${planId}_${billingCycle}`
-    );
-
     // Create checkout session with subscription using price_data (dynamic pricing)
     const sessionConfig = {
       customer: customerId,
@@ -149,7 +105,6 @@ export async function createCheckoutSession(req, res) {
         userId: userId.toString(),
         planId: planId.toString(),
         billingCycle,
-        creditApplied: creditApplied.toString(),
         ...(couponId && { couponId: couponId.toString() }),
       },
       subscription_data: {
@@ -177,13 +132,11 @@ export async function createCheckoutSession(req, res) {
       planId,
       sessionId: session.id,
       withCoupon: !!stripeCouponId,
-      creditApplied,
     });
 
     res.json({
       sessionId: session.id,
       url: session.url,
-      creditApplied,
     });
   } catch (error) {
     logger.error('Stripe: Failed to create checkout session', {
@@ -1082,12 +1035,7 @@ export async function upgradePlan(req, res) {
       logger.info(`Cleaned up ${pendingInvoiceItems.data.length} pending invoice items before upgrade`);
     }
 
-    // 5. Apply account credits to Stripe customer balance before upgrade
-    const creditApplied = await applyAccountCreditToStripe(
-      userId, stripeSubscription.customer, newAmount, `upgrade_plan_${newPlanId}_${billingCycle}`
-    );
-
-    // 6. Identify the subscription item to update
+    // 5. Identify the subscription item to update
     // Since you are using a single-plan model, it's usually the first item.
     const subscriptionItemId = stripeSubscription.items.data[0].id;
 
@@ -1171,7 +1119,6 @@ export async function upgradePlan(req, res) {
       oldSubscriptionId: currentSubscription.stripe_subscription_id,
       subscriptionItemId,
       newAmount: newAmount,
-      creditApplied,
       invoiceTotal: latestInvoice.total / 100,
       invoiceAmountDue: latestInvoice.amount_due / 100,
       invoiceLineItems: latestInvoice.lines.data.map(line => ({

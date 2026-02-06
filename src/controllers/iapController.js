@@ -1,6 +1,7 @@
 import User from '../models/User.js';
 import Plan from '../models/Plan.js';
 import StripeSubscription from '../models/StripeSubscription.js';
+import Credit, { TRANSACTION_TYPES, REFERENCE_TYPES } from '../models/Credit.js';
 import Settings from '../models/Settings.js';
 import db from '../models/database.js';
 import logger from '../utils/logger.js';
@@ -767,6 +768,32 @@ export async function activateIAPSubscription(req, res) {
 
     console.log('[IAP-ACTIVATE] ✅ User record updated');
     logger.info('IAP subscription activated', { userId, platform, planId, billingCycle });
+
+    // Apply account credits after successful IAP activation
+    try {
+      const planPrice = billingCycle === 'monthly'
+        ? parseFloat(plan.price_monthly)
+        : parseFloat(plan.price_yearly);
+      const creditBalance = await Credit.getBalance(userId);
+      if (creditBalance > 0 && planPrice > 0) {
+        const creditToApply = Math.min(creditBalance, planPrice);
+        await Credit.deductCredit(
+          userId,
+          creditToApply,
+          TRANSACTION_TYPES.PLAN_PAYMENT,
+          `Credit applied to IAP ${platform} subscription - ${plan.name} (${billingCycle})`,
+          REFERENCE_TYPES.STRIPE_PAYMENT,
+          `iap_${platform}_${purchaseId}`
+        );
+        console.log(`[IAP-ACTIVATE] ✅ Account credit deducted: $${creditToApply.toFixed(2)}`);
+        logger.info('IAP: Account credit deducted after successful activation', {
+          userId, creditDeducted: creditToApply, remainingCredit: creditBalance - creditToApply,
+        });
+      }
+    } catch (creditError) {
+      console.log('[IAP-ACTIVATE] ⚠️ Credit deduction failed (non-critical):', creditError.message);
+      logger.error('IAP: Failed to deduct account credit', { userId, error: creditError.message });
+    }
 
     console.log('[IAP-ACTIVATE] 📧 Step 9: Sending activation email');
     // Send activation email
