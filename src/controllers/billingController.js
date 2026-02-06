@@ -12,6 +12,35 @@ import logger from '../utils/logger.js';
 import path from 'path';
 import { sendSubscriptionEmail } from '../services/EmailService.js';
 
+/**
+ * Apply user's account credit to Stripe customer balance before payment.
+ * Only touches Stripe balance - does NOT deduct from internal credit system.
+ * Internal credit deduction happens in webhook after payment is confirmed.
+ */
+async function applyCreditsToStripeBalance(userId, customerId, maxAmount) {
+  const creditBalance = await Credit.getBalance(userId);
+  if (creditBalance <= 0) return 0;
+
+  const stripe = stripeConfig.getStripe();
+  const creditToApply = Math.min(creditBalance, maxAmount);
+
+  // Add credit to Stripe customer balance (negative = credit for user)
+  await stripe.customers.createBalanceTransaction(customerId, {
+    amount: -Math.round(creditToApply * 100), // negative cents = credit
+    currency: 'usd',
+    description: `Account credit applied - $${creditToApply.toFixed(2)}`,
+  });
+
+  logger.info('Applied account credit to Stripe customer balance', {
+    userId,
+    customerId,
+    creditApplied: creditToApply,
+    note: 'Internal credit deduction will happen on invoice.paid webhook',
+  });
+
+  return creditToApply;
+}
+
 // Create Stripe Checkout Session
 export async function createCheckoutSession(req, res) {
   try {
@@ -76,6 +105,9 @@ export async function createCheckoutSession(req, res) {
       customerId = customer.id;
       await StripeCustomer.create(userId, customerId, user.email, mode);
     }
+
+    // Apply account credits to Stripe customer balance (actual deduction from internal system happens on invoice.paid webhook)
+    const creditApplied = await applyCreditsToStripeBalance(userId, customerId, amount);
 
     // Create checkout session with subscription using price_data (dynamic pricing)
     const sessionConfig = {
@@ -1035,7 +1067,10 @@ export async function upgradePlan(req, res) {
       logger.info(`Cleaned up ${pendingInvoiceItems.data.length} pending invoice items before upgrade`);
     }
 
-    // 5. Identify the subscription item to update
+    // 5. Apply account credits to Stripe customer balance (actual deduction from internal system happens on invoice.paid webhook)
+    await applyCreditsToStripeBalance(userId, stripeSubscription.customer, newAmount);
+
+    // 6. Identify the subscription item to update
     // Since you are using a single-plan model, it's usually the first item.
     const subscriptionItemId = stripeSubscription.items.data[0].id;
 
