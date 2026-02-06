@@ -116,7 +116,8 @@ export const getCurrentUser = async (req, res) => {
         storage_limit_mb: userWithPlan.storage_limit_mb,
         custom_watermark: userWithPlan.custom_watermark,
         profile_picture: userWithPlan.profile_picture,
-        auth_provider: userWithPlan.auth_provider
+        auth_provider: userWithPlan.auth_provider,
+        account_credit: parseFloat(userWithPlan.account_credit || 0)
       },
     });
   } catch (error) {
