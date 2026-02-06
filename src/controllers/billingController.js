@@ -16,6 +16,9 @@ import { sendSubscriptionEmail } from '../services/EmailService.js';
  * Apply user's account credit to Stripe customer balance before payment.
  * Only touches Stripe balance - does NOT deduct from internal credit system.
  * Internal credit deduction happens in webhook after payment is confirmed.
+ *
+ * Sets the Stripe customer balance to EXACTLY the credit amount (capped by maxAmount).
+ * Any existing balance is accounted for - we adjust to reach the target, not add on top.
  */
 async function applyCreditsToStripeBalance(userId, customerId, maxAmount) {
   const creditBalance = await Credit.getBalance(userId);
@@ -23,37 +26,40 @@ async function applyCreditsToStripeBalance(userId, customerId, maxAmount) {
 
   const stripe = stripeConfig.getStripe();
 
-  // Check existing Stripe customer balance to avoid stacking on repeated attempts
+  // Get current Stripe customer balance
   const customer = await stripe.customers.retrieve(customerId);
-  const existingStripeBalance = customer.balance || 0; // negative = credit already on account
+  const currentBalanceCents = customer.balance || 0; // negative = credit on account
 
-  // Calculate how much credit is already applied on Stripe (as positive dollars)
-  const alreadyAppliedOnStripe = existingStripeBalance < 0 ? Math.abs(existingStripeBalance) / 100 : 0;
-
-  // Only add the difference: what we want to apply minus what's already there
+  // Target: set balance to exactly -creditToApply (in cents)
   const creditToApply = Math.min(creditBalance, maxAmount);
-  const additionalToApply = Math.max(0, creditToApply - alreadyAppliedOnStripe);
+  const targetBalanceCents = -Math.round(creditToApply * 100); // negative = credit
 
-  if (additionalToApply <= 0) {
-    logger.info('Stripe customer already has sufficient credit balance, skipping', {
-      userId, customerId, existingStripeBalance, creditBalance,
+  // Calculate the adjustment needed to reach the target
+  const adjustmentCents = targetBalanceCents - currentBalanceCents;
+
+  if (adjustmentCents === 0) {
+    logger.info('Stripe customer balance already at target, no adjustment needed', {
+      userId, customerId, currentBalanceCents, targetBalanceCents, creditToApply,
     });
     return creditToApply;
   }
 
-  // Add only the additional credit to Stripe customer balance
+  // Create a balance transaction to adjust to exact target
   await stripe.customers.createBalanceTransaction(customerId, {
-    amount: -Math.round(additionalToApply * 100), // negative cents = credit
+    amount: adjustmentCents, // negative = add credit, positive = remove credit
     currency: 'usd',
-    description: `Account credit applied - $${additionalToApply.toFixed(2)}`,
+    description: adjustmentCents < 0
+      ? `Account credit applied - $${creditToApply.toFixed(2)}`
+      : `Account credit balance adjusted to $${creditToApply.toFixed(2)}`,
   });
 
-  logger.info('Applied account credit to Stripe customer balance', {
+  logger.info('Set Stripe customer balance to exact credit amount', {
     userId,
     customerId,
-    creditApplied: additionalToApply,
-    alreadyOnStripe: alreadyAppliedOnStripe,
-    totalStripeCredit: alreadyAppliedOnStripe + additionalToApply,
+    creditToApply,
+    previousBalanceCents: currentBalanceCents,
+    newBalanceCents: targetBalanceCents,
+    adjustmentCents,
   });
 
   return creditToApply;
